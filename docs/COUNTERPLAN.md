@@ -14,7 +14,7 @@ Forge keeps the parts of Claude's plan that are genuinely good, but changes the 
 
 That choice makes the first useful release smaller, reduces rebase work, keeps upstream fixes, and gives the framework a reliable place for state, leases, resumability, context compilation, model routing, and audit trails. A fork remains an escape hatch only if a written extension-gap test proves an upstream seam is missing.
 
-The Unreal gateway deliberately separates native MCP, optional VibeUE live Python, and editor-closed Unreal API/commandlet work. Forge also treats visual development, Blender and Unreal asset/rig/animation authoring, and Unreal art integration as a complete parallel production stream. Because Forge runs inside Codex, Codex is the resident default worker and supervisor across design, code, review, visual generation and DCC/Unreal tool operation. Kimi K3 and every other local or remote model are optional capability-based workers. Forge offloads bounded work only when a candidate proves the required quality and lowers effective token, time or lane cost.
+The Unreal gateway deliberately separates native MCP, optional VibeUE live Python, and editor-closed Unreal API/commandlet work. Forge also treats visual development, Blender and Unreal asset/rig/animation authoring, and Unreal art integration as a complete parallel production stream. Because Forge runs inside Codex, Codex is the resident default worker and supervisor across design, code, review, visual generation and DCC/Unreal tool operation. Local and remote models are optional capability-based workers registered through provider-neutral contracts. Forge offloads bounded work only when a candidate proves the required quality and lowers effective context, time, cost or lane pressure.
 
 The fastest proof is not a renamed command set. It is this closed loop:
 
@@ -106,7 +106,7 @@ flowchart LR
     K --> D["Blender gateway: mesh, rig, animation, export"]
     K --> IMG["Visual gateway: concept boards and image generation"]
     K --> CR["Resident worker: Codex across design, code, review, art and tool operation"]
-    K --> MP["Optional offload workers: qualified local models (including Kimi K3) and approved cloud"]
+    K --> MP["Optional offload workers: qualified local models and approved remote providers"]
     K --> V["VCS adapter: Git/LFS or Perforce"]
     K --> CI["BuildGraph / Horde or local CI"]
     CC --> KG["Evidence and knowledge graph"]
@@ -160,7 +160,6 @@ forge-ue-studio/
     blender-gateway/
   providers/
     codex-native/
-    kimi-k3/
     openai-compatible/
     local-model/
   schemas/
@@ -176,7 +175,7 @@ Roles are spawned on demand. They are not eight permanent conversations and are 
 
 ## Dependency and capability policy
 
-The supplied `dependancies/` directory is an evidence bundle, not an install manifest. It contains craft-manual chapter maps, an Epic API scrape estimate/config/probes, and verified PowerShell harnesses for local Ollama work. It does **not** contain VibeUE, the native Unreal MCP plugin, Blender, Kimi K3, or their installers.
+The supplied `dependancies/` directory is an evidence bundle, not an install manifest. It contains craft-manual chapter maps, an Epic API scrape estimate/config/probes, and verified PowerShell harnesses for local Ollama work. It does **not** contain VibeUE, the native Unreal MCP plugin, Blender, or installers for optional model providers.
 
 Forge classifies runtime integrations instead of declaring every useful tool a hard dependency:
 
@@ -190,7 +189,6 @@ Forge classifies runtime integrations instead of declaring every useful tool a h
 | VibeUE | Optional recommended accelerator | Adds live `execute_python_code`, arbitrary `unreal.*`, skills and service wrappers to the merged MCP surface | Native MCP for typed work plus editor-closed Unreal Python commandlets for broad/offline work |
 | Blender + Blender gateway/MCP | Optional until bespoke art is scheduled | Independent DCC lane for mesh, UV, material, rig, animation and export production | Use capable Unreal authoring routes, Fab/approved library assets or graybox primitives |
 | Codex image generation and tool access | Resident visual/tool route when exposed | Art and photo concepts, boards, callouts, variations, image editing, Blender/Unreal operation, code and review | Use licensed references, existing assets or another verified route when a required tool is unavailable |
-| Kimi K3 adapter (local, installed service, or API) | Recommended optional local/offload candidate | Bounded multimodal critique, visual reasoning, research, code/review and tool-driven DCC work | Resident Codex worker retains or resumes the seat |
 | Ollama/LM Studio/llama.cpp and other local models | Optional offload tier | Low-cost long-context extraction, classification, bounded drafting, code/review, visual breakdown and tool operation after task-specific qualification | Resident Codex worker or another approved occupant |
 | Skill Seekers | Optional research intake | Documentation/API ingestion experiments | Direct local source/API inspection and bounded manual research |
 | Git/LFS or Perforce | Required before durable production writes | Revision, ownership, locking, rollback and review | Read-only work only until a VCS adapter passes |
@@ -437,7 +435,7 @@ A worker receives one suite, the shared test contract, and only the capability r
 - UBT, UAT, commandlets, Automation, Functional Tests, Data Validation, Gauntlet, BuildGraph.
 - Git/LFS or Perforce; merge/lock capabilities; current revision and dirty state.
 - local/shared/cloud DDC, cache health, shader compiler capacity.
-- resident Codex modalities and tool access; local model endpoints and metadata, including but not limited to installed Kimi K3; other providers, quotas, context limits, modalities, tool access and effective cost.
+- resident Codex modalities and tool access; installed local model endpoints and metadata; entitled services and approved remote providers; quotas, context limits, modalities, tool access and effective cost.
 - DCC tools, Blender version/add-ons/MCP/API, licences, render devices, audio/image/video generators, Codex image-generation access.
 - network restrictions, sandbox permissions, writable roots, human checkpoints.
 - target platforms, devices, signing/certification prerequisites—presence only, never secret values.
@@ -469,7 +467,7 @@ No machine-specific absolute path enters a shipped skill or recipe. A locator re
 - No Blender: mechanics continue with graybox/Fab placeholders; route supported modelling, Control Rig, animation, procedural and material work through verified Unreal capabilities and keep unsupported asset work in a replacement-safe backlog.
 - Blender and Unreal art routes both available: benchmark them by asset class, quality, elapsed time, GPU/editor-lane contention and rework rate. Prefer Blender for independent DCC work when it frees the Unreal lane; prefer Unreal when in-engine authoring, Control Rig, Sequencer, retargeting, procedural tools or reduced round-tripping wins.
 - No image generator: visual development uses approved references and manually supplied boards; no workflow fabricates generated imagery.
-- No Kimi K3: nothing fundamental changes; Codex remains resident and any qualified local or remote worker can occupy optional offload seats. Independent-provider review is marked degraded only when no genuinely independent worker exists.
+- No optional model provider: nothing fundamental changes; Codex remains resident. Independent-provider review is marked degraded only when no genuinely independent worker exists.
 
 ## Model and tool routing
 
@@ -492,9 +490,9 @@ Reject an occupant lacking any required property:
 
 For an eligible offload candidate, score its advantage over the resident Codex route:
 
-`expected_quality + locality/free_bonus + parallelism_gain - retry_risk - latency_cost - monetary_cost - queue_cost - lane_contention - handoff_cost`
+`expected_quality + locality_advantage + verified_cost_advantage + parallelism_gain - retry_risk - latency_cost - monetary_cost - queue_cost - lane_contention - handoff_cost`
 
-Scores come from versioned evals and production evidence by task type. Already-installed, local and zero-marginal-cost workers are preferred for qualified bounded work, but “free” never bypasses the quality, security or acceptance floor. Keep ambiguous architecture, cross-domain integration, final synthesis and high-risk mutation with Codex unless another worker proves equal or better for that exact class. Provider tags or self-descriptions are discovery hints, not competence proof. Scores decay when versions, hardware, plugins or task classes change.
+Scores come from versioned evals and production evidence by task type. Already-installed, local and verified-zero-marginal-cost workers are preferred for qualified bounded work, but locality or a licensing label never proves cost and cost never bypasses the quality, security or acceptance floor. Keep ambiguous architecture, cross-domain integration, final synthesis and high-risk mutation with Codex unless another worker proves equal or better for that exact class. Provider tags or self-descriptions are discovery hints, not competence proof. Scores decay when versions, hardware, plugins or task classes change.
 
 ### Resident Codex and context-efficient local offload
 
@@ -519,11 +517,11 @@ Before promotion, an occupant completes representative, seeded tasks:
 
 Use independent verification. Promotion requires consecutive passes; any material post-promotion failure returns that task type to probation. Verification cost is charged to the route so cheap workers that require expensive supervision disable themselves.
 
-### Kimi K3 as one optional local worker
+### Optional model workers
 
-Kimi K3 is a recommended **provider adapter**, not the owner of the art department or any permanent seat. Discovery order is: an already-installed local endpoint/runtime, an already-entitled installed service, then an approved remote API. The installer never downloads model weights or adds a runtime without approval. Kimi receives the same task-specific evaluation as every local worker and is used when it saves resident Codex context or adds parallel capacity without lowering the acceptance standard. The official full model's published scale means “open weights” alone is not evidence that a particular machine can run the required variant well.
+Optional models are registered through provider-neutral adapters rather than hard-coded names. Discovery order is: an already-installed local endpoint/runtime, an already-entitled installed service, then an approved remote API. The installer never downloads model weights, adds a runtime, or configures a paid service without approval. Every candidate receives the same task-specific evaluation and is used only when it saves resident Codex context, adds independent review or parallel capacity, or provides another measured advantage without lowering the acceptance standard. Locality, open weights, or advertised modality is not evidence that a usable variant is free, installed, affordable, or performant on the current machine.
 
-Initial candidate seats:
+Candidate seats include:
 
 - independent visual-board and asset-spec critic;
 - long-context research synthesis over art bibles, references and asset inventories;
@@ -531,9 +529,9 @@ Initial candidate seats:
 - animation/rigging breakdown and continuity review from images or captured video;
 - bounded second-provider review for code and production documents.
 
-Kimi K3's multimodal input does not itself prove image generation, mesh creation or animation output. Codex is the default visual worker when its image and tool capabilities are exposed; Kimi or another local model may take a bounded concept, critique, breakdown or tool-operation task after passing the relevant eval. Blender or Unreal creates the actual meshes, rigs and animation through their verified gateways, regardless of which model operates the route.
+Multimodal input does not itself prove image generation, mesh creation or animation output. Codex is the default visual worker when its image and tool capabilities are exposed; an optional model may take a bounded concept, critique, breakdown or tool-operation task after passing the relevant eval. Blender or Unreal creates the actual meshes, rigs and animation through their verified gateways, regardless of which model operates the route.
 
-The adapter preserves the provider's required multi-turn response fields, including reasoning/tool-call state, but never exposes hidden reasoning to workers or stores it as studio authority. Forge persists only the task inputs, tool calls, outputs, evidence and decisions needed for reproducibility.
+Each adapter preserves the provider's required multi-turn response fields, including reasoning/tool-call state, but never exposes hidden reasoning to workers or stores it as studio authority. Forge persists only the task inputs, tool calls, outputs, evidence and decisions needed for reproducibility.
 
 ## Unreal execution model
 
@@ -602,13 +600,13 @@ Art does not gate mechanical playability, but it is not postponed as an undefine
 | Unreal Integrator | Import/reimport, skeleton/material binding, collision/LOD settings, animation assets and in-engine evidence |
 | Visual QA | Objective comparison against the approved board/spec; never substitutes for the human art verdict |
 
-Seats are capability-defined, with Codex as the resident default. Codex can generate and edit art/photo references and board imagery when visual generation is exposed, reason over references, decompose images into 3D asset specifications, write Blender/Unreal scripts, operate available gateways, create tool-authored meshes/rigs/animation and review captures. Kimi K3 and other local models are optional parallel workers for any of those bounded tasks they qualify for, including code and review; none owns the department. Blender and Unreal are alternate artifact-authoring applications: Blender normally protects the scarce Unreal editor lane by handling independent DCC work, while Unreal may win for Control Rig, Sequencer, retargeting, procedural/in-engine content and round-trip-sensitive work.
+Seats are capability-defined, with Codex as the resident default. Codex can generate and edit art/photo references and board imagery when visual generation is exposed, reason over references, decompose images into 3D asset specifications, write Blender/Unreal scripts, operate available gateways, create tool-authored meshes/rigs/animation and review captures. Qualified optional models may work in parallel on bounded tasks, including code and review; none owns the department. Blender and Unreal are alternate artifact-authoring applications: Blender normally protects the scarce Unreal editor lane by handling independent DCC work, while Unreal may win for Control Rig, Sequencer, retargeting, procedural/in-engine content and round-trip-sensitive work.
 
 ### Project inception and department launch
 
 For a new game, Forge starts with a structured design interview rather than immediately generating tasks. It challenges the initial description until the mandate, audience, platform, camera, core loop, progression, tone, content boundaries, reference points, scope, performance envelope and decision owner are explicit. Unknowns become hypotheses or spikes; they are never silently invented.
 
-Codex then produces a compact GDD, visual pillars and the first storyboard/beat-board candidates. Qualified local workers—including Kimi K3 when available—may receive bounded parallel packets for alternatives, character sheets, world-language studies, asset breakdowns or critique. The user approves the main direction and replacement-safe asset interfaces. At that point Forge compiles two connected but independently schedulable DAGs:
+Codex then produces a compact GDD, visual pillars and the first storyboard/beat-board candidates. Qualified optional workers may receive bounded parallel packets for alternatives, character sheets, world-language studies, asset breakdowns or critique. The user approves the main direction and replacement-safe asset interfaces. At that point Forge compiles two connected but independently schedulable DAGs:
 
 - **Playable DAG:** gameplay, systems, tests, builds and placeholder integration.
 - **Visual DAG:** concept approval, character/world design, asset breakdown, modelling, rigging, animation, materials, import and visual QA.
@@ -687,10 +685,10 @@ The following are effort gates, not calendar guarantees. The first playable proo
 
 The installer is capability-driven and idempotent:
 
-1. **Read-only survey:** Codex/GSD/Forge state and resident capabilities, UE versions/projects, VCS, native MCP, Python/Editor Scripting plugins, VibeUE, Blender, image generation, every detected local/remote model provider including Kimi K3, DDC/build tools and platform SDK visibility.
+1. **Read-only survey:** Codex/GSD/Forge state and resident capabilities, UE versions/projects, VCS, native MCP, Python/Editor Scripting plugins, VibeUE, Blender, image generation, installed local model runtimes, entitled services, approved remote providers, DDC/build tools and platform SDK visibility.
 2. **Conflict and policy check:** existing `AGENTS.md`, `.codex/config.toml`, plugins, project files, licences, secrets policy and write boundaries.
 3. **Install core only:** Forge plugin, kernel, schemas, general directives, research absorption kernel, capability registry and reversible project skeleton.
-4. **Present optional proposals independently:** native MCP, UE scripting plugins, VibeUE, Blender gateway/MCP, local model runtimes/adapters—including but not limited to Kimi K3—image/audio/video providers and scale infrastructure. Proposals explain which bounded Codex work they can offload, expected token/throughput savings, permissions/licence/effective cost, hardware fit, tests and fallback. Each needs approval before installation or configuration.
+4. **Present optional proposals independently:** native MCP, UE scripting plugins, VibeUE, Blender gateway/MCP, provider-neutral local model runtimes/adapters, image/audio/video providers and scale infrastructure. Proposals explain which bounded Codex work they can offload, expected context/throughput savings, permissions/licence/effective cost, hardware fit, tests and fallback. Each needs approval before installation or configuration.
 5. **Enable engine plugins safely:** edit the project plugin declaration only after approval, close/reopen the editor when required, and verify each surface separately.
 6. **Absorb and probe:** Research introspects each accepted MCP/API/CLI/model, builds its capability contract and domain cards, and runs known-good/known-bad controls.
 7. **Compile workflows:** generate the project's capability overlays and route table. Absent/declined providers remove or substitute only affected steps.
@@ -830,7 +828,7 @@ The framework itself passes only when all of these are demonstrated:
 6. A native-MCP-only profile completes typed live-editor work with VibeUE absent.
 7. A VibeUE profile proves live Python, then deliberately disables/corrupts it and falls back without taking native MCP down.
 8. An editor-closed Unreal Python profile closes the editor, runs a broad or heavy API task, trusts explicit result/package evidence rather than exit code alone, and reopens safely.
-9. Missing editor, DCC, local model, image provider, Kimi K3, or network capability degrades only the routes that require it.
+9. Missing editor, DCC, optional model, image provider, or network capability degrades only the routes that require it.
 10. The Capability-to-Acceptance Closure Matrix has no enabled workflow step without a probe, lane, fallback/blocking rule and acceptance suite.
 11. Work packets validate; stale hashes and undeclared writes block before mutation.
 12. Each acceptance worker receives one bounded suite; seeded context overflow splits the suite without dropping shared invariants.
@@ -851,7 +849,7 @@ The framework itself passes only when all of these are demonstrated:
 27. Requirement changes invalidate affected tasks/tests/builds through trace edges.
 28. Human feel and art gates cannot be auto-approved.
 29. Generated assets retain prompt/model/source/licence/date and remain placeholders until approved.
-30. Codex successfully completes the resident baseline for code, review, visual generation and tool operation where those capabilities are exposed; Kimi K3 or any other local worker is promoted only for the exact task types and complexity tiers it passes, and removing any adapter returns work to Codex without editing plans.
+30. Codex successfully completes the resident baseline for code, review, visual generation and tool operation where those capabilities are exposed; an optional worker is promoted only for the exact task types and complexity tiers it passes, and removing any adapter returns work to Codex without editing plans.
 31. Data Validation, functional/automation tests, cook smoke, and a Gauntlet session produce machine-readable evidence.
 32. Perforce and Git/LFS ownership semantics pass the same VCS contract tests.
 33. Release rehearsal includes install/upgrade/save migration/rollback and crash-symbol verification.
@@ -904,14 +902,13 @@ Verified from the supplied corpus:
 - current Codex documentation supports plugins containing skills/MCP, progressive skill loading, project-scoped custom agents, project config, hooks, and subagents;
 - current UE 5.8 documentation covers Data Validation, Automation/Functional Testing, Gauntlet, BuildGraph, Horde, and DDC as production surfaces;
 - Epic's UE 5.8 documentation supports Python both in the full editor and through headless `UnrealEditor-Cmd -run=pythonscript`, with the Python Editor Script plugin enabled;
-- Moonshot's official Kimi K3 repository describes open weights, an OpenAI-compatible API, native multimodal input, tool-oriented agent work and a 2.8T/104B-active full model; this supports probing both local and remote adapters but does not establish that a suitable local variant is installed or performant on this machine.
 
 Assumptions requiring a spike:
 
 - upstream GSD exposes enough additive extension seams to avoid all core edits;
 - the installed native UE 5.8 MCP, optional VibeUE and editor-closed Python surfaces can be normalized behind one typed gateway without losing required operations;
 - Blender gateway/MCP and Unreal authoring routes can each create, rig, animate and preserve the required asset classes repeatably on this machine; their per-task performance has not yet been benchmarked;
-- usable local models—including a possible Kimi K3 route—may already be installed, but their paths, variants, hardware fit, context limits, code/art competence and tool access have not been probed; API entitlement is an optional fallback, not the preferred assumption;
+- usable local models may already be installed, but their paths, variants, hardware fit, context limits, code/art competence, tool access and effective cost have not been probed; service or API entitlement is an optional fallback, not the preferred assumption;
 - SQLite is acceptable as local authoritative state for the first release;
 - the first supported VCS should be Git/LFS on this machine, while Perforce remains mandatory before claiming AAA team readiness;
 - available model/provider entitlements and platform SDKs have not been inventoried in this analysis.
@@ -931,8 +928,6 @@ The first build decision should be the M0 extension-gap spike. If that spike sho
 - [Codex subagents and custom agent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 - [Unreal Engine 5.8 Python editor scripting and commandlets](https://dev.epicgames.com/documentation/en-us/unreal-engine/scripting-the-unreal-editor-using-python)
 - [Unreal Engine 5.8 Python API](https://dev.epicgames.com/documentation/en-us/unreal-engine/python-api/?application_version=5.8)
-- [Kimi K3 official repository and deployment guidance](https://github.com/MoonshotAI/Kimi-K3)
-- [Kimi API platform](https://platform.kimi.ai/docs/overview)
 - [Unreal Engine 5.8 BuildGraph](https://dev.epicgames.com/documentation/en-us/unreal-engine/buildgraph)
 - [Unreal Engine 5.8 Horde build automation](https://dev.epicgames.com/documentation/en-us/unreal-engine/horde-build-automation-for-unreal-engine)
 - [Unreal Engine 5.8 Gauntlet](https://dev.epicgames.com/documentation/unreal-engine/gauntlet-automation-framework-overview-in-unreal-engine)

@@ -16,11 +16,11 @@ The preview displays the exact package, stable pinned version, scope, command, a
 Codex is the resident default because Forge already runs inside it. First establish the Codex baseline for a task, then reject offload routes that lack required access, modality, safety, context, quality, or acceptance evidence. Rank the survivors using:
 
 ```text
-quality + locality/free advantage + parallelism gain
+quality + locality advantage + verified cost advantage + parallelism gain
 - retry risk - elapsed time - money - queue pressure - lane contention - handoff cost
 ```
 
-An installed local route normally wins qualified bounded work when it reduces total context, time or monetary cost. Complex, ambiguous, cross-system and final-synthesis work stays on Codex by default. “Free” is an optimization, not a waiver of verification.
+An installed local route normally wins qualified bounded work when it reduces total context, time or measured monetary cost. Complex, ambiguous, cross-system and final-synthesis work stays on Codex by default. Zero marginal cost is an optimization, not a waiver of verification, and must be measured rather than inferred from locality or licensing labels.
 
 ## Context-efficient offload
 
@@ -42,9 +42,9 @@ Blender is normally the independent DCC lane for mesh, UV, baking, rigging, skin
 
 Visual production begins after the compact GDD and primary visual anchors are approved. Gameplay continues with interface-compatible placeholders.
 
-## Codex, Kimi K3 and model providers
+## Codex and model providers
 
-Use Codex as resident worker and supervisor. For offload capacity, probe already-installed local runtimes/endpoints first, including but not limited to Kimi K3, followed by already-entitled services and approved remote APIs. Do not download weights or install a runtime implicitly. Store capability and benchmark evidence by task type and complexity, not a global “best model” label.
+Use Codex as resident worker and supervisor. For offload capacity, probe already-installed local runtimes/endpoints first, followed by already-entitled services and approved remote APIs. Do not download weights or install a runtime implicitly. Register providers through capability contracts rather than hard-coded model names, and store capability, benchmark, and effective-cost evidence by task type and complexity instead of using a global “best model” label.
 
 ## Optional integration contract
 

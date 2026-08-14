@@ -108,12 +108,6 @@
       "fallback": "ollama-or-resident-codex"
     },
     {
-      "id": "kimi-k3",
-      "classification": "recommended-optional-local-offload-candidate",
-      "capabilities": ["model.multimodal", "model.visual-critique", "model.code-review", "model.tool-use"],
-      "fallback": "resident-codex"
-    },
-    {
       "id": "local-model-runtime",
       "classification": "optional-offload-runtime",
       "capabilities": ["model.local", "worker.context-heavy-bounded", "worker.code-review", "worker.visual-breakdown", "worker.tool-operation"],

@@ -1,6 +1,6 @@
 {
   "name": "forge-ue-studio",
-  "version": "0.1.0+codex.20260814152534",
+  "version": "0.1.0+codex.20260814235050",
   "description": "Codex-resident, capability-routed, GSD-compatible Unreal production orchestration.",
   "author": {
     "name": "Dave"

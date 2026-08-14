@@ -6,7 +6,7 @@ Deterministic probes run first. Agents interpret bounded artifacts rather than r
 |---:|---|---|
 | 1 | Host/config investigator | OS, hardware, Codex/GSD and write-boundary snapshot |
 | 1 | Unreal investigator | Engine/project/plugin/build route inventory |
-| 1 | Tool/model investigator | Codex resident capabilities, Blender, MCPs, VibeUE, all local runtimes including Kimi candidates, and provider inventory |
+| 1 | Tool/model investigator | Codex resident capabilities, Blender, MCPs, VibeUE, installed local runtimes, entitled services, approved remote APIs, and provider inventory |
 | 1 | VCS/infrastructure investigator | Revision, locks, DDC, build and platform readiness |
 | 2 | Conflict/policy analyst | Safe merge and approval proposals |
 | 2 | Capability profiler | Contracts and known-good/known-bad probe results |

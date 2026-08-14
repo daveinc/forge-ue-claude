@@ -15,7 +15,7 @@ Build a machine-readable environment snapshot and clearly separate detection, ve
    .\install.ps1 -Mode Survey -ProjectPath "<project>"
    ```
 
-2. Inspect Codex's resident image/tool capabilities, the project, `.uproject`, existing instructions/config, VCS, UE executables/plugins, native MCP, VibeUE, editor-closed Python, Blender/gateway, every local runtime/model including any Kimi route, provider credentials by presence only, DDC/build tools, and platform visibility.
+2. Inspect Codex's resident image/tool capabilities, the project, `.uproject`, existing instructions/config, VCS, UE executables/plugins, native MCP, VibeUE, editor-closed Python, Blender/gateway, installed local runtimes/models, entitled services, approved remote providers, credential presence only, DDC/build tools, and platform visibility.
 3. Treat executable or plugin detection as `AVAILABLE_UNVERIFIED` until a safe end-to-end probe passes.
 4. Probe each accepted route independently with known-good and known-bad controls. Never expose or persist credential values.
 5. Distinguish actual generation/operation surfaces from planning or prompt-only skills. A model advertising vision/audio/tools is an input/tool capability, not proof of image, video, mesh or animation generation.

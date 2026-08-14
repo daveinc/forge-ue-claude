@@ -8,7 +8,7 @@
 - Register executable surfaces, permissions, integrity, provenance, licence, health, cost, context cost, fallbacks, consent and invalidation triggers before activation.
 - Activate optional skills, MCPs, APIs and model surfaces only for phases and packets that need them; keep one canonical surface for duplicate capabilities.
 - Use Codex as the resident default for orchestration, design, code, review, visual generation and Blender/Unreal operation when exposed.
-- Offload bounded context-heavy, repetitive or parallel tasks to qualified free/local workers when total context/time cost improves; Kimi K3 is one candidate, not a department owner.
+- Offload bounded context-heavy, repetitive or parallel tasks only to qualified optional workers when measured quality, context, time and effective cost improve; never infer zero cost from locality or licensing labels.
 - Keep unresolved design, novel architecture, cross-system integration, delicate Unreal mutation, final subjective art and synthesis on Codex unless another worker proves the exact complexity tier.
 - Give offload workers minimal referral packets and require structured evidence; never forward the full GDD or resident conversation by default.
 - Run playable and visual DAGs concurrently after their shared asset interfaces are approved.

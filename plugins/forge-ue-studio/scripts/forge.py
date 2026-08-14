@@ -7,7 +7,6 @@ import argparse
 import datetime as dt
 import hashlib
 import json
-import os
 import platform
 import shutil
 import subprocess
@@ -119,10 +118,8 @@ def capability(name: str, provider: str, status: str, lane: str, reason: str) ->
         raise ValueError(f"Invalid status: {status}")
     if provider == "codex":
         kind, locality = "resident-model", "resident"
-    elif provider in {"local-model-runtime", "kimi-k3-local"} or provider.startswith("ollama:"):
+    elif provider == "local-model-runtime" or provider.startswith("ollama:"):
         kind, locality = "local-model", "local"
-    elif provider == "kimi-k3-api":
-        kind, locality = "remote-model", "remote"
     elif provider in {"blender", "unreal-control-rig"}:
         kind, locality = "dcc", "local"
     elif lane.startswith("ue-") or provider in {"uproject", "unreal-native-mcp", "vibeue", "unreal-python"}:
@@ -173,7 +170,6 @@ def survey(project_value: str) -> dict[str, Any]:
         "ollama": executable("ollama", "ollama.exe"),
         "lm_studio": executable("lms", "lms.exe", "lm-studio", "lm-studio.exe"),
         "llama_server": executable("llama-server", "llama-server.exe"),
-        "kimi_cli": executable("kimi", "kimi.exe", "kimi-cli", "kimi-cli.exe"),
         "unreal_editor": executable("UnrealEditor", "UnrealEditor.exe"),
         "unreal_editor_cmd": executable("UnrealEditor-Cmd", "UnrealEditor-Cmd.exe"),
     }
@@ -282,20 +278,6 @@ def survey(project_value: str) -> dict[str, Any]:
             "model-local",
             "Local runtime detected; enumerate models and qualify each task/complexity class" if any(tools[name] for name in ("ollama", "lm_studio", "llama_server")) else "No supported local runtime executable was found on PATH",
         ),
-        capability(
-            "model.kimi.local",
-            "kimi-k3-local",
-            "AVAILABLE_UNVERIFIED" if tools["kimi_cli"] else "UNAVAILABLE_OPTIONAL",
-            "model-local",
-            "Kimi-like CLI detected; model identity, modality and performance need probes" if tools["kimi_cli"] else "No Kimi CLI was found on PATH",
-        ),
-        capability(
-            "model.kimi.api",
-            "kimi-k3-api",
-            "AVAILABLE_UNVERIFIED" if os.environ.get("KIMI_API_KEY") else "UNAVAILABLE_OPTIONAL",
-            "network",
-            "Credential presence detected; value was not read or stored" if os.environ.get("KIMI_API_KEY") else "KIMI_API_KEY is not present",
-        ),
     ]
     for model in installed_ollama_models:
         model_id = str(model["id"])
@@ -320,7 +302,7 @@ def survey(project_value: str) -> dict[str, Any]:
         "Executable and plugin detection does not prove end-to-end capability.",
         "Unreal plugin names vary; live MCP and VibeUE discovery must inspect the configured tool surface.",
         "Codex is the resident default, but this standalone survey cannot prove the host's current image generation or tool scopes.",
-        "A local runtime, Kimi executable, or credential does not prove model identity, task quality, complexity ceiling, context savings, or tool access.",
+        "A local runtime, model executable, endpoint, or credential does not prove model identity, task quality, complexity ceiling, context savings, cost, or tool access.",
         "Blender and Unreal visual routes remain unranked until representative asset-class benchmarks pass.",
     ]
 
@@ -352,9 +334,7 @@ def survey(project_value: str) -> dict[str, Any]:
                 "version_probe": gsd_probe,
             },
             "codex_capabilities_require_host_probe": ["visual-generation", "image-editing", "blender-operation", "unreal-operation"],
-            "local_worker_candidates": [name for name in ("ollama", "lm_studio", "llama_server", "kimi_cli") if tools[name]],
-            "kimi_local_detected": bool(tools["kimi_cli"]),
-            "kimi_api_credential_present": bool(os.environ.get("KIMI_API_KEY")),
+            "local_worker_candidates": [name for name in ("ollama", "lm_studio", "llama_server") if tools[name]],
             "ollama_detected": bool(tools["ollama"]),
             "runtime_inventory": {
                 "ollama_models": installed_ollama_models,

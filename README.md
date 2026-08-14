@@ -20,7 +20,7 @@ The full architecture and staged build proposal are in [the Forge counterplan](d
 | Unreal Engine project | Unreal execution | Not required for the initial game-design interview. |
 | GSD | Full phase workflow | Install separately with the approved, pinned GSD mode below. |
 
-Unreal MCP, VibeUE, Unreal Python, Blender, Kimi K3, Ollama, LM Studio, image/audio/video tools, and build services are optional capability routes. Install only the routes your project needs.
+Unreal MCP, VibeUE, Unreal Python, Blender, local model runtimes, image/audio/video tools, and build services are optional capability routes. Install only the routes your project needs.
 
 ## Quick install
 
@@ -85,7 +85,7 @@ When the design is ready and an Unreal project exists, adopt that project using 
 - Produce storyboard/beat boards, character direction, and world direction before launching full production.
 - Start playable and visual DAGs in parallel once their shared asset interfaces are approved.
 - Use Codex as the resident default for orchestration, design, coding, review, visual generation and Blender/Unreal operation when the required tools are exposed.
-- Offload bounded, context-heavy, repetitive or parallel work to qualified local models, including Kimi K3 as one recommended option, when doing so saves resident context or time without lowering quality.
+- Offload bounded, context-heavy, repetitive or parallel work to qualified optional models only when measured quality, context, time, and cost evidence beats the resident route.
 - Benchmark Blender and Unreal authoring by asset class. Split stages when Blender frees the editor lane or Unreal's Control Rig, Sequencer, retargeting, procedural tools, or in-engine workflow wins.
 - Keep native Unreal MCP, optional VibeUE live Python, and editor-closed Unreal Python/commandlets as separate routes behind one capability contract.
 - Register optional surfaces with trust, consent, integrity, permissions, qualification, context cost and invalidation state; activate only the smallest phase-specific set.
@@ -333,7 +333,7 @@ The target already contains a different file. Forge preserves it and writes the 
 
 Core: Codex, this plugin, Python 3.10+, and upstream GSD. Forge provides a separately approved, stable-version-pinned GSD installer because GSD is required for the full phase workflow. Unreal is required only for Unreal execution. A working VCS route is required before durable production writes.
 
-Everything else is capability-based: native Unreal MCP, Unreal Python/Editor Scripting plugins, VibeUE, Blender and its gateway, local model runtimes and adapters such as Kimi K3, image/audio/video providers, BuildGraph/Horde, DDC, and platform SDKs. Codex remains the fallback when an offload provider is absent. See [dependency policy](docs/dependency-policy.md).
+Everything else is capability-based: native Unreal MCP, Unreal Python/Editor Scripting plugins, VibeUE, Blender and its gateway, local model runtimes and provider-neutral adapters, image/audio/video providers, BuildGraph/Horde, DDC, and platform SDKs. Codex remains the fallback when an offload provider is absent. See [dependency policy](docs/dependency-policy.md).
 
 ## Status and verification
 

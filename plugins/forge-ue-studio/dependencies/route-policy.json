@@ -14,7 +14,7 @@
     "acceptance_probe"
   ],
   "score": {
-    "positive": ["expected_quality", "locality_free_bonus", "parallelism_gain"],
+    "positive": ["expected_quality", "locality_advantage", "verified_cost_advantage", "parallelism_gain"],
     "negative": ["retry_risk", "latency", "monetary_cost", "queue_cost", "lane_contention", "handoff_cost"]
   },
   "tie_break_order": ["already_installed", "zero_marginal_cost", "local", "lower_lane_contention"],

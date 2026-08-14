@@ -156,7 +156,7 @@ class ForgeInstallerTests(unittest.TestCase):
                         "verdict": "PASS",
                         "capabilities": ["worker.context-heavy-bounded"],
                         "lanes": ["model-local"],
-                        "metrics": {"expected_quality": 0.9, "locality_free_bonus": 0.4, "parallelism_gain": 0.2, "retry_risk": 0.1},
+                        "metrics": {"expected_quality": 0.9, "locality_advantage": 0.2, "verified_cost_advantage": 0.2, "parallelism_gain": 0.2, "retry_risk": 0.1},
                     }
                 ],
             }
@@ -201,6 +201,19 @@ class ForgeInstallerTests(unittest.TestCase):
             result = forge.validate_payload("attempt-result", str(payload_path))
             self.assertFalse(result["ok"])
             self.assertIn("missing required field: observed_facts", result["errors"])
+
+    def test_repository_has_no_removed_provider_coupling(self):
+        banned = ("ki" + "mi", "moon" + "shot")
+        roots = [ROOT / "README.md", ROOT / "CHANGELOG.md", ROOT / "docs", ROOT / "plugins"]
+        checked = []
+        for root in roots:
+            files = [root] if root.is_file() else root.rglob("*")
+            for path in files:
+                if path.is_file() and path.suffix.lower() in {".md", ".py", ".json", ".toml", ".ps1"}:
+                    checked.append(path)
+                    text = path.read_text(encoding="utf-8-sig").casefold()
+                    self.assertFalse(any(term in text for term in banned), str(path.relative_to(ROOT)))
+        self.assertTrue(checked)
 
 
 if __name__ == "__main__":
