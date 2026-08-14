@@ -1,0 +1,5 @@
+{
+  "schema": "forge.learnings/v1",
+  "records": [],
+  "promotion_policy": {"minimum_independent_passes": 2, "failed_attempts_visible": true, "stale_on_environment_change": true}
+}

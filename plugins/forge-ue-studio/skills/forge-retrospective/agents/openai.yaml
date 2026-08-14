@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge: Investigate and Learn"
+  short_description: "Run forensics and promote proven learnings"
+  default_prompt: "Use $forge-retrospective to investigate this failure read-only and extract only evidence-backed learnings."

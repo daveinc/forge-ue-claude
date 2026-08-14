@@ -1,0 +1,25 @@
+# Forge project directives
+
+- Keep GSD as the phase engine unless an extension-gap test proves a minimal fork necessary.
+- Do not mutate Unreal packages without the project write lane and a VCS-safe rollback route.
+- Keep native MCP, live Python, editor-closed commandlets, and human editor work mutually exclusive under the project super-lock.
+- Ask for capabilities, never named tools. Select only AVAILABLE_VERIFIED routes.
+- Treat detection status and task qualification separately. Optional providers begin UNQUALIFIED and pass only the tested task/complexity tier.
+- Register executable surfaces, permissions, integrity, provenance, licence, health, cost, context cost, fallbacks, consent and invalidation triggers before activation.
+- Activate optional skills, MCPs, APIs and model surfaces only for phases and packets that need them; keep one canonical surface for duplicate capabilities.
+- Use Codex as the resident default for orchestration, design, code, review, visual generation and Blender/Unreal operation when exposed.
+- Offload bounded context-heavy, repetitive or parallel tasks to qualified free/local workers when total context/time cost improves; Kimi K3 is one candidate, not a department owner.
+- Keep unresolved design, novel architecture, cross-system integration, delicate Unreal mutation, final subjective art and synthesis on Codex unless another worker proves the exact complexity tier.
+- Give offload workers minimal referral packets and require structured evidence; never forward the full GDD or resident conversation by default.
+- Run playable and visual DAGs concurrently after their shared asset interfaces are approved.
+- Benchmark Blender and Unreal authoring by asset class and allow split-stage routes.
+- Give workers bounded packets and referral sources, not the full GDD or prior chat.
+- Isolate concurrent text/code writers in clean-base Git worktrees; protect binary assets with LFS locks or the project-exclusive lease. Reviewers use read-only copies or diffs.
+- Packet results must separate observed facts, inferences, findings, touched artifacts, verification, residual risk and next action.
+- Review plans through bounded source-grounded convergence cycles. Stop and escalate when concern counts stall or the cycle limit is reached.
+- Run Research discovery, classification, conflict, approval, evaluation and retrieval registration during first install and whenever capabilities change.
+- Run read-only forensics before repair when state is inconsistent. Promote learnings only after repeated evidence-backed success; never erase failed attempts.
+- Use adversarial gameplay and in-engine-frame comparison as a bounded vertical-slice loop with blind alternatives and a human stop/feel gate.
+- Require machine evidence plus independent review before DONE. Human owners retain subjective art and feel gates.
+- Preserve provenance for generated and third-party assets. Never persist secret values.
+- Keep scorecard truth in JSON; generate visually verified XLSX/CSV views only when a human or production gate benefits from them.

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.research-record/v1",
+  "type": "object",
+  "required": ["id", "source", "source_type", "version", "license", "trust", "classification", "conflicts", "status", "retrieval_keys", "created_at"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "source": {"type": "string", "minLength": 1},
+    "source_type": {"enum": ["documentation", "api", "mcp", "cli", "code", "model", "project", "media"]},
+    "version": {"type": ["string", "null"]},
+    "license": {"type": ["string", "null"]},
+    "trust": {"enum": ["AUTHORITATIVE", "PRIMARY", "SECONDARY", "UNVERIFIED"]},
+    "classification": {"type": "array", "items": {"type": "string"}},
+    "conflicts": {"type": "array", "items": {"type": "object"}},
+    "status": {"enum": ["DISCOVERED", "STAGED", "APPROVED", "REJECTED", "STALE"]},
+    "retrieval_keys": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "created_at": {"type": "string"}
+  },
+  "additionalProperties": true
+}

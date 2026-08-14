@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forge-ue-studio"
+version = "0.1.0"
+description = "Codex-native, capability-routed Unreal studio orchestration"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = []
+
+[tool.setuptools]
+py-modules = []

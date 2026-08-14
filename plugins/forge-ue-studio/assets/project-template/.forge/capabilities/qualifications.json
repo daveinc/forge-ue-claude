@@ -1,0 +1,5 @@
+{
+  "schema": "forge.provider-qualifications/v1",
+  "evaluations": [],
+  "rule": "A provider passes only the exact task class and complexity tier supported by current evidence."
+}

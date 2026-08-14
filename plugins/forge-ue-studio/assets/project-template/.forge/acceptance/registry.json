@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "suites": [
+    {"id": "FORGE-CORE-01", "purpose": "project overlay and idempotent resume"},
+    {"id": "FORGE-CTX-01", "purpose": "bounded cold-start work packet"},
+    {"id": "FORGE-UE-01", "purpose": "Unreal route isolation and fallback"},
+    {"id": "FORGE-VIS-01", "purpose": "concept-to-Unreal asset evidence"},
+    {"id": "FORGE-ROUTE-01", "purpose": "Codex resident baseline and qualified local offload"},
+    {"id": "FORGE-ROUTE-02", "purpose": "Blender-versus-Unreal authoring benchmark"},
+    {"id": "FORGE-CTX-02", "purpose": "bounded local-worker context and structured evidence return"},
+    {"id": "FORGE-CAP-01", "purpose": "capability trust, consent, integrity, activation and invalidation"},
+    {"id": "FORGE-EVAL-01", "purpose": "task-and-complexity provider qualification with known-good and seeded-bad controls"},
+    {"id": "FORGE-PLAN-01", "purpose": "source-grounded plan review convergence and stall escalation"},
+    {"id": "FORGE-RESULT-01", "purpose": "attempt result evidence boundaries and independent verification"},
+    {"id": "FORGE-RESEARCH-01", "purpose": "source classification, conflict gate, approval and retrieval registration"},
+    {"id": "FORGE-LEARN-01", "purpose": "forensics and evidence-backed learning promotion"},
+    {"id": "FORGE-GAME-01", "purpose": "bounded gameplay gauntlet with blind comparison and human stop gate"},
+    {"id": "FORGE-ISO-01", "purpose": "clean-revision worktree isolation for text/code and exclusive ownership for binary assets"},
+    {"id": "FORGE-SCORE-01", "purpose": "canonical JSON production metrics with reproducible optional XLSX or CSV exports"}
+  ]
+}

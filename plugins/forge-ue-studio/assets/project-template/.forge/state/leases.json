@@ -1,0 +1,8 @@
+{
+  "schema": "forge.lane-leases/v1",
+  "leases": [],
+  "exclusive_groups": {
+    "unreal-project-super-lock": ["ue-live-native-mcp", "ue-live-python", "ue-editor-closed-api", "human-editor"],
+    "vcs-write": ["project-files", "generated-assets", "build-config"]
+  }
+}

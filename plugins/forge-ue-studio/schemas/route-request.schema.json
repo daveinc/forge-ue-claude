@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.route-request/v1",
+  "type": "object",
+  "required": ["task_class", "complexity", "bounded", "required_capabilities", "required_lanes", "mutation_risk"],
+  "properties": {
+    "task_class": {"type": "string", "minLength": 1},
+    "complexity": {"enum": ["low", "medium", "high", "critical"]},
+    "bounded": {"type": "boolean"},
+    "required_capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "required_lanes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "mutation_risk": {"enum": ["read-only", "reversible", "project-write", "external-write", "destructive"]}
+  },
+  "additionalProperties": true
+}

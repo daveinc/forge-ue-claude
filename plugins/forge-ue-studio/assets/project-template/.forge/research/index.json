@@ -1,0 +1,7 @@
+{
+  "schema": "forge.research-index/v1",
+  "sources": [],
+  "conflicts": [],
+  "retrieval_keys": {},
+  "rule": "Discovered sources are staged and conflict-checked before they alter approved project contracts."
+}

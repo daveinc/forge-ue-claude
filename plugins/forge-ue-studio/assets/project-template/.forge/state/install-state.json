@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "core_overlay": "INSTALLED",
+  "optional_decisions": {},
+  "last_verified_snapshot": null,
+  "capability_ledger": "capabilities/consent-ledger.json",
+  "qualification_registry": "capabilities/qualifications.json",
+  "phase_activation": "context/activation-policy.json"
+}

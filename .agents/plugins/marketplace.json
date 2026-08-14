@@ -1,0 +1,20 @@
+{
+  "name": "forge-ue-studio-local",
+  "interface": {
+    "displayName": "Forge UE Studio"
+  },
+  "plugins": [
+    {
+      "name": "forge-ue-studio",
+      "source": {
+        "source": "local",
+        "path": "./plugins/forge-ue-studio"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

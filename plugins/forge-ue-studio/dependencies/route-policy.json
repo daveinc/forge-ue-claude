@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "resident_default": {
+    "provider": "codex",
+    "roles": ["orchestration", "design", "code", "review", "visual-generation", "tool-operation", "final-synthesis"],
+    "fallback_for_optional_workers": true
+  },
+  "hard_filters": [
+    "required_tool_access",
+    "required_modality",
+    "quality_floor",
+    "safety_and_permission",
+    "context_capacity",
+    "acceptance_probe"
+  ],
+  "score": {
+    "positive": ["expected_quality", "locality_free_bonus", "parallelism_gain"],
+    "negative": ["retry_risk", "latency", "monetary_cost", "queue_cost", "lane_contention", "handoff_cost"]
+  },
+  "tie_break_order": ["already_installed", "zero_marginal_cost", "local", "lower_lane_contention"],
+  "qualification": {
+    "states": ["UNQUALIFIED", "PARTIAL", "QUALIFIED", "STALE"],
+    "default_for_optional_provider": "UNQUALIFIED",
+    "grant_scope": ["provider", "task_class", "complexity", "required_capabilities", "environment_fingerprint"],
+    "controls": ["known-good", "seeded-bad"],
+    "never_infer_from": ["installed", "enabled", "free", "large-context", "model-name", "single-success"]
+  },
+  "offload_policy": {
+    "consider_for": ["context-heavy-extraction", "indexing", "asset-breakdown", "image-to-3d-breakdown", "bounded-code", "test-generation", "first-pass-review", "variant-generation", "log-triage", "repetitive-dcc-operation"],
+    "keep_on_codex_by_default": ["decomposition", "unresolved-design", "novel-architecture", "cross-system-integration", "delicate-unreal-mutation", "subjective-final-art", "final-synthesis", "recovery"],
+    "packet": ["objective", "non-goals", "minimal-source-referrals", "schema", "acceptance", "evidence"],
+    "require_task_and_complexity_eval": true
+  },
+  "visual_authoring": {
+    "routes": ["blender", "unreal"],
+    "allow_split_stages": true,
+    "benchmark_dimensions": ["quality", "elapsed_time", "rework_rate", "gpu_pressure", "editor_lane_pressure", "round_trip_cost"]
+  },
+  "context_activation": {
+    "mode": "phase-scoped-on-demand",
+    "always_on": ["resident_codex", "forge_state", "vcs_revision"],
+    "disable_duplicate_surfaces": true,
+    "measure_host_context_cost": true,
+    "never_assume_cross-runtime_token_cost": true
+  },
+  "review_convergence": {
+    "max_cycles": 3,
+    "source_grounding": true,
+    "stall_threshold": 1,
+    "escalate_to_human": true,
+    "current_cycle_counts_only": true
+  },
+  "model_discovery_order": ["resident_codex", "installed_local", "installed_entitled_service", "approved_remote_api"],
+  "never_implicit": ["package_install", "model_download", "plugin_enable", "path_change", "credential_write", "uproject_edit"]
+}

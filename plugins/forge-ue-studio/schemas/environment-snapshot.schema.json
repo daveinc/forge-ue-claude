@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.environment-snapshot/v1",
+  "type": "object",
+  "required": ["schema", "generated_at", "project", "tools", "unreal", "providers", "capabilities", "assumptions"],
+  "properties": {
+    "schema": {"const": "forge.environment-snapshot/v1"},
+    "generated_at": {"type": "string"},
+    "project": {"type": "object"},
+    "tools": {"type": "object"},
+    "unreal": {"type": "object"},
+    "providers": {"type": "object"},
+    "capabilities": {"type": "array"},
+    "assumptions": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

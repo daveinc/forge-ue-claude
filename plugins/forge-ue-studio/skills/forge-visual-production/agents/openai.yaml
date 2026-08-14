@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge: Produce Visual Assets"
+  short_description: "Run concept-to-Unreal visual production"
+  default_prompt: "Use $forge-visual-production with Codex resident and qualified local offload for this asset."

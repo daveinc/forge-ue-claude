@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge: Absorb Capability"
+  short_description: "Turn tools and docs into tested capabilities"
+  default_prompt: "Use $forge-research to absorb this tool or API into a verified Forge capability contract."

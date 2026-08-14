@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.attempt-result/v1",
+  "type": "object",
+  "required": ["work_order", "attempt", "provider", "verdict", "observed_facts", "inferences", "findings", "touched", "evidence", "verification", "residual_risk", "next_action"],
+  "properties": {
+    "work_order": {"type": "string", "minLength": 1},
+    "attempt": {"type": "integer", "minimum": 1},
+    "provider": {"type": "string", "minLength": 1},
+    "verdict": {"enum": ["PASS", "FAIL", "PARTIAL", "BLOCKED", "INDETERMINATE"]},
+    "observed_facts": {"type": "array", "items": {"type": "string"}},
+    "inferences": {"type": "array", "items": {"type": "string"}},
+    "findings": {"type": "array", "items": {"type": "object"}},
+    "touched": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "evidence": {"type": "array", "items": {"type": "object"}, "minItems": 1},
+    "verification": {"type": "array", "items": {"type": "object"}},
+    "residual_risk": {"type": "array", "items": {"type": "string"}},
+    "next_action": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": true
+}

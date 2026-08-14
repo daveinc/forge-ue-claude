@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "routing_policy": "codex-resident-with-qualified-local-offload",
+  "resident_default_worker": "codex",
+  "local_offload": {
+    "enabled_when_verified": true,
+    "prefer_for_bounded_context_heavy_work": true,
+    "require_task_and_complexity_eval": true,
+    "fallback": "codex"
+  },
+  "human_gates": ["game-mandate", "primary-visual-direction", "subjective-art", "game-feel", "release"],
+  "parallel_departments": ["design", "engineering", "visual", "audio", "research", "qa"],
+  "capability_activation": {
+    "mode": "phase-scoped-on-demand",
+    "always_on": ["worker.codex.resident", "vcs.revision", "forge.state"],
+    "disable_duplicate_surfaces": true,
+    "require_consent_for_executable_surfaces": true
+  },
+  "plan_review": {
+    "max_cycles": 3,
+    "source_grounding": true,
+    "stall_threshold": 1,
+    "human_escalation": true
+  },
+  "learning": {
+    "promotion_requires_repeated_success": true,
+    "minimum_independent_passes": 2,
+    "failed_attempts_remain_visible": true
+  },
+  "worker_isolation": {
+    "text_and_code_default": "git-worktree",
+    "binary_asset_default": "lfs-lock-or-project-exclusive",
+    "require_clean_base_revision": true,
+    "require_declared_write_scope": true
+  },
+  "production_scorecards": {
+    "canonical_format": "json",
+    "optional_exports": ["xlsx", "csv"],
+    "export_on": ["human-request", "phase-gate", "portfolio-review"],
+    "exports_are_derived": true
+  },
+  "editor_routes": ["native-mcp", "vibeue-live-python", "editor-closed-python-commandlet", "human"],
+  "visual_authoring_routes": ["blender", "unreal"],
+  "allow_placeholder_art": true,
+  "allow_split_visual_route": true,
+  "auto_install_optional_dependencies": false
+}

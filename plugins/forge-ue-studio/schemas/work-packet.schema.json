@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.work-packet/v2",
+  "type": "object",
+  "required": ["work_order", "revision", "role", "task_class", "complexity", "objective", "inputs", "referrals", "write_scope", "isolation", "leases", "capabilities", "context_budget", "output_contract", "acceptance", "verification", "evidence", "invalidation_hashes"],
+  "properties": {
+    "work_order": {"type": "string", "minLength": 1},
+    "revision": {"type": "string", "minLength": 1},
+    "role": {"type": "string", "minLength": 1},
+    "task_class": {"type": "string", "minLength": 1},
+    "complexity": {"enum": ["low", "medium", "high", "critical"]},
+    "objective": {"type": "string", "minLength": 1},
+    "inputs": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "referrals": {"type": "array", "items": {"type": "object"}},
+    "write_scope": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "isolation": {
+      "type": "object",
+      "required": ["mode", "base_revision"],
+      "properties": {
+        "mode": {"enum": ["read-only", "git-worktree", "lfs-lock", "project-exclusive"]},
+        "base_revision": {"type": "string", "minLength": 1},
+        "workspace": {"type": "string"},
+        "branch": {"type": "string"},
+        "lock_targets": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "additionalProperties": false
+    },
+    "leases": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "context_budget": {"type": "object"},
+    "output_contract": {"type": "object"},
+    "acceptance": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "verification": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "evidence": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "non_goals": {"type": "array", "items": {"type": "string"}},
+    "invalidation_hashes": {"type": "object", "minProperties": 1}
+  },
+  "additionalProperties": true
+}

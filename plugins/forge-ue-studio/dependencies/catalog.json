@@ -1,0 +1,123 @@
+{
+  "schema_version": 2,
+  "dependencies": [
+    {
+      "id": "codex",
+      "classification": "core-resident-default",
+      "capabilities": ["host.codex", "worker.orchestration", "worker.design", "worker.code", "worker.review", "worker.visual-generation", "worker.tool-operation"],
+      "fallback": null
+    },
+    {
+      "id": "gsd",
+      "classification": "core-phase-engine",
+      "capabilities": ["workflow.gsd"],
+      "fallback": "minimal-fork-only-after-extension-gap-test",
+      "source": "https://github.com/open-gsd/gsd-core",
+      "install": {
+        "package": "@opengsd/gsd-core",
+        "pinned_version": "1.8.0",
+        "runtime": "codex",
+        "scope": "global",
+        "preview_command": ".\\install.ps1 -Mode GSD",
+        "apply_command": ".\\install.ps1 -Mode GSD -Apply",
+        "requires_user_approval": true
+      }
+    },
+    {
+      "id": "unreal-engine",
+      "classification": "required-for-unreal-execution",
+      "capabilities": ["ue.project", "ue.build", "ue.cook"],
+      "fallback": "planning-research-and-dcc-only"
+    },
+    {
+      "id": "vcs",
+      "classification": "required-before-production-writes",
+      "capabilities": ["vcs.revision", "vcs.rollback", "vcs.ownership"],
+      "fallback": "read-only"
+    },
+    {
+      "id": "unreal-native-mcp",
+      "classification": "recommended-optional-route",
+      "capabilities": ["ue.live.typed", "ue.pie", "ue.viewport"],
+      "fallback": "ue.editor-closed-or-human"
+    },
+    {
+      "id": "unreal-python",
+      "classification": "recommended-optional-route",
+      "capabilities": ["ue.python.commandlet", "ue.batch"],
+      "fallback": "ue.native-mcp-or-cpp-uat"
+    },
+    {
+      "id": "vibeue",
+      "classification": "optional-accelerator",
+      "capabilities": ["ue.live.python"],
+      "fallback": "ue.native-mcp-plus-editor-closed-python"
+    },
+    {
+      "id": "blender-gateway",
+      "classification": "optional-dcc-route",
+      "capabilities": ["dcc.mesh", "dcc.rig", "dcc.animation", "dcc.export"],
+      "fallback": "ue-authoring-or-approved-assets-or-placeholders"
+    },
+    {
+      "id": "codex-imagegen",
+      "classification": "resident-visual-generation-surface",
+      "capabilities": ["visual.raster.generate", "visual.raster.edit", "visual.texture", "visual.sprite", "visual.board"],
+      "fallback": "licensed-references-or-placeholders"
+    },
+    {
+      "id": "codex-image-direction",
+      "classification": "resident-visual-planning-surface",
+      "capabilities": ["visual.reference-decomposition", "visual.character-sheet", "visual.turnaround", "visual.storyboard", "visual.prompt-contract"],
+      "fallback": "manual-visual-brief"
+    },
+    {
+      "id": "codex-video-direction",
+      "classification": "resident-cinematics-planning-surface",
+      "capabilities": ["cinematic.storyboard", "cinematic.shot-card", "cinematic.previs", "cinematic.continuity", "audio.direction"],
+      "fallback": "manual-shot-list"
+    },
+    {
+      "id": "codex-creative-methods",
+      "classification": "resident-optional-ideation-method",
+      "capabilities": ["design.divergent-ideation", "design.adversarial-scoring", "design.refinement"],
+      "fallback": "forge-brainstorming"
+    },
+    {
+      "id": "codex-spreadsheets",
+      "classification": "resident-optional-production-reporting-surface",
+      "capabilities": ["production.scorecard.xlsx", "production.scorecard.csv", "production.scorecard.visual-qa"],
+      "fallback": "canonical-json-scorecard"
+    },
+    {
+      "id": "graphify",
+      "classification": "optional-research-graph",
+      "capabilities": ["research.relationship-graph", "research.retrieval", "research.community-analysis"],
+      "fallback": "indexed-domain-cards"
+    },
+    {
+      "id": "ollama",
+      "classification": "optional-local-model-runtime",
+      "capabilities": ["model.local.discovery", "model.local.inference"],
+      "fallback": "resident-codex"
+    },
+    {
+      "id": "lm-studio",
+      "classification": "optional-local-model-runtime",
+      "capabilities": ["model.local.discovery", "model.openai-compatible-endpoint"],
+      "fallback": "ollama-or-resident-codex"
+    },
+    {
+      "id": "kimi-k3",
+      "classification": "recommended-optional-local-offload-candidate",
+      "capabilities": ["model.multimodal", "model.visual-critique", "model.code-review", "model.tool-use"],
+      "fallback": "resident-codex"
+    },
+    {
+      "id": "local-model-runtime",
+      "classification": "optional-offload-runtime",
+      "capabilities": ["model.local", "worker.context-heavy-bounded", "worker.code-review", "worker.visual-breakdown", "worker.tool-operation"],
+      "fallback": "resident-codex"
+    }
+  ]
+}

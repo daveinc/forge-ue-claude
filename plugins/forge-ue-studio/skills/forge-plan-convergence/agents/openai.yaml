@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge: Converge Plan"
+  short_description: "Review, ground, revise, and escalate plans"
+  default_prompt: "Use $forge-plan-convergence to challenge this phase plan until it converges or requires human escalation."

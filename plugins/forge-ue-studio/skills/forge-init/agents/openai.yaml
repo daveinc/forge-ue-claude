@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge: Start or Adopt Project"
+  short_description: "Interview, plan, and launch a game studio"
+  default_prompt: "Use $forge-init to turn my game idea into an approved GDD and parallel production plan."

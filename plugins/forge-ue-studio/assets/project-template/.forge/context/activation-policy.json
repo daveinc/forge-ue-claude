@@ -1,0 +1,19 @@
+{
+  "schema": "forge.context-activation/v1",
+  "mode": "phase-scoped-on-demand",
+  "always_on": ["worker.codex.resident", "forge.state", "vcs.revision"],
+  "profiles": {
+    "design": ["worker.visual-direction", "research.retrieval"],
+    "gameplay": ["ue.project", "ue.build", "qa.gameplay"],
+    "visual": ["worker.visual-generation", "dcc.authoring", "ue.asset-import"],
+    "cinematics": ["worker.storyboard", "ue.sequencer", "audio.direction"],
+    "research": ["research.ingest", "research.graph", "model.local.runtime"],
+    "release": ["ue.build", "ue.cook", "qa.release", "platform.sdk"]
+  },
+  "rules": [
+    "Activate only capabilities required by the current packet.",
+    "Keep one canonical surface when providers expose duplicate capabilities.",
+    "Measure actual host context cost; do not copy another runtime's token estimate.",
+    "Deactivate stale or unhealthy optional surfaces without changing the kernel directives."
+  ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge: Diagnose Environment"
+  short_description: "Probe tools, routes, models, and constraints"
+  default_prompt: "Use $forge-doctor to survey this machine and produce a verified capability report."

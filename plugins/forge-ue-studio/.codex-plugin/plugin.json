@@ -1,0 +1,33 @@
+{
+  "name": "forge-ue-studio",
+  "version": "0.1.0+codex.20260814152534",
+  "description": "Codex-resident, capability-routed, GSD-compatible Unreal production orchestration.",
+  "author": {
+    "name": "Dave"
+  },
+  "license": "MIT",
+  "keywords": [
+    "unreal-engine",
+    "game-development",
+    "gsd",
+    "blender",
+    "orchestration"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Forge UE Studio",
+    "shortDescription": "Orchestrate a capability-aware Unreal studio.",
+    "longDescription": "Uses Codex as the resident studio worker and supervisor, then discovers, consents, qualifies, activates and routes bounded work across Unreal, Blender, visual development, code, review, research, build and QA with persistent evidence and recovery state.",
+    "developerName": "Dave",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Turn my game idea into a Forge production plan.",
+      "Survey and qualify this project's capability routes.",
+      "Converge, route, and verify the next production phase."
+    ]
+  }
+}

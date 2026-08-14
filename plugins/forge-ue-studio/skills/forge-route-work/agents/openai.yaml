@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge: Route Studio Work"
+  short_description: "Dispatch bounded work across studio departments"
+  default_prompt: "Use $forge-route-work to keep Codex resident and route qualified bounded work to local workers."

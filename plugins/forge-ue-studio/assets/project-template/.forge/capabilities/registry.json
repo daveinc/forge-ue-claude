@@ -1,0 +1,22 @@
+{
+  "schema": "forge.capability-registry/v2",
+  "schema_version": 2,
+  "snapshot": null,
+  "providers": [
+    {
+      "id": "codex",
+      "kind": "resident-model",
+      "locality": "resident",
+      "status": "AVAILABLE_UNVERIFIED",
+      "qualification": {"state": "PARTIAL", "task_classes": ["orchestration", "final-synthesis"]},
+      "note": "Resident default. Runtime-specific tools and modalities still require host probes."
+    }
+  ],
+  "capabilities": [],
+  "activation": {
+    "mode": "phase-scoped-on-demand",
+    "active": ["worker.codex.resident", "forge.state"],
+    "disabled_duplicates": []
+  },
+  "note": "Populate only from probes. Detection without a safe probe is AVAILABLE_UNVERIFIED; optional workers begin UNQUALIFIED."
+}

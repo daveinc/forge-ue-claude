@@ -1,0 +1,8 @@
+{
+  "schema": "forge.visual-registry/v1",
+  "briefs": [],
+  "boards": [],
+  "asset_interfaces": [],
+  "provenance": [],
+  "human_gates": ["primary-direction", "likeness", "appeal", "final-art", "game-feel"]
+}

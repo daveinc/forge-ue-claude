@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.review-cycle/v1",
+  "type": "object",
+  "required": ["review_id", "target", "cycle", "max_cycles", "reviewers", "current_high", "current_actionable", "source_grounding", "status", "history"],
+  "properties": {
+    "review_id": {"type": "string", "minLength": 1},
+    "target": {"type": "string", "minLength": 1},
+    "cycle": {"type": "integer", "minimum": 0},
+    "max_cycles": {"type": "integer", "minimum": 1},
+    "reviewers": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+    "current_high": {"type": "integer", "minimum": 0},
+    "current_actionable": {"type": "integer", "minimum": 0},
+    "source_grounding": {"type": "boolean"},
+    "status": {"enum": ["PENDING", "REVIEWING", "REVISING", "CONVERGED", "STALLED", "ESCALATED"]},
+    "history": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": true
+}

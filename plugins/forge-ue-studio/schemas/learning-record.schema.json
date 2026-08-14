@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.learning-record/v1",
+  "type": "object",
+  "required": ["id", "kind", "claim", "observations", "confidence", "scope", "promotion", "invalidation_triggers", "created_at"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["decision", "lesson", "pattern", "surprise", "failure", "recipe"]},
+    "claim": {"type": "string", "minLength": 1},
+    "observations": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "confidence": {"enum": ["LOW", "MEDIUM", "HIGH"]},
+    "scope": {"type": "object"},
+    "promotion": {"enum": ["QUARANTINED", "CANDIDATE", "APPROVED", "REJECTED", "STALE"]},
+    "invalidation_triggers": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "created_at": {"type": "string"}
+  },
+  "additionalProperties": true
+}

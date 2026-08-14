@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.asset-interface/v1",
+  "type": "object",
+  "required": ["asset_id", "units", "pivot", "collision", "material_slots", "performance_budget", "approval"],
+  "properties": {
+    "asset_id": {"type": "string", "minLength": 1},
+    "units": {"const": "centimeters"},
+    "dimensions": {"type": "object"},
+    "pivot": {"type": "string"},
+    "collision": {"type": "string"},
+    "skeleton": {"type": ["string", "null"]},
+    "sockets": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "animation_events": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "material_slots": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "performance_budget": {"type": "object"},
+    "approval": {"enum": ["DRAFT", "HUMAN_APPROVED", "REJECTED"]}
+  },
+  "additionalProperties": true
+}

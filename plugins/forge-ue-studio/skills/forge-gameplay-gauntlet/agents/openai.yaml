@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge: Run Gameplay Gauntlet"
+  short_description: "Fan out, compare, and improve playable quality"
+  default_prompt: "Use $forge-gameplay-gauntlet to improve this playable loop against the named reference with blind evidence-based comparison."

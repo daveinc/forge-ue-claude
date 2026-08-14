@@ -1,0 +1,5 @@
+{
+  "schema": "forge.review-registry/v1",
+  "reviews": [],
+  "defaults": {"max_cycles": 3, "source_grounding": true, "stall_threshold": 1, "require_independent_verifier": true}
+}

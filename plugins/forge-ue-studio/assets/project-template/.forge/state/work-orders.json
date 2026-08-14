@@ -1,0 +1,6 @@
+{
+  "schema": "forge.work-orders/v1",
+  "orders": [],
+  "terminal_states": ["ACCEPTED", "REJECTED", "CANCELLED", "SUPERSEDED"],
+  "rule": "Resume from persisted order, attempt and lease state rather than conversation memory."
+}

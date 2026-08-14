@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.capability-contract/v2",
+  "type": "object",
+  "required": ["capability", "provider", "kind", "status", "lane", "permissions", "integrity", "provenance", "qualification", "cost", "context_cost", "fallbacks", "probe", "acceptance_suites", "invalidation_triggers"],
+  "properties": {
+    "capability": {"type": "string", "minLength": 1},
+    "provider": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["resident-model", "local-model", "remote-model", "mcp", "api", "cli", "dcc", "engine", "workflow", "human"]},
+    "status": {"enum": ["AVAILABLE_VERIFIED", "AVAILABLE_UNVERIFIED", "UNAVAILABLE_OPTIONAL", "UNAVAILABLE_BLOCKING", "STALE"]},
+    "lane": {"type": "string", "minLength": 1},
+    "locality": {"enum": ["resident", "local", "remote", "human"]},
+    "executable_surfaces": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "permissions": {
+      "type": "object",
+      "required": ["read", "write", "network", "secrets"],
+      "properties": {
+        "read": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "write": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "network": {"type": "boolean"},
+        "secrets": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "integrity": {"type": "object"},
+    "provenance": {"type": "object"},
+    "license": {"type": ["string", "null"]},
+    "health": {"enum": ["UNKNOWN", "HEALTHY", "DEGRADED", "UNAVAILABLE", "STALE"]},
+    "qualification": {
+      "type": "object",
+      "required": ["state", "task_classes"],
+      "properties": {
+        "state": {"enum": ["UNQUALIFIED", "PARTIAL", "QUALIFIED", "STALE"]},
+        "task_classes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "additionalProperties": true
+    },
+    "cost": {"type": "object"},
+    "context_cost": {"type": "object"},
+    "enables": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "constraints": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "fallbacks": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "probe": {"type": "string", "minLength": 1},
+    "acceptance_suites": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+    "invalidation_triggers": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true}
+  },
+  "additionalProperties": true
+}

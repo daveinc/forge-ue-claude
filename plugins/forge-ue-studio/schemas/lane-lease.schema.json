@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.lane-lease/v1",
+  "type": "object",
+  "required": ["lease_id", "lane", "owner", "work_order", "write_scope", "acquired_at", "expires_at", "status"],
+  "properties": {
+    "lease_id": {"type": "string", "minLength": 1},
+    "lane": {"type": "string", "minLength": 1},
+    "owner": {"type": "string", "minLength": 1},
+    "work_order": {"type": "string", "minLength": 1},
+    "write_scope": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+    "acquired_at": {"type": "string"},
+    "expires_at": {"type": "string"},
+    "status": {"enum": ["ACTIVE", "RELEASED", "EXPIRED", "BROKEN"]}
+  },
+  "additionalProperties": true
+}

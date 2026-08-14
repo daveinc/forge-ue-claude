@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.provider-evaluation/v1",
+  "type": "object",
+  "required": ["provider", "task_class", "complexity", "verdict", "capabilities", "controls", "metrics", "evidence", "tested_at", "invalidation_triggers"],
+  "properties": {
+    "provider": {"type": "string", "minLength": 1},
+    "task_class": {"type": "string", "minLength": 1},
+    "complexity": {"enum": ["low", "medium", "high", "critical"]},
+    "verdict": {"enum": ["PASS", "FAIL", "PARTIAL", "STALE"]},
+    "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "controls": {"type": "object", "required": ["known_good", "seeded_bad"]},
+    "metrics": {"type": "object"},
+    "evidence": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "tested_at": {"type": "string"},
+    "invalidation_triggers": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+  },
+  "additionalProperties": true
+}

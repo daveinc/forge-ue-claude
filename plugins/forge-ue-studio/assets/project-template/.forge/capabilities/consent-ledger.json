@@ -1,0 +1,5 @@
+{
+  "schema": "forge.consent-ledger/v1",
+  "entries": [],
+  "rule": "Executable surfaces, network access, secrets, external writes, package installation, model downloads, plugin activation and project-file edits require explicit scoped consent."
+}

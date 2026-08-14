@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge: Manage Capabilities"
+  short_description: "Consent, qualify, and activate tool surfaces"
+  default_prompt: "Use $forge-capability-admin to qualify and activate the smallest safe capability set for this phase."

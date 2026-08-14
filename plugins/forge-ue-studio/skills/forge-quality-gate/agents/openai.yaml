@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge: Gate Quality"
+  short_description: "Design coverage and verify completion evidence"
+  default_prompt: "Use $forge-quality-gate to independently verify this work order against its acceptance contract."
