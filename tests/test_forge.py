@@ -4,6 +4,7 @@ import importlib.util
 import json
 import shutil
 import subprocess
+import tempfile
 import unittest
 import uuid
 from contextlib import contextmanager
@@ -12,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FORGE_PATH = ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
-TEMP_ROOT = ROOT / "tests" / ".tmp"
+TEMP_ROOT = Path(tempfile.gettempdir()) / "forge-ue-studio-tests"
 TEMP_ROOT.mkdir(parents=True, exist_ok=True)
 SPEC = importlib.util.spec_from_file_location("forge_cli", FORGE_PATH)
 assert SPEC and SPEC.loader
@@ -27,10 +28,24 @@ def workspace_tempdir():
     try:
         yield path
     finally:
-        shutil.rmtree(path)
+        removed = path.with_name(path.name + "_removed")
+        if path.exists():
+            path.rename(removed)
 
 
 class ForgeInstallerTests(unittest.TestCase):
+    def setUp(self):
+        self.original_command_probe = forge.command_probe
+        forge.command_probe = lambda command, timeout=8: {
+            "ok": False,
+            "exit_code": 1,
+            "output": "",
+            "error": f"probe isolated in unit test: {command[0]}",
+        }
+
+    def tearDown(self):
+        forge.command_probe = self.original_command_probe
+
     def make_project(self, root: Path) -> Path:
         project = root / "ExampleGame"
         project.mkdir()
@@ -84,6 +99,19 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertEqual(result["mode"], "dry-run")
             self.assertFalse((project / ".forge").exists())
             self.assertTrue(any(item["action"] == "create" for item in result["actions"]))
+
+    def test_pre_project_overlay_installs_before_uproject_exists(self):
+        with workspace_tempdir() as temp:
+            project = temp / "PreProject"
+            project.mkdir()
+            result = forge.install_overlay(str(project), apply=True)
+            self.assertEqual(result["project_stage"], "pre-project")
+            self.assertIsNone(result["uproject"])
+            self.assertTrue((project / ".forge" / "state" / "lifecycle.json").is_file())
+            self.assertTrue((project / ".forge" / "state" / "packet-registry.json").is_file())
+            self.assertTrue((project / ".codex" / "agents" / "studio-director.toml").is_file())
+            self.assertTrue((project / "AGENTS.md").is_file())
+            self.assertTrue(forge.verify_overlay(str(project))["ok"])
 
     def test_gsd_install_is_preview_first_and_version_pinned(self):
         shell = shutil.which("pwsh") or shutil.which("powershell")
@@ -162,6 +190,7 @@ class ForgeInstallerTests(unittest.TestCase):
             }
             (project / ".forge" / "capabilities" / "qualifications.json").write_text(json.dumps(qualifications), encoding="utf-8")
             request = {
+                "work_order": "FI-HOST",
                 "task_class": "context-heavy-extraction",
                 "complexity": "low",
                 "bounded": True,
@@ -176,6 +205,71 @@ class ForgeInstallerTests(unittest.TestCase):
             request["complexity"] = "critical"
             request_path.write_text(json.dumps(request), encoding="utf-8")
             self.assertEqual(forge.route_work(str(project), str(request_path))["selected"], "codex")
+
+            request["work_order"] = "W1"
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Unregistered work_order"):
+                forge.route_work(str(project), str(request_path))
+
+    def test_lifecycle_enforces_gsd_artifacts_and_fresh_task_handoffs(self):
+        with workspace_tempdir() as temp:
+            project = temp / "LifecycleGame"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+
+            initial = forge.lifecycle_state(str(project))["state"]
+            self.assertTrue(initial["requires_fresh_task"])
+            self.assertEqual(initial["next_command"], "$forge-bootstrap --resume")
+
+            forge.lifecycle_state(str(project), "bootstrap-start", apply=True)
+            with self.assertRaisesRegex(ValueError, "bootstrap is incomplete"):
+                forge.lifecycle_state(str(project), "bootstrap-complete", apply=True)
+            packet_registry = json.loads((project / ".forge" / "state" / "packet-registry.json").read_text(encoding="utf-8"))
+            report = {
+                "schema": "forge.bootstrap-report/v1",
+                "verdict": "PASS",
+                "jobs": [{"work_order": item["id"], "status": "NOT_APPLICABLE", "result": "unit-test fixture"} for item in packet_registry["packets"]],
+                "delegation": {"mode": "test-fixture"},
+                "verified": [],
+                "assumed": [],
+                "unavailable": [],
+                "blocking": [],
+                "human_actions": [],
+                "evidence": [],
+                "next_action": "$forge-init",
+            }
+            (project / ".forge" / "state" / "bootstrap-report.json").write_text(json.dumps(report), encoding="utf-8")
+            completed_bootstrap = forge.lifecycle_state(str(project), "bootstrap-complete", apply=True)["state"]
+            self.assertEqual(completed_bootstrap["next_command"], "$forge-init")
+            self.assertTrue(completed_bootstrap["requires_fresh_task"])
+
+            forge.lifecycle_state(str(project), "init-start", apply=True)
+            with self.assertRaisesRegex(ValueError, "project initialization is incomplete"):
+                forge.lifecycle_state(str(project), "init-complete", apply=True)
+            planning = project / ".planning"
+            planning.mkdir()
+            for name in ("PROJECT.md", "ROADMAP.md", "STATE.md"):
+                (planning / name).write_text(f"# {name}\n", encoding="utf-8")
+            initialized = forge.lifecycle_state(str(project), "init-complete", apply=True)["state"]
+            self.assertEqual(initialized["stage"], "discuss")
+            self.assertEqual(initialized["next_command"], "$gsd-discuss-phase 1")
+            self.assertTrue(initialized["requires_fresh_task"])
+
+            forge.lifecycle_state(str(project), "discuss-start", phase=1, apply=True)
+            phase = planning / "phases" / "01-foundation"
+            phase.mkdir(parents=True)
+            with self.assertRaisesRegex(ValueError, "no CONTEXT.md"):
+                forge.lifecycle_state(str(project), "discuss-complete", phase=1, apply=True)
+            (phase / "01-CONTEXT.md").write_text("# Context\n", encoding="utf-8")
+            planned = forge.lifecycle_state(str(project), "discuss-complete", phase=1, apply=True)["state"]
+            self.assertEqual(planned["next_command"], "$gsd-plan-phase 1")
+
+    def test_packet_registry_has_unique_canonical_ids(self):
+        registry_path = ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state" / "packet-registry.json"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        ids = [packet["id"] for packet in registry["packets"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertIn("FI-HOST", ids)
 
     def test_contract_validator_preserves_evidence_boundaries(self):
         with workspace_tempdir() as temp:

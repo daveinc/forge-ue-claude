@@ -1,0 +1,21 @@
+{
+  "schema": "forge.packet-registry/v1",
+  "generation": 1,
+  "packets": [
+    {"id": "FI-HOST", "title": "Host and configuration investigation", "kind": "bootstrap", "source": "Forge installation wave 1"},
+    {"id": "FI-UNREAL", "title": "Unreal route investigation", "kind": "bootstrap", "source": "Forge installation wave 1"},
+    {"id": "FI-TOOLS", "title": "Tool and worker investigation", "kind": "bootstrap", "source": "Forge installation wave 1"},
+    {"id": "FI-VCS", "title": "VCS and infrastructure investigation", "kind": "bootstrap", "source": "Forge installation wave 1"},
+    {"id": "FI-POLICY", "title": "Conflict and policy analysis", "kind": "bootstrap", "source": "Forge installation wave 2"},
+    {"id": "FI-CAPABILITY", "title": "Capability profiling", "kind": "bootstrap", "source": "Forge installation wave 2"},
+    {"id": "FI-PROVIDER", "title": "Provider evaluation", "kind": "bootstrap", "source": "Forge installation wave 2"},
+    {"id": "FI-VISUAL", "title": "Visual route evaluation", "kind": "bootstrap", "source": "Forge installation wave 2"},
+    {"id": "FI-COMPILE", "title": "Workflow compilation", "kind": "bootstrap", "source": "Forge installation wave 3"},
+    {"id": "FI-CONTEXT", "title": "Context route compilation", "kind": "bootstrap", "source": "Forge installation wave 3"},
+    {"id": "FI-SYNTHESIS", "title": "Project overlay synthesis", "kind": "bootstrap", "source": "Forge installation wave 3"},
+    {"id": "FI-ACCEPT", "title": "Installation acceptance", "kind": "bootstrap", "source": "Forge installation wave 4"},
+    {"id": "FI-REVIEW", "title": "Fresh-reader installation review", "kind": "bootstrap", "source": "Forge installation wave 4"},
+    {"id": "FI-REPORT", "title": "Installation report", "kind": "bootstrap", "source": "Forge installation wave 4"}
+  ],
+  "aliases": []
+}

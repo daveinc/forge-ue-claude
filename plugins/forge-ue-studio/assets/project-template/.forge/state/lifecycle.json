@@ -1,0 +1,11 @@
+{
+  "schema": "forge.lifecycle/v1",
+  "generation": 0,
+  "stage": "bootstrap",
+  "status": "AWAITING_FRESH_TASK",
+  "phase": null,
+  "requires_fresh_task": true,
+  "next_command": "$forge-bootstrap --resume",
+  "updated_at": null,
+  "history": []
+}

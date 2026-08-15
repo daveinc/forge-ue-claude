@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Bootstrap"
+  short_description: "Install the project control plane and hand off safely."
+  default_prompt: "Use $forge-bootstrap to install or resume Forge with delegated, evidence-backed setup and a fresh-task handoff."

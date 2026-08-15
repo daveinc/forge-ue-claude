@@ -87,6 +87,10 @@ Forge uses each Codex surface for the job it actually fits:
 
 Codex officially loads skills progressively and supports project-scoped custom agents. Forge uses those native mechanisms instead of emulating a second agent runtime inside prompts.
 
+GSD is not merely a compatible artifact format. It is the only phase state machine. Forge installs its project overlay before a `.uproject` exists, bootstraps capabilities in a fresh task, uses GSD to create `.planning` project memory, and then stops between discuss, plan, execute and verify tasks. Each boundary is mirrored in `.forge/state/lifecycle.json` with one exact next command; Forge skills cannot auto-chain across a manual boundary.
+
+Forge workflow controls, GSD phase/plan IDs and project production packets occupy separate namespaces. Canonical project packet IDs are registered once and remain immutable. A later plan may add a provenance-bearing child or an explicit alias, but it may not silently replace `P0` with `W1` and describe that packet as a Forge step.
+
 ## Architecture
 
 ```mermaid
@@ -126,6 +130,7 @@ flowchart LR
 forge-ue-studio/
   .codex-plugin/plugin.json
   skills/
+    forge-bootstrap/SKILL.md
     forge-init/SKILL.md
     forge-doctor/SKILL.md
     forge-discuss-game/SKILL.md
@@ -824,35 +829,38 @@ The framework itself passes only when all of these are demonstrated:
 2. Upstream GSD update runs through a compatibility suite before adoption.
 3. `doctor` detects actual paths and versions; moving the project invalidates no shipped absolute path.
 4. Every optional integration can be accepted or declined independently; rerunning installation neither repeats the question nor duplicates configuration.
-5. The Research absorption kernel is usable during first installation and emits a capability contract before an optional workflow is enabled.
-6. A native-MCP-only profile completes typed live-editor work with VibeUE absent.
-7. A VibeUE profile proves live Python, then deliberately disables/corrupts it and falls back without taking native MCP down.
-8. An editor-closed Unreal Python profile closes the editor, runs a broad or heavy API task, trusts explicit result/package evidence rather than exit code alone, and reopens safely.
-9. Missing editor, DCC, optional model, image provider, or network capability degrades only the routes that require it.
-10. The Capability-to-Acceptance Closure Matrix has no enabled workflow step without a probe, lane, fallback/blocking rule and acceptance suite.
-11. Work packets validate; stale hashes and undeclared writes block before mutation.
-12. Each acceptance worker receives one bounded suite; seeded context overflow splits the suite without dropping shared invariants.
-13. Codex decomposes a context-heavy task into bounded local-worker packets and receives structured evidence without loading the full source into resident context; the same qualified offload mechanism works for code, review and visual/3D breakdown, while disjoint code agents may run in parallel and two binary-asset writers cannot.
-14. Native MCP, live Python, editor-closed API and human editor modes obey the same project super-lock.
-15. Killing the editor, MCP server, commandlet or worker does not strand a permanent lease.
-16. Retrying a completed idempotent call is harmless; retrying a non-idempotent call requires inspection.
-17. One paragraph becomes a playable core loop, test result, cook artifact, game-map state, and evidence bundle using replaceable placeholder art.
-18. A game description becomes an approved compact GDD, storyboard/beat board, character/world direction, and separate playable/visual DAGs whose workers receive only bounded context.
-19. A concept board becomes an approved asset breakdown, native Blender or Unreal source asset, rig/animation where applicable, Unreal integration, technical evidence and human visual verdict.
-20. The same representative rig/animation task is benchmarked through Blender and Unreal when both are capable; Codex can operate either route, while qualified local workers may take bounded stages. The scheduler selects or splits the route using quality, throughput, token and lane-contention evidence.
-21. Replacing placeholder art preserves the declared gameplay asset interface or explicitly invalidates affected mechanics/tests.
-22. A rejected visual asset reactivates the last valid placeholder and blocks no unrelated mechanic.
-23. The same build from a clean revision produces an equivalent manifest.
-24. A verifier passes known-good and fails seeded-bad cases before its verdict counts.
-25. A second occupant reproducing the same failure marks the brief/tool/environment, not both models.
-26. Reviewer context excludes builder reasoning and includes artifact/diff/acceptance/evidence.
-27. Requirement changes invalidate affected tasks/tests/builds through trace edges.
-28. Human feel and art gates cannot be auto-approved.
-29. Generated assets retain prompt/model/source/licence/date and remain placeholders until approved.
-30. Codex successfully completes the resident baseline for code, review, visual generation and tool operation where those capabilities are exposed; an optional worker is promoted only for the exact task types and complexity tiers it passes, and removing any adapter returns work to Codex without editing plans.
-31. Data Validation, functional/automation tests, cook smoke, and a Gauntlet session produce machine-readable evidence.
-32. Perforce and Git/LFS ownership semantics pass the same VCS contract tests.
-33. Release rehearsal includes install/upgrade/save migration/rollback and crash-symbol verification.
+5. An empty/pre-project directory receives Forge state, project instructions and agents before a `.uproject` exists; bootstrap then stops for a fresh task before delegated investigation.
+6. The Research absorption kernel is usable during first installation and emits a capability contract before an optional workflow is enabled.
+7. A native-MCP-only profile completes typed live-editor work with VibeUE absent.
+8. A VibeUE profile proves live Python, then deliberately disables/corrupts it and falls back without taking native MCP down.
+9. An editor-closed Unreal Python profile closes the editor, runs a broad or heavy API task, trusts explicit result/package evidence rather than exit code alone, and reopens safely.
+10. Missing editor, DCC, optional model, image provider, or network capability degrades only the routes that require it.
+11. The Capability-to-Acceptance Closure Matrix has no enabled workflow step without a probe, lane, fallback/blocking rule and acceptance suite.
+12. Work packets validate; stale hashes and undeclared writes block before mutation.
+13. Each acceptance worker receives one bounded suite; seeded context overflow splits the suite without dropping shared invariants.
+14. Codex decomposes a context-heavy task into bounded local-worker packets and receives structured evidence without loading the full source into resident context; the same qualified offload mechanism works for code, review and visual/3D breakdown, while disjoint code agents may run in parallel and two binary-asset writers cannot.
+15. Native MCP, live Python, editor-closed API and human editor modes obey the same project super-lock.
+16. Killing the editor, MCP server, commandlet or worker does not strand a permanent lease.
+17. Retrying a completed idempotent call is harmless; retrying a non-idempotent call requires inspection.
+18. One paragraph becomes a playable core loop, test result, cook artifact, game-map state, and evidence bundle using replaceable placeholder art.
+19. A game description becomes an approved compact GDD, storyboard/beat board, character/world direction, and separate playable/visual DAGs whose workers receive only bounded context.
+20. A concept board becomes an approved asset breakdown, native Blender or Unreal source asset, rig/animation where applicable, Unreal integration, technical evidence and human visual verdict.
+21. The same representative rig/animation task is benchmarked through Blender and Unreal when both are capable; Codex can operate either route, while qualified local workers may take bounded stages. The scheduler selects or splits the route using quality, throughput, token and lane-contention evidence.
+22. Replacing placeholder art preserves the declared gameplay asset interface or explicitly invalidates affected mechanics/tests.
+23. A rejected visual asset reactivates the last valid placeholder and blocks no unrelated mechanic.
+24. The same build from a clean revision produces an equivalent manifest.
+25. A verifier passes known-good and fails seeded-bad cases before its verdict counts.
+26. A second occupant reproducing the same failure marks the brief/tool/environment, not both models.
+27. Reviewer context excludes builder reasoning and includes artifact/diff/acceptance/evidence.
+28. Requirement changes invalidate affected tasks/tests/builds through trace edges.
+29. Human feel and art gates cannot be auto-approved.
+30. Generated assets retain prompt/model/source/licence/date and remain placeholders until approved.
+31. Codex successfully completes the resident baseline for code, review, visual generation and tool operation where those capabilities are exposed; an optional worker is promoted only for the exact task types and complexity tiers it passes, and removing any adapter returns work to Codex without editing plans.
+32. Data Validation, functional/automation tests, cook smoke, and a Gauntlet session produce machine-readable evidence.
+33. Perforce and Git/LFS ownership semantics pass the same VCS contract tests.
+34. Release rehearsal includes install/upgrade/save migration/rollback and crash-symbol verification.
+35. Manual inception, discuss, plan, execute and verify stages each persist their required GSD artifacts, write one fresh-task handoff, and cannot execute the next stage in the same task.
+36. A seeded `P0` → `W1` relabel is rejected unless `W1` is an explicit alias to `P0`; route decisions always return the canonical work order.
 
 ## Design-review scorecard
 

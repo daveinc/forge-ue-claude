@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Make the GSD discuss → plan → execute → verify loop the enforced Forge lifecycle, with artifact-checked transitions and fresh-task stop points.
+- Allow the Forge project overlay to install before a `.uproject` exists, eliminating the new-game bootstrap deadlock.
+- Add `$forge-bootstrap` with explicit delegated installation waves, independent verification, persisted reports, and visible degraded-inline fallback.
+- Add project `AGENTS.md`, lifecycle state, canonical packet registry, and route rejection for unknown/relabelled work orders.
+- Stop Forge Init after inception and hand off to `$gsd-discuss-phase 1` instead of dispatching the first implementation packet in the same task.
 - Add a separate preview-first, stable-version-pinned GSD Core installer plus runtime/skill/agent detection and fresh-session qualification guidance.
 - Rewrite the README as an end-user installation, first-use, skill, project-adoption, capability, and troubleshooting guide.
 - Make Codex the resident default across art, code, review and tool-operation seats.

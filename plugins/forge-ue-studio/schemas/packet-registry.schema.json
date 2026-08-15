@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.packet-registry/v1",
+  "type": "object",
+  "required": ["schema", "generation", "packets", "aliases"],
+  "properties": {
+    "schema": {"const": "forge.packet-registry/v1"},
+    "generation": {"type": "integer", "minimum": 0},
+    "packets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "kind", "source"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[A-Z][A-Z0-9._-]*$"},
+          "title": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["bootstrap", "playable", "visual", "audio", "research", "qa", "integration", "release"]},
+          "source": {"type": "string", "minLength": 1},
+          "derived_from": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        },
+        "additionalProperties": true
+      }
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["alias", "canonical", "reason"],
+        "properties": {
+          "alias": {"type": "string", "minLength": 1},
+          "canonical": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

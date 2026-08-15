@@ -1,5 +1,8 @@
 {
   "schema_version": 2,
+  "phase_engine": "gsd",
+  "manual_stage_boundaries": "fresh-task-required",
+  "canonical_packet_registry": "state/packet-registry.json",
   "routing_policy": "codex-resident-with-qualified-local-offload",
   "resident_default_worker": "codex",
   "local_offload": {

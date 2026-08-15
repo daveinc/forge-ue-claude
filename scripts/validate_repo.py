@@ -11,6 +11,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugins" / "forge-ue-studio"
+IGNORED_PARTS = {".git", ".tmp", "__pycache__"}
+
+
+def repository_files(pattern: str):
+    return (path for path in ROOT.rglob(pattern) if not any(part in IGNORED_PARTS for part in path.relative_to(ROOT).parts))
 
 
 def fail(message: str, failures: list[str]) -> None:
@@ -20,7 +25,7 @@ def fail(message: str, failures: list[str]) -> None:
 def main() -> int:
     failures: list[str] = []
 
-    json_files = sorted(ROOT.rglob("*.json"))
+    json_files = sorted(repository_files("*.json"))
     parsed = {}
     for path in json_files:
         try:
@@ -96,16 +101,19 @@ def main() -> int:
         PLUGIN / "assets" / "project-template" / ".forge" / "capabilities" / "qualifications.json",
         PLUGIN / "assets" / "project-template" / ".forge" / "context" / "activation-policy.json",
         PLUGIN / "assets" / "project-template" / ".forge" / "state" / "leases.json",
+        PLUGIN / "assets" / "project-template" / ".forge" / "state" / "lifecycle.json",
+        PLUGIN / "assets" / "project-template" / ".forge" / "state" / "packet-registry.json",
         PLUGIN / "assets" / "project-template" / ".forge" / "reviews" / "registry.json",
         PLUGIN / "assets" / "project-template" / ".forge" / "research" / "index.json",
         PLUGIN / "assets" / "project-template" / ".forge" / "learnings" / "registry.json",
         PLUGIN / "assets" / "project-template" / ".codex" / "agents" / "studio-director.toml",
+        PLUGIN / "assets" / "project-template" / "AGENTS.md",
     ]
     for path in required_template:
         if not path.is_file():
             fail(f"Missing project template file: {path.relative_to(ROOT)}", failures)
 
-    for path in ROOT.rglob("*"):
+    for path in repository_files("*"):
         if path.is_file() and path.suffix.lower() in {".md", ".json", ".py", ".toml", ".yml", ".yaml", ".ps1"}:
             placeholder = "[" + "TODO:"
             if placeholder in path.read_text(encoding="utf-8-sig", errors="replace"):

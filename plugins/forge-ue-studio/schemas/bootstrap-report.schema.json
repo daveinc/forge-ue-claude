@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.bootstrap-report/v1",
+  "type": "object",
+  "required": ["schema", "verdict", "jobs", "delegation", "verified", "assumed", "unavailable", "blocking", "human_actions", "evidence", "next_action"],
+  "properties": {
+    "schema": {"const": "forge.bootstrap-report/v1"},
+    "verdict": {"enum": ["PASS", "DEGRADED_ACCEPTED", "BLOCKED", "FAIL"]},
+    "jobs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["work_order", "status", "result"],
+        "properties": {
+          "work_order": {"type": "string", "minLength": 1},
+          "status": {"enum": ["PASS", "FAIL", "NOT_APPLICABLE", "DEGRADED_INLINE"]},
+          "result": {"type": "string", "minLength": 1},
+          "agent": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "delegation": {"type": "object"},
+    "verified": {"type": "array"},
+    "assumed": {"type": "array"},
+    "unavailable": {"type": "array"},
+    "blocking": {"type": "array"},
+    "human_actions": {"type": "array"},
+    "evidence": {"type": "array"},
+    "next_action": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": true
+}

@@ -2,7 +2,7 @@
 
 Forge UE Studio is a Codex plugin for planning and orchestrating an Unreal Engine game from its first design interview through production and release. Forge keeps Codex as the resident studio director and worker, then routes bounded jobs to Unreal, Blender, local models, MCP servers, APIs, and human reviewers only after those routes are available and qualified for the exact work.
 
-Forge is GSD-compatible: GSD remains the phase engine while Forge adds game-development departments, capability discovery, work packets, review gates, persistent project state, visual production, and Unreal-specific lane control.
+Forge uses GSD as its only phase engine. Forge adds game-development departments, capability discovery, immutable work packets, review gates, persistent project state, visual production, and Unreal-specific lane control without replacing GSD's discuss → plan → execute → verify boundaries.
 
 The current release provides the installation and orchestration spine. Its only external-package installation path is an explicit, preview-first GSD mode pinned to a stable version. It does not install Unreal Engine, Blender, MCP servers, model runtimes, model weights, or platform SDKs. It also does not claim that a detected tool can perform production work until its route passes Forge's probes and acceptance checks.
 
@@ -62,11 +62,21 @@ Start a **new Codex task** after installation. Codex loads newly installed plugi
 
 ## First use: start a new game
 
-You do not need an Unreal project yet. Open a new, projectless Codex task and enter:
+You do not need an Unreal project yet. Create the intended project directory, then install the project control plane before the first design interview:
+
+```powershell
+New-Item -ItemType Directory -Path "D:\Unreal Projects\MyGame"
+.\install.ps1 -Mode Install -ProjectPath "D:\Unreal Projects\MyGame"
+.\install.ps1 -Mode Install -ProjectPath "D:\Unreal Projects\MyGame" -Apply
+```
+
+The pre-project overlay installs `.forge`, project `AGENTS.md`, and project-local agents before a `.uproject` exists. Open a **fresh Codex task in that directory** and enter:
 
 ```text
-Use $forge-init to start a brand-new Unreal Engine game. Interview me one question at a time. Do not install dependencies or create project files until the game mandate and initial production plan are approved.
+Use $forge-bootstrap --resume. Delegate the applicable read-only installation investigations, persist the report, and stop at the next fresh-task handoff.
 ```
+
+When bootstrap completes, it will tell you to open another fresh project task and run `$forge-init`. Forge Init uses `$gsd-new-project` for canonical project memory, creates the game-specific design/visual/production contracts, then stops at `$gsd-discuss-phase 1`. It does not execute the first packet in the inception task.
 
 Forge should:
 
@@ -77,7 +87,7 @@ Forge should:
 5. Survey the environment before recommending integrations.
 6. Keep optional providers unqualified until their exact task class and complexity tier pass evaluation.
 
-When the design is ready and an Unreal project exists, adopt that project using the commands in [Adopt an Unreal project](#adopt-an-unreal-project).
+When the project-shell phase creates the `.uproject`, rerun Survey/Profile to expose Unreal-specific routes. The original Forge/GSD state remains in the same project root.
 
 ## Core behavior
 
@@ -102,6 +112,7 @@ Invoke a Forge workflow by naming its skill in your prompt. You can give Forge a
 
 | Skill | Use it when |
 |---|---|
+| `$forge-bootstrap` | Installing/resuming the project-local Forge control plane and delegated installation checks. |
 | `$forge-init` | Starting a new game or adopting an existing Unreal project. |
 | `$forge-doctor` | Surveying Codex, Unreal, VCS, MCP, DCC, local-model, build, and platform availability without changing anything. |
 | `$forge-capability-admin` | Registering, consenting to, testing, activating, or invalidating an optional tool or model route. |
@@ -148,16 +159,21 @@ Use $forge-gameplay-gauntlet to compare the current combat loop against our appr
 ### Normal production sequence
 
 ```text
-$forge-init
-    -> $forge-doctor
-    -> $forge-capability-admin / $forge-research as needed
-    -> $forge-plan-convergence
-    -> $forge-route-work
-    -> $forge-quality-gate
-    -> $forge-retrospective
+$forge-bootstrap --resume
+    -> STOP / fresh task
+$forge-init (uses $gsd-new-project when needed)
+    -> STOP / fresh task
+$gsd-discuss-phase N
+    -> STOP / fresh task
+$gsd-plan-phase N (+ $forge-plan-convergence)
+    -> STOP / fresh task
+$gsd-execute-phase N (fresh agents; $forge-route-work inside execution)
+    -> STOP / fresh task
+$gsd-verify-work N (+ $forge-quality-gate)
+    -> user chooses next phase
 ```
 
-`$forge-visual-production` runs alongside playable development once the shared art/gameplay interfaces exist. `$forge-gameplay-gauntlet` begins after there is a playable loop or stable in-engine presentation target.
+Every stop is persisted in `.forge/state/lifecycle.json` and GSD's `.planning` artifacts, so a new task resumes from files rather than inherited chat. `$forge-visual-production` runs alongside playable development once the shared art/gameplay interfaces exist. `$forge-gameplay-gauntlet` begins after there is a playable loop or stable in-engine presentation target.
 
 ## Repository layout
 
@@ -186,14 +202,14 @@ codex plugin list
 
 After pulling a Forge update, rerun `.\install.ps1 -Mode Plugin -Apply` and start a new Codex task so the updated skill snapshot is loaded.
 
-## Adopt an Unreal project
+## Adopt a project directory
 
-Supply either the project directory containing exactly one `.uproject` file or the `.uproject` path itself.
+Supply an existing pre-project directory, a directory containing exactly one `.uproject`, or the `.uproject` path itself. This removes the former bootstrap deadlock: Forge state and agents can exist before the UE project-shell packet.
 
 Start with the read-only survey from PowerShell, or open a new Codex task in the project and ask:
 
 ```text
-Use $forge-init to adopt this existing Unreal project. Survey it first, preserve existing work, identify unresolved design and technical decisions, and show me the proposed Forge overlay before applying it.
+Use $forge-bootstrap to adopt this project. Preserve existing work, delegate the applicable installation investigations, and stop at each persisted fresh-task handoff.
 ```
 
 The survey is read-only:
@@ -248,10 +264,12 @@ Forge applies a reversible project-local overlay:
   research/         approved sources and capability research
   reviews/          plan and result review state
   state/            work orders, install state, and lane leases
+                    lifecycle boundary and canonical packet registry
   visual/           visual-production registry
   config.json       project Forge policy
   directives.md     persistent operating rules
 .codex/agents/       Forge studio-role agent templates
+AGENTS.md             GSD/Forge phase and identity enforcement
 ```
 
 Forge does not replace your GDD, source tree, Content directory, `.uproject`, or VCS history. It adds persistent orchestration state beside them.
@@ -267,9 +285,20 @@ Forge does not replace your GDD, source tree, Content directory, `.uproject`, or
 | `Verify` | No | Check that the accepted overlay still matches Forge's template and rules. |
 | `Profile` | Only with `-Apply` | Refresh detected capabilities without granting qualification. |
 | `Route` | No project mutation | Select a provider for a schema-valid route request using recorded qualification evidence. |
+| `Lifecycle` | Only with `-Apply` | Preview or persist a guarded Forge/GSD stage transition after required artifacts exist. |
 | `Validate` | No | Check a Forge JSON contract against its required top-level fields. |
 
 For `Install` and `Profile`, omitting `-Apply` is always the preview path.
+
+Inspect or advance the persisted boundary:
+
+```powershell
+.\install.ps1 -Mode Lifecycle -ProjectPath "D:\Unreal Projects\MyGame"
+.\install.ps1 -Mode Lifecycle -ProjectPath "D:\Unreal Projects\MyGame" -LifecycleEvent plan-complete -Phase 1
+.\install.ps1 -Mode Lifecycle -ProjectPath "D:\Unreal Projects\MyGame" -LifecycleEvent plan-complete -Phase 1 -Apply
+```
+
+Completion events fail closed when their GSD artifacts are missing. A successful manual completion event writes one `next_command` and requires a fresh task.
 
 ## Capability and tool behavior
 
@@ -313,9 +342,13 @@ Forge will not install or modify Codex automatically. Install or repair the Code
 3. Rerun the Forge survey and confirm `workflow.gsd` is detected. GSD 1.8.0 places shared Codex skills under `~/.agents/skills`, agents under `~/.codex/agents`, and its runtime under `~/.codex/gsd-core`; Forge checks both that current layout and the older `~/.codex/skills` layout.
 4. Start a new Codex task so newly installed GSD skills and agents are loaded.
 
-### Project adoption says no `.uproject` was found
+### Project adoption says the project path is invalid
 
-Pass a directory containing exactly one top-level `.uproject`, or pass the full `.uproject` path. Forge refuses to guess between multiple project files.
+Pass an existing directory or a full `.uproject` path. Pre-project directories are supported. If a directory contains multiple top-level `.uproject` files, pass the intended file explicitly; Forge refuses to guess.
+
+### Forge tries to continue after a stop point
+
+Inspect `.forge/state/lifecycle.json`. If `requires_fresh_task` is `true`, do not continue in that task. Open a fresh project task and run the exact `next_command`. `$gsd-resume-work` remains the recovery entry point for an interrupted stage; it does not bypass Forge's next-stage boundary.
 
 ### A detected model, MCP, Blender, or Unreal route is not used
 

@@ -1,6 +1,10 @@
 # Forge project directives
 
 - Keep GSD as the phase engine unless an extension-gap test proves a minimal fork necessary.
+- Treat GSD as the only phase state machine. Forge Init ends by handing off to `$gsd-discuss-phase 1`; each manual discuss, plan, execute and verify stage ends with a persisted lifecycle transition and a fresh-task stop.
+- Read `.forge/state/lifecycle.json` before work. When `requires_fresh_task` is true, present `next_command` and stop without running it in the current task.
+- Keep Forge Init step identifiers, GSD phase/plan identifiers and project work-packet identifiers in separate namespaces.
+- Register canonical project packet IDs in `.forge/state/packet-registry.json` before routing. Never replace a canonical ID; aliases require an explicit mapping and derived packets require provenance.
 - Do not mutate Unreal packages without the project write lane and a VCS-safe rollback route.
 - Keep native MCP, live Python, editor-closed commandlets, and human editor work mutually exclusive under the project super-lock.
 - Ask for capabilities, never named tools. Select only AVAILABLE_VERIFIED routes.
@@ -14,6 +18,7 @@
 - Run playable and visual DAGs concurrently after their shared asset interfaces are approved.
 - Benchmark Blender and Unreal authoring by asset class and allow split-stage routes.
 - Give workers bounded packets and referral sources, not the full GDD or prior chat.
+- Use typed GSD/Forge agents for authorized installation and execution jobs when the runtime exposes them. If dispatch is unavailable, mark the inline fallback as degraded instead of presenting it as equivalent delegation.
 - Isolate concurrent text/code writers in clean-base Git worktrees; protect binary assets with LFS locks or the project-exclusive lease. Reviewers use read-only copies or diffs.
 - Packet results must separate observed facts, inferences, findings, touched artifacts, verification, residual risk and next action.
 - Review plans through bounded source-grounded convergence cycles. Stop and escalate when concern counts stall or the cycle limit is reached.

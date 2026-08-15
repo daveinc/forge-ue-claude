@@ -19,4 +19,6 @@ For concurrent text or code mutation, start each worker from the same clean immu
 
 Every packet declares immutable revision, referrals, write scope, lane leases, context budget, output contract, verification and invalidation hashes. Every result separates observations from inference and lists touched artifacts, evidence, residual risk and next action.
 
+The work order is resolved against `.forge/state/packet-registry.json` before provider scoring. A route request with an unknown ID fails closed. An alias resolves to its canonical ID and does not create a new packet identity.
+
 Blender and Unreal visual authoring may alternate or split stages based on representative benchmark evidence. Prefer Blender when it keeps the Unreal editor free; prefer Unreal for demonstrated in-engine, Control Rig, Sequencer, retargeting, procedural, or round-trip advantages.

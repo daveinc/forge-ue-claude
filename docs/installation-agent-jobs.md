@@ -2,6 +2,8 @@
 
 Deterministic probes run first. Agents interpret bounded artifacts rather than rediscovering the machine through chat.
 
+These jobs are executed by `$forge-bootstrap`; this table is not merely advisory. The overlay is installed first, then the workflow stops so a fresh project task can load `AGENTS.md`, project-local agents, and lifecycle state. On `$forge-bootstrap --resume`, applicable jobs are compiled into `.forge/state/install-jobs.json`, dispatched by wave, independently verified, and summarized in `.forge/state/bootstrap-report.json`. A host that cannot dispatch agents records `DEGRADED_INLINE` rather than silently collapsing the jobs into the orchestrator.
+
 | Wave | Agent job | Output |
 |---:|---|---|
 | 1 | Host/config investigator | OS, hardware, Codex/GSD and write-boundary snapshot |
@@ -24,3 +26,5 @@ Bootstrap extractors for Unreal API, craft sources, project knowledge and live t
 GSD itself uses a deterministic bootstrap before these jobs: preview the exact pinned package, obtain separate approval for the external install, install its Codex integration, inventory the resulting runtime/skills/agents, then verify Forge/GSD coexistence in a new task. Detection is not qualification; a failed or partial GSD install leaves the workflow visibly blocking instead of being silently assumed.
 
 The deterministic installer also writes `.forge/capabilities/detected.json`. This is a detection profile, not a qualification grant. Capability Admin records consent and task-specific evaluation separately, then activates only the phase surfaces needed by compiled work packets.
+
+Bootstrap completion writes the exact `$forge-init` handoff and stops. Forge Init then uses GSD to create `.planning/PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, and `STATE.md`; it does not execute the first production packet.

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.lifecycle/v1",
+  "type": "object",
+  "required": ["schema", "generation", "stage", "status", "phase", "requires_fresh_task", "next_command", "history"],
+  "properties": {
+    "schema": {"const": "forge.lifecycle/v1"},
+    "generation": {"type": "integer", "minimum": 0},
+    "stage": {"enum": ["bootstrap", "init", "discuss", "plan", "execute", "verify", "phase-complete", "project-complete"]},
+    "status": {"enum": ["READY", "ACTIVE", "AWAITING_FRESH_TASK", "AWAITING_USER", "COMPLETE"]},
+    "phase": {"type": ["integer", "null"], "minimum": 1},
+    "requires_fresh_task": {"type": "boolean"},
+    "next_command": {"type": ["string", "null"]},
+    "updated_at": {"type": ["string", "null"]},
+    "history": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": false
+}

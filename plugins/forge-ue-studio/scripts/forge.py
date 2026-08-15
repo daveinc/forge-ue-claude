@@ -8,6 +8,7 @@ import datetime as dt
 import hashlib
 import json
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -25,14 +26,34 @@ STATUSES = {
 
 SCHEMA_FILES = {
     "attempt-result": "attempt-result.schema.json",
+    "bootstrap-report": "bootstrap-report.schema.json",
     "capability-contract": "capability-contract.schema.json",
     "lane-lease": "lane-lease.schema.json",
+    "lifecycle-state": "lifecycle-state.schema.json",
     "learning-record": "learning-record.schema.json",
+    "packet-registry": "packet-registry.schema.json",
     "provider-evaluation": "provider-evaluation.schema.json",
     "research-record": "research-record.schema.json",
     "review-cycle": "review-cycle.schema.json",
     "route-request": "route-request.schema.json",
     "work-packet": "work-packet.schema.json",
+}
+
+LIFECYCLE_EVENTS = {
+    "bootstrap-start",
+    "bootstrap-complete",
+    "init-start",
+    "init-complete",
+    "discuss-start",
+    "discuss-complete",
+    "plan-start",
+    "plan-complete",
+    "execute-start",
+    "execute-complete",
+    "verify-start",
+    "verify-complete",
+    "next-phase",
+    "project-complete",
 }
 
 
@@ -100,6 +121,20 @@ def find_uproject(project: Path) -> Path | None:
         return None
     files = sorted(project.glob("*.uproject"))
     return files[0].resolve() if len(files) == 1 else None
+
+
+def project_root(project_value: str, require_uproject: bool = False) -> tuple[Path, Path | None]:
+    requested = Path(project_value).expanduser()
+    uproject = find_uproject(requested)
+    if uproject:
+        return uproject.parent, uproject
+    if require_uproject:
+        raise ValueError("This operation requires a directory containing exactly one .uproject, or a .uproject path")
+    if requested.is_file():
+        raise ValueError("Project path must be a directory or a .uproject file")
+    if not requested.is_dir():
+        raise ValueError("Project directory does not exist")
+    return requested.resolve(), None
 
 
 def plugin_names(uproject: Path | None) -> list[str]:
@@ -462,11 +497,7 @@ def write_profile(project_value: str, apply: bool) -> dict[str, Any]:
 
 
 def install_overlay(project_value: str, apply: bool) -> dict[str, Any]:
-    requested = Path(project_value).expanduser()
-    uproject = find_uproject(requested)
-    if not uproject:
-        raise ValueError("Install requires a directory containing exactly one .uproject, or a .uproject path")
-    root = uproject.parent
+    root, uproject = project_root(project_value)
     actions: list[dict[str, str]] = []
 
     for source, relative in template_files():
@@ -492,24 +523,21 @@ def install_overlay(project_value: str, apply: bool) -> dict[str, Any]:
     return {
         "mode": "apply" if apply else "dry-run",
         "project": str(root.resolve()),
-        "uproject": str(uproject),
+        "uproject": str(uproject) if uproject else None,
+        "project_stage": "unreal-project" if uproject else "pre-project",
         "actions": actions,
         "optional_changes_applied": [],
         "next": [
-            "Run Survey and save a snapshot when desired.",
-            "Review .forge/capabilities/detected.json and qualify optional providers by task and complexity.",
-            "Review each optional dependency proposal independently.",
-            "Use $forge-init to conduct the design interview and launch the playable and visual DAGs.",
+            "Stop and open a fresh Codex task in the project so AGENTS.md, project agents, and state are loaded.",
+            "Run $forge-bootstrap --resume to delegate installation investigation and persist its report.",
+            "Review .forge/capabilities/detected.json; detection does not qualify optional providers.",
+            "After bootstrap's next fresh-task handoff, run $forge-init for GSD-backed project inception.",
         ],
     }
 
 
 def verify_overlay(project_value: str) -> dict[str, Any]:
-    requested = Path(project_value).expanduser()
-    uproject = find_uproject(requested)
-    if not uproject:
-        raise ValueError("Verify requires a directory containing exactly one .uproject, or a .uproject path")
-    root = uproject.parent
+    root, uproject = project_root(project_value)
     checks = []
     for source, relative in template_files():
         destination = root / relative
@@ -520,7 +548,154 @@ def verify_overlay(project_value: str) -> dict[str, Any]:
         else:
             status = "LOCAL_VARIANT"
         checks.append({"path": str(destination), "status": status})
-    return {"project": str(root.resolve()), "checks": checks, "ok": all(c["status"] != "MISSING" for c in checks)}
+    return {
+        "project": str(root.resolve()),
+        "uproject": str(uproject) if uproject else None,
+        "project_stage": "unreal-project" if uproject else "pre-project",
+        "checks": checks,
+        "ok": all(c["status"] != "MISSING" for c in checks),
+    }
+
+
+def phase_directory(root: Path, phase: int) -> Path | None:
+    phases = root / ".planning" / "phases"
+    matches = sorted(path for path in phases.glob(f"{phase:02d}-*") if path.is_dir())
+    if len(matches) > 1:
+        raise ValueError(f"Multiple GSD phase directories match phase {phase}")
+    return matches[0] if matches else None
+
+
+def require_artifacts(root: Path, event: str, phase: int | None) -> list[str]:
+    if event == "bootstrap-complete":
+        required = [root / ".forge" / "capabilities" / "detected.json", root / ".forge" / "state" / "bootstrap-report.json"]
+        missing = [str(path) for path in required if not path.is_file()]
+        if missing:
+            raise ValueError("Forge bootstrap is incomplete; missing: " + ", ".join(missing))
+        report = load_json(required[1])
+        report_required = {"schema", "verdict", "jobs", "delegation", "verified", "assumed", "unavailable", "blocking", "human_actions", "evidence", "next_action"}
+        report_missing = sorted(report_required - set(report))
+        if report_missing:
+            raise ValueError("Forge bootstrap report is incomplete; missing: " + ", ".join(report_missing))
+        if report.get("verdict") not in {"PASS", "DEGRADED_ACCEPTED"}:
+            raise ValueError(f"Forge bootstrap report verdict is not closable: {report.get('verdict')!r}")
+        if report.get("blocking"):
+            raise ValueError("Forge bootstrap report still contains blocking items")
+        expected_jobs = {item["id"] for item in load_json(root / ".forge" / "state" / "packet-registry.json").get("packets", []) if str(item.get("id", "")).startswith("FI-")}
+        reported_jobs = {str(item.get("work_order")) for item in report.get("jobs", []) if isinstance(item, dict)}
+        missing_jobs = sorted(expected_jobs - reported_jobs)
+        if missing_jobs:
+            raise ValueError("Forge bootstrap report omits installation jobs: " + ", ".join(missing_jobs))
+        agents_path = root / "AGENTS.md"
+        if not agents_path.is_file() or "## Forge phase contract" not in agents_path.read_text(encoding="utf-8-sig"):
+            raise ValueError("Forge bootstrap is incomplete; project AGENTS.md does not contain the Forge phase contract (review any AGENTS.md.forge-proposed file)")
+        required.append(agents_path)
+        return [str(path) for path in required]
+    if event == "init-complete":
+        required = [root / ".planning" / name for name in ("PROJECT.md", "ROADMAP.md", "STATE.md")]
+        missing = [str(path) for path in required if not path.is_file()]
+        if missing:
+            raise ValueError("GSD project initialization is incomplete; missing: " + ", ".join(missing))
+        return [str(path) for path in required]
+    if phase is None:
+        return []
+    directory = phase_directory(root, phase)
+    if not directory:
+        raise ValueError(f"GSD phase directory for phase {phase} was not found")
+    if event == "discuss-complete":
+        matches = sorted(directory.glob("*-CONTEXT.md"))
+        if not matches:
+            raise ValueError(f"Phase {phase} has no CONTEXT.md; discussion cannot be closed")
+        return [str(path) for path in matches]
+    if event == "plan-complete":
+        matches = sorted(directory.glob("*-PLAN.md"))
+        if not matches:
+            raise ValueError(f"Phase {phase} has no PLAN.md; planning cannot be closed")
+        return [str(path) for path in matches]
+    if event == "execute-complete":
+        plans = sorted(directory.glob("*-PLAN.md"))
+        missing = [str(path.with_name(path.name.replace("-PLAN.md", "-SUMMARY.md"))) for path in plans if not path.with_name(path.name.replace("-PLAN.md", "-SUMMARY.md")).is_file()]
+        if not plans or missing:
+            detail = "no PLAN.md exists" if not plans else "missing summaries: " + ", ".join(missing)
+            raise ValueError(f"Phase {phase} execution cannot be closed; {detail}")
+        return [str(path.with_name(path.name.replace("-PLAN.md", "-SUMMARY.md"))) for path in plans]
+    if event == "verify-complete":
+        sessions = sorted(directory.glob("*-UAT.md"))
+        completed = [path for path in sessions if re.search(r"(?im)^status:\s*(complete|completed|passed)\s*$", path.read_text(encoding="utf-8-sig"))]
+        if not completed:
+            raise ValueError(f"Phase {phase} has no completed UAT.md; verification cannot be closed")
+        return [str(path) for path in completed]
+    return []
+
+
+def lifecycle_state(project_value: str, event: str = "status", phase: int | None = None, apply: bool = False) -> dict[str, Any]:
+    root, _ = project_root(project_value)
+    path = root / ".forge" / "state" / "lifecycle.json"
+    if not path.is_file():
+        raise ValueError("Forge lifecycle state is missing; apply the project overlay first")
+    state = load_json(path)
+    if event == "status":
+        return {"mode": "read-only", "path": str(path), "state": state}
+    if event not in LIFECYCLE_EVENTS:
+        raise ValueError(f"Unknown lifecycle event: {event}")
+
+    current_stage = str(state.get("stage"))
+    current_status = str(state.get("status"))
+    current_phase = state.get("phase")
+    start_events = {
+        "bootstrap-start": ("bootstrap", "bootstrap"),
+        "init-start": ("bootstrap", "init"),
+        "discuss-start": ("discuss", "discuss"),
+        "plan-start": ("plan", "plan"),
+        "execute-start": ("execute", "execute"),
+        "verify-start": ("verify", "verify"),
+    }
+    complete_events = {
+        "bootstrap-complete": ("bootstrap", "bootstrap", None, "$forge-init"),
+        "init-complete": ("init", "discuss", 1, "$gsd-discuss-phase 1"),
+        "discuss-complete": ("discuss", "plan", current_phase, f"$gsd-plan-phase {current_phase}"),
+        "plan-complete": ("plan", "execute", current_phase, f"$gsd-execute-phase {current_phase}"),
+        "execute-complete": ("execute", "verify", current_phase, f"$gsd-verify-work {current_phase}"),
+        "verify-complete": ("verify", "phase-complete", current_phase, "$gsd-progress"),
+    }
+
+    evidence: list[str] = []
+    if event in start_events:
+        expected, destination = start_events[event]
+        if current_stage != expected or current_status not in {"READY", "AWAITING_FRESH_TASK"}:
+            raise ValueError(f"Cannot apply {event} from {current_stage}/{current_status}")
+        expected_command = {"bootstrap-start": "$forge-bootstrap --resume", "init-start": "$forge-init"}.get(event)
+        if expected_command and state.get("next_command") != expected_command:
+            raise ValueError(f"Cannot apply {event}; lifecycle next command is {state.get('next_command')!r}")
+        if event not in {"bootstrap-start", "init-start"} and phase != current_phase:
+            raise ValueError(f"Lifecycle is waiting for phase {current_phase}, not phase {phase}")
+        next_state = {"stage": destination, "status": "ACTIVE", "phase": current_phase, "requires_fresh_task": False, "next_command": None}
+    elif event in complete_events:
+        expected, destination, destination_phase, command = complete_events[event]
+        if current_stage != expected or current_status != "ACTIVE":
+            raise ValueError(f"Cannot apply {event} from {current_stage}/{current_status}")
+        if event not in {"bootstrap-complete", "init-complete"} and phase != current_phase:
+            raise ValueError(f"Lifecycle is active on phase {current_phase}, not phase {phase}")
+        evidence = require_artifacts(root, event, current_phase if event not in {"bootstrap-complete", "init-complete"} else None)
+        next_state = {"stage": destination, "status": "AWAITING_FRESH_TASK" if destination != "phase-complete" else "AWAITING_USER", "phase": destination_phase, "requires_fresh_task": destination != "phase-complete", "next_command": command}
+    elif event == "next-phase":
+        if current_stage != "phase-complete" or current_status != "AWAITING_USER":
+            raise ValueError(f"Cannot start a next phase from {current_stage}/{current_status}")
+        if phase is None or phase <= int(current_phase or 0):
+            raise ValueError("next-phase requires a phase number greater than the completed phase")
+        next_state = {"stage": "discuss", "status": "AWAITING_FRESH_TASK", "phase": phase, "requires_fresh_task": True, "next_command": f"$gsd-discuss-phase {phase}"}
+    else:
+        if current_stage != "phase-complete" or current_status != "AWAITING_USER":
+            raise ValueError(f"Cannot complete the project from {current_stage}/{current_status}")
+        next_state = {"stage": "project-complete", "status": "COMPLETE", "phase": current_phase, "requires_fresh_task": False, "next_command": None}
+
+    updated = dict(state)
+    updated.update(next_state)
+    updated["generation"] = int(state.get("generation", 0)) + 1
+    updated["updated_at"] = utc_now()
+    updated.setdefault("history", []).append({"event": event, "phase": phase, "at": updated["updated_at"], "evidence": evidence})
+    if apply:
+        path.write_text(json.dumps(updated, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {"mode": "apply" if apply else "dry-run", "path": str(path), "state": updated, "changed": bool(apply)}
 
 
 def schema_root() -> Path:
@@ -556,17 +731,24 @@ def validate_payload(kind: str, input_value: str) -> dict[str, Any]:
 
 
 def route_work(project_value: str, request_value: str) -> dict[str, Any]:
-    requested = Path(project_value).expanduser()
-    uproject = find_uproject(requested)
-    if not uproject:
-        raise ValueError("Route requires a directory containing exactly one .uproject, or a .uproject path")
-    root = uproject.parent
+    root, _ = project_root(project_value)
     request_path = Path(request_value).expanduser().resolve()
     request = load_json(request_path)
-    required = {"task_class", "complexity", "bounded", "required_capabilities", "required_lanes", "mutation_risk"}
+    required = {"work_order", "task_class", "complexity", "bounded", "required_capabilities", "required_lanes", "mutation_risk"}
     missing = sorted(required - set(request))
     if missing:
         raise ValueError("Route request missing: " + ", ".join(missing))
+
+    packet_registry_path = root / ".forge" / "state" / "packet-registry.json"
+    if not packet_registry_path.is_file():
+        raise ValueError("Canonical packet registry is missing; apply the Forge overlay before routing")
+    packet_registry = load_json(packet_registry_path)
+    packets = {str(item.get("id")): item for item in packet_registry.get("packets", [])}
+    aliases = {str(item.get("alias")): str(item.get("canonical")) for item in packet_registry.get("aliases", [])}
+    requested_order = str(request["work_order"])
+    canonical_order = aliases.get(requested_order, requested_order)
+    if canonical_order not in packets:
+        raise ValueError(f"Unregistered work_order {requested_order!r}; register the canonical packet or an explicit alias before routing")
 
     policy = load_json(Path(__file__).resolve().parent.parent / "dependencies" / "route-policy.json")
     keep_on_codex = set(policy["offload_policy"]["keep_on_codex_by_default"])
@@ -631,6 +813,7 @@ def route_work(project_value: str, request_value: str) -> dict[str, Any]:
         "schema": "forge.route-decision/v1",
         "project": str(root.resolve()),
         "request": request,
+        "canonical_work_order": canonical_order,
         "selected": selected,
         "decision": decision,
         "candidates": candidates,
@@ -667,6 +850,12 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--kind", required=True, choices=sorted(SCHEMA_FILES))
     validate.add_argument("--input", required=True)
     validate.add_argument("--output")
+    lifecycle = sub.add_parser("lifecycle")
+    lifecycle.add_argument("--project", required=True)
+    lifecycle.add_argument("--event", default="status", choices=["status", *sorted(LIFECYCLE_EVENTS)])
+    lifecycle.add_argument("--phase", type=int)
+    lifecycle.add_argument("--apply", action="store_true")
+    lifecycle.add_argument("--output")
     return parser
 
 
@@ -683,6 +872,8 @@ def main(argv: list[str] | None = None) -> int:
             result = write_profile(args.project, apply=bool(args.apply))
         elif args.command == "route":
             result = route_work(args.project, args.request)
+        elif args.command == "lifecycle":
+            result = lifecycle_state(args.project, args.event, args.phase, apply=bool(args.apply))
         else:
             result = validate_payload(args.kind, args.input)
         emit(result, args.output)
