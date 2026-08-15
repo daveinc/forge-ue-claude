@@ -1239,6 +1239,92 @@ class FailureContractTests(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
+class ResultContractTests(unittest.TestCase):
+    """`ok` means a verdict everywhere, or it means nothing anywhere."""
+
+    def setUp(self):
+        self.original_command_probe = forge.command_probe
+        forge.command_probe = lambda command, timeout=8: {
+            "ok": False, "exit_code": 1, "output": "", "error": "probe isolated in unit test",
+        }
+
+    def tearDown(self):
+        forge.command_probe = self.original_command_probe
+
+    @contextmanager
+    def game(self):
+        with workspace_tempdir() as temp:
+            root = temp / "Game"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            yield root
+
+    def _run(self, *argv):
+        return subprocess.run(
+            [sys.executable, str(FORGE_PATH), *argv], capture_output=True, text=True
+        )
+
+    def test_every_verdict_command_is_a_real_command_path(self):
+        """A declared verdict verb that no invocation can produce is a rule
+        guarding nothing."""
+        self.assertTrue(forge.VERDICT_COMMANDS)
+        source = FORGE_PATH.read_text(encoding="utf-8")
+        for command in sorted(forge.VERDICT_COMMANDS):
+            head = command.split()[0]
+            self.assertIn(f'"{head}"', source, command)
+
+    def _payloads(self, root):
+        """Every result the CLI can emit, produced in-process.
+
+        Deliberately not seven subprocesses: a spawned CLI re-runs live host
+        probes, which turns a contract assertion into a multi-minute wait and
+        makes the suite flaky on whatever happens to be installed."""
+        profile = forge.host_profile("claude")
+        return {
+            "verify": (forge.verify_overlay(str(root), None), True),
+            "bootstrap-check": (forge.bootstrap_verdict(root, profile), True),
+            "host status": (forge.host_status(str(root), None), True),
+            "host list": (forge.host_list(), False),
+            "next": (forge.forge_next(str(root)), False),
+            "lifecycle": (forge.lifecycle_state(str(root), "status"), False),
+            "mcp-status": (forge.mcp_status(root, profile), False),
+            "install": (forge.install_overlay(str(root), apply=False), False),
+        }
+
+    def test_verdict_commands_emit_ok_and_reporting_commands_do_not(self):
+        with self.game() as root:
+            for name, (payload, expects_verdict) in self._payloads(root).items():
+                self.assertEqual("ok" in payload, expects_verdict, f"{name} verdict presence")
+
+    def test_every_payload_identifies_itself(self):
+        with self.game() as root:
+            for name, (payload, _) in self._payloads(root).items():
+                self.assertTrue(payload.get("schema"), name)
+
+    def test_the_declared_set_matches_what_the_payloads_actually_carry(self):
+        """Neither list is authoritative alone; a drift between them is the bug."""
+        with self.game() as root:
+            for name, (payload, _) in self._payloads(root).items():
+                self.assertEqual(
+                    name in forge.VERDICT_COMMANDS, "ok" in payload,
+                    f"{name}: VERDICT_COMMANDS and the payload disagree",
+                )
+
+    def test_a_failing_verdict_exits_contract_not_failure(self):
+        """Ran-and-said-no must stay distinguishable from could-not-run."""
+        with self.game() as root:
+            completed = self._run("bootstrap-check", "--project", str(root))
+            self.assertEqual(completed.returncode, forge.EXIT_CONTRACT)
+            self.assertFalse(json.loads(completed.stdout)["ok"])
+
+    def test_a_verdict_command_returning_no_ok_is_refused(self):
+        source = FORGE_PATH.read_text(encoding="utf-8")
+        self.assertIn('command_path in VERDICT_COMMANDS and not carries_verdict', source)
+        self.assertIn('command_path not in VERDICT_COMMANDS and carries_verdict', source)
+        # The default that made a missing verdict look like success is gone.
+        self.assertNotIn('result.get("ok", True) else EXIT_CONTRACT\n    except', source)
+
+
 class ActionSurfaceTests(unittest.TestCase):
     """Forge owns the whole user-facing vocabulary, ids included."""
 
@@ -1607,6 +1693,28 @@ class McpGateTests(unittest.TestCase):
         code, output = self._validate(mutate)
         self.assertEqual(code, 1)
         self.assertIn("has no reader", output)
+
+    def test_a_verdict_command_that_is_not_a_command_fails(self):
+        def mutate(root):
+            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
+            text = source.read_text(encoding="utf-8")
+            text = text.replace('        "verify",           #', '        "not-a-command",\n        "verify",           #', 1)
+            source.write_text(text, encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("not a declared CLI command", output)
+
+    def test_dropping_the_result_contract_assertion_fails(self):
+        def mutate(root):
+            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
+            text = source.read_text(encoding="utf-8")
+            text = text.replace("command_path not in VERDICT_COMMANDS and carries_verdict", "False", 1)
+            source.write_text(text, encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("does not assert the result contract", output)
 
     def test_an_inline_reason_string_fails(self):
         def mutate(root):

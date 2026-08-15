@@ -72,6 +72,7 @@ ERROR_REASON = MappingProxyType(
         # contracts and payloads
         "CONTRACT_UNKNOWN_KIND": "contract_unknown_kind",
         "CONTRACT_INVALID": "contract_invalid",
+        "RESULT_CONTRACT_VIOLATED": "result_contract_violated",
         "JSON_UNREADABLE": "json_unreadable",
         # typed tool routes
         "MCP_UNKNOWN_CAPABILITY": "mcp_unknown_capability",
@@ -94,6 +95,25 @@ EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_CONTRACT = 2
 EXIT_USAGE = 3
+
+# Commands whose answer IS a pass/fail verdict. Each must emit `ok`, and only
+# these may. GSD draws the same line: check-latest-version carries `ok` because
+# "did the check succeed" is its answer, while smart-entry does not because its
+# answer is the situation.
+#
+# main() asserts membership both ways rather than defaulting a missing `ok` to
+# success, so a verb that forgets to compute its verdict fails loudly instead of
+# exiting 0. Anything reporting a richer outcome says so in its own field —
+# `mcp sync-user` reports `mode` (dry-run / apply / blocked / report-only)
+# because "applied nothing" is a correct result, not a failure.
+VERDICT_COMMANDS = frozenset(
+    {
+        "verify",           # do the rendered host surfaces still match canon
+        "bootstrap-check",  # is the Forge bootstrap closable
+        "validate",         # does the payload satisfy its declared schema
+        "host status",      # are this host's surfaces current
+    }
+)
 
 
 class ForgeExit(Exception):
@@ -889,7 +909,6 @@ def host_list() -> dict[str, Any]:
             }
             for profile in registry.get("hosts", [])
         ],
-        "ok": True,
     }
 
 
@@ -932,7 +951,6 @@ def host_set(project_value: str, host_id: str, apply: bool) -> dict[str, Any]:
             f"Run {host_command(profile, 'forge-next')} so Forge resumes from files rather than chat.",
             "Re-run capability detection; qualification evidence from the previous host is stale.",
         ],
-        "ok": True,
     }
 
 
@@ -2008,6 +2026,7 @@ def install_overlay(project_value: str, apply: bool, host_override: str | None =
     instruction_file = profile.get("project_surface", {}).get("instruction_file", "AGENTS.md")
     next_command = host_command(profile, "forge-next")
     return {
+        "schema": "forge.overlay-install/v1",
         "mode": "apply" if apply else "dry-run",
         "project": str(root.resolve()),
         "uproject": str(uproject) if uproject else None,
@@ -2048,6 +2067,7 @@ def verify_overlay(project_value: str, host_override: str | None = None) -> dict
             status = "LOCAL_VARIANT"
         checks.append({"path": str(destination), "status": status, "kind": "host-rendered"})
     return {
+        "schema": "forge.overlay-verify/v1",
         "project": str(root.resolve()),
         "uproject": str(uproject) if uproject else None,
         "project_stage": "unreal-project" if uproject else "pre-project",
@@ -2083,6 +2103,7 @@ def lifecycle_state(project_value: str, event: str = "status") -> dict[str, Any]
     head, _, tail = stored.partition(" ")
     spelled = f"{host_command(profile, head)}{' ' + tail if tail else ''}" if head else ""
     return {
+        "schema": "forge.lifecycle-status/v1",
         "mode": "read-only",
         "path": str(path),
         "state": state,
@@ -2492,8 +2513,35 @@ def main(argv: list[str] | None = None) -> int:
             result = lifecycle_state(args.project, args.event)
         else:
             result = validate_payload(args.kind, args.input)
+        command_path = " ".join(
+            part for part in (args.command, getattr(args, "host_command", None), getattr(args, "mcp_command", None)) if part
+        )
+        # Assert the result contract rather than defaulting a missing verdict to
+        # success. A verdict verb that forgot to compute one, or a reporting verb
+        # that grew a stray `ok`, is a bug that must surface here instead of
+        # silently deciding this process's exit code.
+        carries_verdict = "ok" in result
+        if command_path in VERDICT_COMMANDS and not carries_verdict:
+            raise fail(
+                f"{command_path!r} is declared verdict-bearing but returned no 'ok'",
+                reason=ERROR_REASON["RESULT_CONTRACT_VIOLATED"],
+            )
+        if command_path not in VERDICT_COMMANDS and carries_verdict:
+            raise fail(
+                f"{command_path!r} is not verdict-bearing but returned 'ok'; report the outcome in its own field",
+                reason=ERROR_REASON["RESULT_CONTRACT_VIOLATED"],
+            )
+        if not result.get("schema"):
+            raise fail(
+                f"{command_path!r} returned a payload with no schema identity",
+                reason=ERROR_REASON["RESULT_CONTRACT_VIOLATED"],
+            )
         emit(result, args.output)
-        return EXIT_OK if result.get("ok", True) else EXIT_CONTRACT
+        # No default. The contract above proved which case this is, so the exit
+        # code reads the verdict directly instead of inferring one from absence.
+        if command_path in VERDICT_COMMANDS:
+            return EXIT_OK if result["ok"] else EXIT_CONTRACT
+        return EXIT_OK
     except ForgeExit as exc:
         # The failure already knows its reason and its exit code. Emitting the
         # code alongside the message means a caller branches on `reason` instead

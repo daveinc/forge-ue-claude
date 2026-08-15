@@ -447,6 +447,36 @@ def main() -> int:
         for unused in sorted(set(declared_reasons) - used):
             fail(f"Error reason {unused} is declared but never raised", failures)
 
+    # `ok` is a verdict, not decoration. The declaration and the assertion that
+    # enforces it must both exist, or a missing verdict quietly becomes success.
+    verdict_block = re.search(r"VERDICT_COMMANDS = frozenset\(\s*\{(.*?)\}\s*\)", forge_source, re.DOTALL)
+    if not verdict_block:
+        fail("forge.py declares no VERDICT_COMMANDS set", failures)
+    else:
+        verdict_commands = re.findall(r'"([a-z][a-z -]*)"', verdict_block.group(1))
+        if not verdict_commands:
+            fail("VERDICT_COMMANDS is declared but empty", failures)
+        # Checked against the parser's own declarations, not against the whole
+        # source: a bare substring search is satisfied by the VERDICT_COMMANDS
+        # entry itself, so the gate would confirm every name including invented
+        # ones.
+        declared_commands = set(re.findall(r'(?<![\w])sub\.add_parser\(\s*"([a-z][a-z-]*)"', forge_source))
+        grouped_commands = re.search(r'for name in \(([^)]*)\):', forge_source)
+        if grouped_commands:
+            declared_commands |= set(re.findall(r'"([a-z][a-z-]*)"', grouped_commands.group(1)))
+        sub_commands = set(re.findall(r'_sub\.add_parser\(\s*"([a-z][a-z-]*)"', forge_source))
+        for command in verdict_commands:
+            parts = command.split()
+            if parts[0] not in declared_commands:
+                fail(f"VERDICT_COMMANDS names {command!r}, which is not a declared CLI command", failures)
+            elif len(parts) > 1 and parts[1] not in sub_commands:
+                fail(f"VERDICT_COMMANDS names {command!r}, whose subcommand is not declared", failures)
+        for needed in ("command_path in VERDICT_COMMANDS", "command_path not in VERDICT_COMMANDS"):
+            if needed not in forge_source:
+                fail(f"forge.py does not assert the result contract ({needed})", failures)
+        if 'result.get("ok", True)' in forge_source:
+            fail("forge.py still defaults a missing verdict to success", failures)
+
     # A document nothing links to is a document nobody finds.
     doc_sources = {
         path: path.read_text(encoding="utf-8-sig", errors="replace")

@@ -43,6 +43,29 @@ cannot be added speculatively and left dangling.
 and reports an incomplete bootstrap is not the same event as a bootstrap check
 that could not run, and a caller that conflates them will retry the wrong one.
 
+## `ok` is a verdict, not decoration
+
+A payload carries `ok` when pass/fail **is** the answer, and not otherwise. GSD
+draws the same line: `check-latest-version` carries `ok` because "did the check
+succeed" is its result, while `smart-entry` does not, because its result is the
+situation.
+
+`VERDICT_COMMANDS` in `forge.py` is the list. Today it is `verify`,
+`bootstrap-check`, `validate` and `host status`. `main()` asserts membership
+**both ways** — a declared verdict command that returns no `ok` fails, and a
+reporting command that grows one fails too. There is no
+`result.get("ok", True)` default anywhere, because a default makes a forgotten
+verdict indistinguishable from a deliberate absence, and the forgotten one then
+silently exits 0.
+
+Commands with a richer outcome say so in their own field rather than flattening
+it into a boolean. `mcp sync-user` reports `mode` — `dry-run`, `apply`,
+`blocked`, `report-only` — because "applied nothing" is frequently the correct
+result rather than a failure.
+
+Every payload also carries `schema`, so a consumer identifies what it received
+instead of inferring it from which keys happen to be present.
+
 ## Failures are raised, not exited
 
 CLI logic raises `ForgeExit`; `main()` is the only place that turns one into an
