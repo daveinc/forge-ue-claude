@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Phase"
+  short_description: "Add, insert, remove, or edit phases in a game project roadmap"
+  default_prompt: "Use $forge-phase for this game project."

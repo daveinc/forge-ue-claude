@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Spec Phase"
+  short_description: "Clarify what a game project phase delivers, with ambiguity scoring, before discussion"
+  default_prompt: "Use $forge-spec-phase for this game project."

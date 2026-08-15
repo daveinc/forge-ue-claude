@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Review"
+  short_description: "Review plans, code, security, or outstanding UAT against Forge acceptance suites"
+  default_prompt: "Use $forge-review on the active phase and grade the findings against our registered acceptance suites."

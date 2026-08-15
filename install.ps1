@@ -20,7 +20,7 @@ param(
     [ValidateSet('list', 'status', 'set')]
     [string]$HostAction = 'status',
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$GsdVersion = '1.8.0',
+    [string]$GsdVersion = '1.9.1',
     [string]$ProjectPath,
     [string]$RequestPath,
     [ValidateSet('attempt-result', 'bootstrap-report', 'capability-contract', 'host-profile', 'lane-lease', 'lifecycle-state', 'learning-record', 'packet-registry', 'provider-evaluation', 'research-record', 'review-cycle', 'route-request', 'runtime-state', 'smart-entry', 'work-packet')]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Discuss Phase"
+  short_description: "Gather phase context for a game project through adaptive questioning before planning"
+  default_prompt: "Use $forge-discuss-phase for this game project."

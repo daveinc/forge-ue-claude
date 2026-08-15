@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Plan Phase"
+  short_description: "Create an executable plan for a game project phase, declaring asset interfaces, required lanes, and mutation risk"
+  default_prompt: "Use $forge-plan-phase for this game project."

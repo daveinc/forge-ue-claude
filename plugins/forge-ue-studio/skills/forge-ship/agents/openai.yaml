@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Ship"
+  short_description: "Prepare a game project build for delivery — cook, package, verify, and open a PR"
+  default_prompt: "Use $forge-ship for this game project."

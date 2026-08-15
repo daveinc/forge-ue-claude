@@ -28,6 +28,15 @@
 - Make bare skill names the canonical internal form in `forge.py`, and change the missing-profile prefix fallback from `$` to none, so a forgotten profile degrades neutrally instead of emitting another host's spelling.
 - Fix a deprecation error message that hardcoded `$forge-next`, and correct stale `pyproject.toml` metadata (`0.1.0`, "Codex-native") to match the manifests.
 
+### Forge owns the verb surface; GSD becomes an invoked sublayer
+
+- Add `verbs/registry.json`: every GSD command maps to the Forge verb that fronts it, with a declared delegation mode (`contain` / `relay` / `native`), the GSD workflow it calls, and the game-dev adaptation applied. Validation refuses a verb with no matching skill, an unknown mode, or a duplicate GSD mapping.
+- Translate GSD commands into Forge vocabulary at the one boundary where they surface. `normalize_gsd_command()` maps `gsd-*` to its Forge verb, then spells it for the active host. An unmapped GSD verb emits an explicit `[UNMAPPED: …]` marker rather than leaking silently.
+- Add 17 skills: `forge-review` (verb-based — plan, `--code`, `--security`, `--audit` — graded against Forge's acceptance registry rather than generic criteria) plus `forge-discuss-phase`, `forge-plan-phase`, `forge-execute-phase`, `forge-verify-work`, `forge-progress`, `forge-phase`, `forge-milestone`, `forge-onboard`, `forge-ingest-docs`, `forge-map-codebase`, `forge-docs-update`, `forge-spec-phase`, `forge-debug`, `forge-handoff`, `forge-ship`, `forge-undo`.
+- Add `references/delegation-contract.md` defining the shared PRE (Forge) / CORE (stock GSD) / POST (Forge) shape. GSD is invoked in place — never edited, never copied — so upstream fixes arrive without a merge.
+- Tell GSD which host it is running under. GSD resolves its command spelling from `.planning/config.json`'s `runtime` key and defaults to `claude`, so a Codex-hosted project previously got the wrong spelling. `sync_gsd_runtime()` writes that one key at overlay install and on every host swap, and `GSD_RUNTIME` is exported on every `gsd_run` call. Repairable with `forge.py gsd-sync`.
+- Move the GSD pin from 1.8.0 to **1.9.1**, the version actually installed and tested against. 1.10.0 exists but is unvalidated.
+
 ### Bootstrap gate and dead-code removal
 
 - Make Forge's bootstrap closure checks **reachable**. They previously lived in `require_artifacts()`, which only the unreachable lifecycle-transition block called, so nothing ran them. They are now `bootstrap_verdict()`, wired into `bootstrap_is_complete()` (and therefore Forge Next) and exposed as `forge.py bootstrap-check` / `install.ps1 -Mode BootstrapCheck`, which exits non-zero until every check passes.

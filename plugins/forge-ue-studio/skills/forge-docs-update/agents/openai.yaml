@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Docs Update"
+  short_description: "Generate or update project documentation verified against the codebase"
+  default_prompt: "Use $forge-docs-update for this game project."

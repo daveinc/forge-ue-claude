@@ -240,6 +240,34 @@ def main() -> int:
         if not definition.get("description") or not definition.get("instructions"):
             fail(f"Agent definition incomplete: {path.relative_to(ROOT)}", failures)
 
+    # Verb registry: Forge owns the whole user-facing vocabulary, so every verb it
+    # promises must exist as a skill, and every GSD command Forge may encounter
+    # must map to one. A gap here leaks a gsd- name to the user.
+    verb_registry_path = PLUGIN / "verbs" / "registry.json"
+    verb_registry = parsed.get(verb_registry_path, {})
+    verbs = verb_registry.get("verbs", [])
+    if not verbs:
+        fail("Verb registry declares no verbs", failures)
+    if verb_registry.get("policy", {}).get("unmapped_action") != "fail":
+        fail("Verb registry must declare unmapped_action: fail", failures)
+    modes = set(verb_registry.get("delegation_modes", {}))
+    skill_names = {path.parent.name for path in (PLUGIN / "skills").glob("*/SKILL.md")}
+    seen_gsd = set()
+    for entry in verbs:
+        forge_verb, gsd_verb = entry.get("forge"), entry.get("gsd")
+        if not forge_verb or not gsd_verb:
+            fail(f"Verb entry incomplete: {entry}", failures)
+            continue
+        if forge_verb not in skill_names:
+            fail(f"Verb registry maps to {forge_verb!r} but no such skill exists", failures)
+        if entry.get("delegation") not in modes:
+            fail(f"Verb {forge_verb!r} declares an unknown delegation mode {entry.get('delegation')!r}", failures)
+        if not entry.get("gsd_workflow") or not entry.get("adaptation"):
+            fail(f"Verb {forge_verb!r} missing gsd_workflow or adaptation", failures)
+        if gsd_verb in seen_gsd:
+            fail(f"GSD command {gsd_verb!r} is mapped more than once", failures)
+        seen_gsd.add(gsd_verb)
+
     # Canon neutrality: no vendor name, host path, host instruction file, or host
     # skill prefix may appear anywhere in the shipped canon. Banned tokens come
     # from the registry, so this guard extends itself when a host is added.
@@ -248,6 +276,7 @@ def main() -> int:
         *(p for p in template_root.rglob("*") if p.is_file()),
         *sorted((PLUGIN / "dependencies").glob("*.json")),
         *sorted((PLUGIN / "schemas").glob("*.json")),
+        *sorted((PLUGIN / "verbs").glob("*.json")),
     ]
     for path in canon_files:
         if path in NEUTRALITY_EXEMPT_FILES:

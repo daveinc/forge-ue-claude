@@ -29,12 +29,13 @@
       "source": "https://github.com/open-gsd/gsd-core",
       "install": {
         "package": "@opengsd/gsd-core",
-        "pinned_version": "1.8.0",
+        "pinned_version": "1.9.1",
         "runtime": "resident-host",
         "scope": "global",
         "preview_command": ".\\install.ps1 -Mode GSD -RuntimeHost <id>",
         "apply_command": ".\\install.ps1 -Mode GSD -RuntimeHost <id> -Apply",
-        "requires_user_approval": true
+        "requires_user_approval": true,
+        "pin_rationale": "Matches the version Forge is tested against. 1.10.0 is available but unvalidated."
       }
     },
     {

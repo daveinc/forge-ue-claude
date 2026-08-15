@@ -1,0 +1,225 @@
+{
+  "schema": "forge.verb-registry/v1",
+  "policy": {
+    "surface": "forge",
+    "unmapped_action": "fail",
+    "note": "Forge owns the entire user-facing vocabulary. GSD is never addressed directly and is never edited or copied — it is invoked in place so upstream fixes arrive for free. This registry is the single boundary where GSD's structured command emissions become Forge verbs."
+  },
+  "delegation_modes": {
+    "contain": "Forge spawns a subagent that reads and follows the stock GSD workflow on disk and returns a structured result. The transcript never reaches the user, so GSD's own command strings cannot leak.",
+    "relay": "The workflow is interactive and cannot be black-boxed. Forge relays each question in game-dev framing and passes answers back down, translating any action identifier it surfaces.",
+    "native": "Forge owns the behaviour outright. No GSD workflow is involved."
+  },
+  "verbs": [
+    {
+      "forge": "forge-next",
+      "gsd": "gsd-next",
+      "gsd_workflow": "smart-entry.md",
+      "delegation": "native",
+      "adaptation": "Forge reads gsd_run smart-entry directly and adds adoption, runtime, and capability routing."
+    },
+    {
+      "forge": "forge-init",
+      "gsd": "gsd-new-project",
+      "gsd_workflow": "new-project.md",
+      "delegation": "relay",
+      "adaptation": "Game inception interview and GDD decision ledger precede GSD project memory creation."
+    },
+    {
+      "forge": "forge-discuss-phase",
+      "gsd": "gsd-discuss-phase",
+      "gsd_workflow": "discuss-phase.md",
+      "delegation": "relay",
+      "adaptation": "Questions are reframed around gameplay pillars, art/gameplay interfaces, and lane ownership."
+    },
+    {
+      "forge": "forge-plan-phase",
+      "gsd": "gsd-plan-phase",
+      "gsd_workflow": "plan-phase.md",
+      "delegation": "contain",
+      "adaptation": "Plans must declare asset interfaces, required lanes, and mutation risk for routing."
+    },
+    {
+      "forge": "forge-execute-phase",
+      "gsd": "gsd-execute-phase",
+      "gsd_workflow": "execute-phase.md",
+      "delegation": "contain",
+      "adaptation": "Acquires the Unreal project write-lock and lane leases before dispatch; releases them after."
+    },
+    {
+      "forge": "forge-verify-work",
+      "gsd": "gsd-verify-work",
+      "gsd_workflow": "verify-work.md",
+      "delegation": "relay",
+      "adaptation": "Requires in-engine evidence (PIE, frame capture) in addition to GSD's UAT predicate."
+    },
+    {
+      "forge": "forge-progress",
+      "gsd": "gsd-progress",
+      "gsd_workflow": "progress.md",
+      "delegation": "contain",
+      "adaptation": "Adds execution-coverage and capability-staleness reporting."
+    },
+    {
+      "forge": "forge-phase",
+      "gsd": "gsd-phase",
+      "gsd_workflow": "add-phase.md",
+      "delegation": "contain",
+      "adaptation": "Canonical packet IDs must be preserved across phase CRUD."
+    },
+    {
+      "forge": "forge-milestone",
+      "gsd": "gsd-complete-milestone",
+      "gsd_workflow": "complete-milestone.md",
+      "delegation": "contain",
+      "adaptation": "Folds new/complete/audit/summary into one verb-based skill."
+    },
+    {
+      "forge": "forge-onboard",
+      "gsd": "gsd-onboard",
+      "gsd_workflow": "onboard.md",
+      "delegation": "contain",
+      "adaptation": "Maps Content/, Blueprints, and C++ modules, not only source."
+    },
+    {
+      "forge": "forge-ingest-docs",
+      "gsd": "gsd-ingest-docs",
+      "gsd_workflow": "ingest-docs.md",
+      "delegation": "contain",
+      "adaptation": "Design documents feed the GDD decision ledger."
+    },
+    {
+      "forge": "forge-review",
+      "gsd": "gsd-review",
+      "gsd_workflow": "review.md",
+      "delegation": "contain",
+      "adaptation": "Verb-based: plan, code, security, and audit modes fan out to the matching GSD workflow, then grade against Forge's acceptance registry."
+    },
+    {
+      "forge": "forge-review",
+      "gsd": "gsd-code-review",
+      "gsd_workflow": "code-review.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-review --code."
+    },
+    {
+      "forge": "forge-review",
+      "gsd": "gsd-secure-phase",
+      "gsd_workflow": "secure-phase.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-review --security."
+    },
+    {
+      "forge": "forge-review",
+      "gsd": "gsd-audit-uat",
+      "gsd_workflow": "audit-uat.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-review --audit."
+    },
+    {
+      "forge": "forge-plan-convergence",
+      "gsd": "gsd-plan-review-convergence",
+      "gsd_workflow": "plan-review-convergence.md",
+      "delegation": "native",
+      "adaptation": "Forge already owns bounded convergence cycles."
+    },
+    {
+      "forge": "forge-quality-gate",
+      "gsd": "gsd-validate-phase",
+      "gsd_workflow": "validate-phase.md",
+      "delegation": "contain",
+      "adaptation": "Nyquist validation feeds Forge acceptance suites."
+    },
+    {
+      "forge": "forge-quality-gate",
+      "gsd": "gsd-add-tests",
+      "gsd_workflow": "add-tests.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-quality-gate --tests."
+    },
+    {
+      "forge": "forge-retrospective",
+      "gsd": "gsd-forensics",
+      "gsd_workflow": "forensics.md",
+      "delegation": "native",
+      "adaptation": "Forge owns read-only forensics and learning promotion."
+    },
+    {
+      "forge": "forge-retrospective",
+      "gsd": "gsd-extract-learnings",
+      "gsd_workflow": "extract-learnings.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-retrospective --promote."
+    },
+    {
+      "forge": "forge-debug",
+      "gsd": "gsd-debug",
+      "gsd_workflow": "debug.md",
+      "delegation": "relay",
+      "adaptation": "Adds Unreal crash logs, PIE traces, and editor-closed reproduction."
+    },
+    {
+      "forge": "forge-handoff",
+      "gsd": "gsd-pause-work",
+      "gsd_workflow": "pause-work.md",
+      "delegation": "contain",
+      "adaptation": "Persists lane leases and editor state alongside context."
+    },
+    {
+      "forge": "forge-handoff",
+      "gsd": "gsd-resume-work",
+      "gsd_workflow": "resume-project.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-handoff --resume."
+    },
+    {
+      "forge": "forge-doctor",
+      "gsd": "gsd-health",
+      "gsd_workflow": "health.md",
+      "delegation": "native",
+      "adaptation": "Planning-directory health folds into the Forge environment survey."
+    },
+    {
+      "forge": "forge-map-codebase",
+      "gsd": "gsd-map-codebase",
+      "gsd_workflow": "map-codebase.md",
+      "delegation": "contain",
+      "adaptation": "Unreal-aware codebase mapping."
+    },
+    {
+      "forge": "forge-docs-update",
+      "gsd": "gsd-docs-update",
+      "gsd_workflow": "docs-update.md",
+      "delegation": "contain",
+      "adaptation": "None beyond vocabulary."
+    },
+    {
+      "forge": "forge-spec-phase",
+      "gsd": "gsd-spec-phase",
+      "gsd_workflow": "spec-phase.md",
+      "delegation": "relay",
+      "adaptation": "Ambiguity scoring against the GDD decision ledger."
+    },
+    {
+      "forge": "forge-ship",
+      "gsd": "gsd-ship",
+      "gsd_workflow": "ship.md",
+      "delegation": "relay",
+      "adaptation": "Shipping a game means cook, package, and build verification, not only a PR."
+    },
+    {
+      "forge": "forge-ship",
+      "gsd": "gsd-pr-branch",
+      "gsd_workflow": "pr-branch.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-ship --pr."
+    },
+    {
+      "forge": "forge-undo",
+      "gsd": "gsd-undo",
+      "gsd_workflow": "undo.md",
+      "delegation": "contain",
+      "adaptation": "Must respect the binary-asset lock before reverting Unreal content."
+    }
+  ]
+}

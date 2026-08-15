@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Undo"
+  short_description: "Safely roll back committed game project work"
+  default_prompt: "Use $forge-undo for this game project."

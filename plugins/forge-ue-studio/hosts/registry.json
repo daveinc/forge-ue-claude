@@ -25,8 +25,13 @@
       "vendor": "Anthropic",
       "resident_capability": "worker.claude.resident",
       "cli": {
-        "executables": ["claude", "claude.exe"],
-        "version_args": ["--version"]
+        "executables": [
+          "claude",
+          "claude.exe"
+        ],
+        "version_args": [
+          "--version"
+        ]
       },
       "skill_invocation": {
         "prefix": "/",
@@ -37,7 +42,11 @@
         "dir": ".claude"
       },
       "discovery": {
-        "skill_roots": ["~/.claude/skills", "~/.claude/plugins/cache", "~/.agents/skills"],
+        "skill_roots": [
+          "~/.claude/skills",
+          "~/.claude/plugins/cache",
+          "~/.agents/skills"
+        ],
         "agent_root": "~/.claude/agents",
         "agent_glob": "gsd-*.md"
       },
@@ -59,8 +68,12 @@
         "install_note": "Claude Code installs plugins from inside a session. The installer prints the exact commands rather than shelling out."
       },
       "gsd": {
-        "install_args": ["--claude", "--global"],
-        "runtime_root": "~/.claude/gsd-core"
+        "install_args": [
+          "--claude",
+          "--global"
+        ],
+        "runtime_root": "~/.claude/gsd-core",
+        "runtime_name": "claude"
       },
       "provides": [
         "filesystem-read-write",
@@ -80,8 +93,13 @@
       "vendor": "OpenAI",
       "resident_capability": "worker.codex.resident",
       "cli": {
-        "executables": ["codex", "codex.exe"],
-        "version_args": ["--version"]
+        "executables": [
+          "codex",
+          "codex.exe"
+        ],
+        "version_args": [
+          "--version"
+        ]
       },
       "skill_invocation": {
         "prefix": "$",
@@ -92,7 +110,10 @@
         "dir": ".codex"
       },
       "discovery": {
-        "skill_roots": ["~/.agents/skills", "~/.codex/skills"],
+        "skill_roots": [
+          "~/.agents/skills",
+          "~/.codex/skills"
+        ],
         "agent_root": "~/.codex/agents",
         "agent_glob": "gsd-*.toml"
       },
@@ -114,8 +135,12 @@
         "install_note": "The Codex CLI installs plugins non-interactively, so the installer can run these commands directly."
       },
       "gsd": {
-        "install_args": ["--codex", "--global"],
-        "runtime_root": "~/.codex/gsd-core"
+        "install_args": [
+          "--codex",
+          "--global"
+        ],
+        "runtime_root": "~/.codex/gsd-core",
+        "runtime_name": "codex"
       },
       "provides": [
         "filesystem-read-write",
@@ -147,7 +172,9 @@
         "dir": ".agents"
       },
       "discovery": {
-        "skill_roots": ["~/.agents/skills"],
+        "skill_roots": [
+          "~/.agents/skills"
+        ],
         "agent_root": "~/.agents/agents",
         "agent_glob": "gsd-*.md"
       },
@@ -168,8 +195,12 @@
         "install_note": "No package manager is assumed. Forge only requires that the host loads SKILL.md files and the project instruction file."
       },
       "gsd": {
-        "install_args": ["--global"],
-        "runtime_root": "~/.agents/gsd-core"
+        "install_args": [
+          "--global"
+        ],
+        "runtime_root": "~/.agents/gsd-core",
+        "runtime_name": null,
+        "runtime_name_note": "GSD has no matching runtime identifier; it falls back to its own default spelling."
       },
       "provides": [
         "filesystem-read-write",

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Verify Work"
+  short_description: "Validate completed game project work through UAT plus in-engine evidence"
+  default_prompt: "Use $forge-verify-work for this game project."

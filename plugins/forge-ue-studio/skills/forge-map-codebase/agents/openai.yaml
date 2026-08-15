@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Map Codebase"
+  short_description: "Analyse an Unreal codebase and produce structured planning intel"
+  default_prompt: "Use $forge-map-codebase for this game project."

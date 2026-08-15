@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Progress"
+  short_description: "Check game project progress and advance the workflow"
+  default_prompt: "Use $forge-progress for this game project."

@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import platform
 import re
 import shutil
@@ -372,10 +373,15 @@ def host_set(project_value: str, host_id: str, apply: bool) -> dict[str, Any]:
     keep = {str(Path(item["target"]).relative_to(root)).replace("\\", "/") for item in actions if Path(item["target"]).is_absolute()}
     if previous_id != host_id:
         actions.extend(retire_host_surfaces(root, host_profile(previous_id), keep, apply))
+    # A swap changes which spelling GSD should emit, so re-sync its runtime key.
+    gsd_sync = sync_gsd_runtime(root, profile, apply)
+    actions.append({"action": gsd_sync["action"], "target": gsd_sync["target"], "source": "forge-gsd-runtime-sync"})
+
     surfaces = [destination for destination, _ in rendered_surfaces(root, profile)]
     state = write_runtime(root, profile, surfaces, apply, note="host set" if previous_id == host_id else f"swapped from {previous_id}")
     return {
         "schema": "forge.host-swap/v1",
+        "gsd_runtime": gsd_sync,
         "mode": "apply" if apply else "dry-run",
         "project": str(root),
         "previous_host": previous_id,
@@ -456,8 +462,59 @@ def gsd_runtime(root: Path, profile: dict[str, Any] | None = None) -> tuple[str 
     return (cli, None) if cli else (None, None)
 
 
+def gsd_runtime_name(profile: dict[str, Any]) -> str | None:
+    """The identifier GSD uses for this host, when GSD recognises it.
+
+    GSD resolves its own command spelling from `.planning/config.json`'s
+    `runtime` key (or GSD_RUNTIME), defaulting to `claude`. Forge assigns the
+    host, so Forge is the one that knows the truth and must tell GSD.
+    """
+    return profile.get("gsd", {}).get("runtime_name")
+
+
+def gsd_environment(profile: dict[str, Any]) -> dict[str, str]:
+    """Process environment for a gsd_run call, carrying the assigned host."""
+    env = dict(os.environ)
+    name = gsd_runtime_name(profile)
+    if name:
+        env["GSD_RUNTIME"] = name
+    return env
+
+
+def sync_gsd_runtime(root: Path, profile: dict[str, Any], apply: bool) -> dict[str, Any]:
+    """Write GSD's `runtime` key so its emissions match the assigned host.
+
+    Without this, a Codex-hosted Forge project still gets GSD's default
+    `claude` spelling. Forge only touches this one key; `.planning` remains
+    GSD's to own.
+    """
+    name = gsd_runtime_name(profile)
+    path = root / ".planning" / "config.json"
+    if not name:
+        return {"action": "skipped", "reason": f"host {profile['id']!r} declares no GSD runtime name", "target": str(path)}
+    if not path.is_file():
+        # GSD has not initialised project memory yet; nothing to sync onto.
+        return {"action": "deferred", "reason": "GSD .planning/config.json does not exist yet", "target": str(path)}
+    try:
+        config = load_json(path)
+    except ValueError as exc:
+        return {"action": "error", "reason": str(exc), "target": str(path)}
+    if config.get("runtime") == name:
+        return {"action": "unchanged", "runtime": name, "target": str(path)}
+    config["runtime"] = name
+    if apply:
+        path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    return {
+        "action": "update" if apply else "would-update",
+        "runtime": name,
+        "previous": config.get("runtime"),
+        "target": str(path),
+    }
+
+
 def gsd_smart_entry(root: Path, profile: dict[str, Any] | None = None) -> dict[str, Any]:
     """Read GSD's authoritative project state without mutating the project."""
+    profile = profile or active_profile(root)
     runner, script = gsd_runtime(root, profile)
     if not runner:
         return {"ok": False, "error": "GSD runtime was not found", "snapshot": None}
@@ -472,6 +529,7 @@ def gsd_smart_entry(root: Path, profile: dict[str, Any] | None = None) -> dict[s
             timeout=15,
             encoding="utf-8",
             errors="replace",
+            env=gsd_environment(profile),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {"ok": False, "error": str(exc), "snapshot": None, "command": command}
@@ -487,24 +545,57 @@ def gsd_smart_entry(root: Path, profile: dict[str, Any] | None = None) -> dict[s
     return {"ok": True, "error": "", "snapshot": snapshot, "command": command}
 
 
+def verb_registry() -> dict[str, Any]:
+    return load_json(plugin_root() / "verbs" / "registry.json")
+
+
+def gsd_to_forge_verbs() -> dict[str, str]:
+    """Map every GSD command to the Forge verb that fronts it.
+
+    Forge owns the whole user-facing vocabulary; GSD is invoked in place and
+    never addressed directly. This map is the single boundary where GSD's
+    structured command emissions become Forge verbs.
+    """
+    return {str(item["gsd"]): str(item["forge"]) for item in verb_registry().get("verbs", [])}
+
+
+def translate_gsd_verb(name: str) -> str | None:
+    """Return the Forge verb fronting a GSD command, or None when unmapped."""
+    return gsd_to_forge_verbs().get(name)
+
+
 def normalize_gsd_command(command: str, profile: dict[str, Any] | None = None) -> str:
-    """Translate command spelling into the active host's skill invocation style.
+    """Render a command in Forge vocabulary, spelled for the active host.
+
+    Any GSD command is translated to the Forge verb that fronts it, so a
+    `gsd-` name can never reach the user. Unmapped GSD commands are surfaced
+    verbatim with a marker rather than silently passed through — the registry
+    declares `unmapped_action: fail`, and a leaked name is a registry gap.
 
     Accepts a bare skill name, a legacy `/gsd:name` spelling, or a name already
-    carrying another host's prefix. The neutral fallback is no prefix, so a caller
-    that forgets to pass a profile degrades to a bare name rather than silently
-    emitting some other host's spelling.
+    carrying another host's prefix. The neutral fallback is no prefix, so a
+    caller that forgets to pass a profile degrades to a bare name rather than
+    silently emitting some other host's spelling.
     """
     prefix = (profile or {}).get("skill_invocation", {}).get("prefix", "")
     text = command.strip()
+
     match = re.match(r"^/gsd:([a-z0-9-]+)(.*)$", text)
     if match:
-        return f"{prefix}gsd-{match.group(1)}{match.group(2)}"
-    # Bare names are the canonical internal form; a leading $ or / is re-spelled.
-    match = re.match(r"^[$/]?((?:gsd|forge)-[a-z0-9-]+)(.*)$", text)
-    if match:
-        return f"{prefix}{match.group(1)}{match.group(2)}"
-    return text
+        name, tail = f"gsd-{match.group(1)}", match.group(2)
+    else:
+        match = re.match(r"^[$/]?((?:gsd|forge)-[a-z0-9-]+)(.*)$", text)
+        if not match:
+            return text
+        name, tail = match.group(1), match.group(2)
+
+    if name.startswith("gsd-"):
+        translated = translate_gsd_verb(name)
+        if translated is None:
+            # Loud rather than silent: an unmapped GSD verb is a registry gap.
+            return f"{prefix}{name}{tail}  [UNMAPPED: add {name} to verbs/registry.json]"
+        name = translated
+    return f"{prefix}{name}{tail}"
 
 
 def forge_action(
@@ -1324,6 +1415,10 @@ def install_overlay(project_value: str, apply: bool, host_override: str | None =
     detected = write_profile(str(root), apply=apply, host_override=host_override)
     actions.append({"action": detected["action"], "target": detected["target"], "source": "forge-survey"})
 
+    # Tell GSD which host it is running under, so its own emissions match.
+    gsd_sync = sync_gsd_runtime(root, profile, apply)
+    actions.append({"action": gsd_sync["action"], "target": gsd_sync["target"], "source": "forge-gsd-runtime-sync"})
+
     surfaces = [destination for destination, _ in rendered_surfaces(root, profile)]
     runtime = write_runtime(root, profile, surfaces, apply, note="initial overlay install")
 
@@ -1585,6 +1680,11 @@ def build_parser() -> argparse.ArgumentParser:
             mode = command.add_mutually_exclusive_group()
             mode.add_argument("--apply", action="store_true")
             mode.add_argument("--dry-run", action="store_true")
+    gsd_sync = sub.add_parser("gsd-sync", help="Write GSD's runtime key from the assigned host")
+    gsd_sync.add_argument("--project", required=True)
+    gsd_sync.add_argument("--host")
+    gsd_sync.add_argument("--apply", action="store_true")
+    gsd_sync.add_argument("--output")
     host = sub.add_parser("host", help="Inspect or assign the resident runtime host")
     host_sub = host.add_subparsers(dest="host_command", required=True)
     host_list_parser = host_sub.add_parser("list", help="List known runtime hosts and their prerequisites")
@@ -1630,6 +1730,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "bootstrap-check":
             root, _ = project_root(args.project)
             result = bootstrap_verdict(root, active_profile(root, args.host))
+        elif args.command == "gsd-sync":
+            root, _ = project_root(args.project)
+            result = sync_gsd_runtime(root, active_profile(root, args.host), apply=bool(args.apply))
+            result = {"schema": "forge.gsd-runtime-sync/v1", "project": str(root), **result}
         elif args.command == "host":
             if args.host_command == "list":
                 result = host_list()

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Debug"
+  short_description: "Systematically debug a game project defect with persistent state across context resets"
+  default_prompt: "Use $forge-debug for this game project."

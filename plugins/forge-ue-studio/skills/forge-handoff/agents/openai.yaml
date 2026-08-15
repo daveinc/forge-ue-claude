@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Handoff"
+  short_description: "Pause or resume game project work across sessions without losing state"
+  default_prompt: "Use $forge-handoff for this game project."

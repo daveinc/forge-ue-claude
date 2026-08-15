@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Ingest Docs"
+  short_description: "Ingest existing game design documents into planning state"
+  default_prompt: "Use $forge-ingest-docs for this game project."

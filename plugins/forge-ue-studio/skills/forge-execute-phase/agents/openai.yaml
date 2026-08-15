@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Execute Phase"
+  short_description: "Execute the plans in a game project phase under Unreal lane control"
+  default_prompt: "Use $forge-execute-phase for this game project."

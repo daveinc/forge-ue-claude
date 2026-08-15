@@ -182,7 +182,7 @@ class ForgeInstallerTests(unittest.TestCase):
         )
         preview = json.loads(result.stdout)
         self.assertEqual(preview["mode"], "dry-run")
-        self.assertEqual(preview["package"], "@opengsd/gsd-core@1.8.0")
+        self.assertEqual(preview["package"], "@opengsd/gsd-core@1.9.1")
         self.assertEqual(preview["scope"], "global-claude")
         self.assertIn("--claude", preview["command"])
         self.assertFalse(preview["changed"])
@@ -208,7 +208,7 @@ class ForgeInstallerTests(unittest.TestCase):
             first = forge.install_overlay(str(project), apply=True)
             second = forge.install_overlay(str(project), apply=True)
             self.assertTrue(any(item["action"] == "create" for item in first["actions"]))
-            self.assertTrue(all(item["action"] == "unchanged" for item in second["actions"]))
+            self.assertTrue(all(item["action"] not in {"create", "propose", "regenerate", "update"} for item in second["actions"]))
             self.assertTrue(forge.verify_overlay(str(project))["ok"])
 
     def test_local_variant_gets_non_destructive_proposal(self):
@@ -317,7 +317,7 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertEqual(result["actions"][0]["command"], "/forge-init")
             self.assertEqual(result["authority"]["phase_state"], "gsd")
 
-    def test_forge_next_routes_existing_docs_to_gsd_ingest(self):
+    def test_forge_next_routes_existing_docs_to_ingest(self):
         with workspace_tempdir() as temp:
             project = temp / "ExistingDesign"
             project.mkdir()
@@ -329,9 +329,9 @@ class ForgeInstallerTests(unittest.TestCase):
             gsd = {"ok": True, "error": "", "snapshot": {"situation": "no-project", "actions": []}}
             result = forge.forge_next(str(project), gsd)
             self.assertEqual(result["situation"], "existing-design-unplanned")
-            self.assertEqual(result["actions"][0]["command"], '/gsd-ingest-docs "Docs\\Design"')
+            self.assertEqual(result["actions"][0]["command"], '/forge-ingest-docs "Docs\\Design"')
 
-    def test_forge_next_routes_existing_unreal_project_to_gsd_onboard(self):
+    def test_forge_next_routes_existing_unreal_project_to_onboard(self):
         with workspace_tempdir() as temp:
             project = self.make_project(temp)
             forge.install_overlay(str(project), apply=True)
@@ -339,7 +339,7 @@ class ForgeInstallerTests(unittest.TestCase):
             gsd = {"ok": True, "error": "", "snapshot": {"situation": "no-project", "actions": []}}
             result = forge.forge_next(str(project), gsd)
             self.assertEqual(result["situation"], "existing-project-unplanned")
-            self.assertEqual(result["actions"][0]["command"], "/gsd-onboard")
+            self.assertEqual(result["actions"][0]["command"], "/forge-onboard")
 
     def test_forge_next_preserves_gsd_smart_entry_as_phase_authority(self):
         with workspace_tempdir() as temp:
@@ -363,7 +363,7 @@ class ForgeInstallerTests(unittest.TestCase):
             result = forge.forge_next(str(project), gsd)
             self.assertEqual(result["situation"], "gsd-executing")
             self.assertEqual(result["recommended"], "progress-next")
-            self.assertEqual(result["actions"][0]["command"], "/gsd-progress --next")
+            self.assertEqual(result["actions"][0]["command"], "/forge-progress --next")
             self.assertEqual(result["gsd_snapshot"]["situation"], "executing")
 
     def test_forge_next_does_not_route_to_missing_gsd(self):
@@ -687,6 +687,92 @@ class ForgeInstallerTests(unittest.TestCase):
             forge.install_overlay(str(project), apply=True)
             with self.assertRaisesRegex(ValueError, "transitions are deprecated"):
                 forge.lifecycle_state(str(project), "execute-complete")
+
+    def test_gsd_commands_are_translated_into_forge_vocabulary(self):
+        claude = forge.host_profile("claude")
+        codex = forge.host_profile("codex")
+        # A GSD command must never reach the user; it becomes the Forge verb
+        # fronting it, spelled for the active host.
+        self.assertEqual(forge.normalize_gsd_command("gsd-execute-phase", claude), "/forge-execute-phase")
+        self.assertEqual(forge.normalize_gsd_command("gsd-execute-phase", codex), "$forge-execute-phase")
+        self.assertEqual(forge.normalize_gsd_command("/gsd:progress --next", claude), "/forge-progress --next")
+        self.assertEqual(forge.normalize_gsd_command("$gsd-onboard", claude), "/forge-onboard")
+        # Forge verbs pass through, re-spelled only.
+        self.assertEqual(forge.normalize_gsd_command("forge-next", codex), "$forge-next")
+        # Unmapped GSD verbs fail loudly rather than leaking silently.
+        leaked = forge.normalize_gsd_command("gsd-not-in-registry", claude)
+        self.assertIn("UNMAPPED", leaked)
+
+    def test_every_registry_verb_resolves_to_an_existing_skill(self):
+        skills = {p.parent.name for p in (ROOT / "plugins" / "forge-ue-studio" / "skills").glob("*/SKILL.md")}
+        for gsd_verb, forge_verb in forge.gsd_to_forge_verbs().items():
+            with self.subTest(gsd=gsd_verb):
+                self.assertIn(forge_verb, skills)
+                self.assertFalse(forge_verb.startswith("gsd-"))
+
+    def test_forge_next_never_surfaces_a_gsd_command(self):
+        with workspace_tempdir() as temp:
+            project = temp / "NoLeak"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+            self.complete_bootstrap(project)
+            (project / ".planning").mkdir(exist_ok=True)
+            gsd = {
+                "ok": True,
+                "error": "",
+                "snapshot": {
+                    "situation": "executing",
+                    "summary": "Phase 2 executing",
+                    "actions": [
+                        {"id": "a", "label": "Continue", "command": "/gsd:execute-phase 2", "recommended": True},
+                        {"id": "b", "label": "Verify", "command": "$gsd-verify-work", "recommended": False},
+                        {"id": "c", "label": "Onboard", "command": "gsd-onboard", "recommended": False},
+                    ],
+                },
+            }
+            result = forge.forge_next(str(project), gsd)
+            commands = [action["command"] for action in result["actions"]]
+            self.assertEqual(commands, ["/forge-execute-phase 2", "/forge-verify-work", "/forge-onboard"])
+            for command in commands:
+                self.assertNotIn("gsd-", command)
+
+    def test_gsd_runtime_key_follows_the_assigned_host(self):
+        with workspace_tempdir() as temp:
+            project = temp / "RuntimeSync"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+
+            # GSD has not created .planning yet, so the sync defers rather than failing.
+            self.assertEqual(forge.sync_gsd_runtime(project, forge.host_profile("claude"), True)["action"], "deferred")
+
+            config = project / ".planning" / "config.json"
+            config.parent.mkdir(parents=True, exist_ok=True)
+            config.write_text(json.dumps({"runtime": "claude", "other": "preserved"}), encoding="utf-8")
+
+            # Swapping the host must re-point GSD's own command spelling.
+            forge.host_set(str(project), "codex", apply=True)
+            written = json.loads(config.read_text(encoding="utf-8"))
+            self.assertEqual(written["runtime"], "codex")
+            self.assertEqual(written["other"], "preserved")
+
+            forge.host_set(str(project), "claude", apply=True)
+            self.assertEqual(json.loads(config.read_text(encoding="utf-8"))["runtime"], "claude")
+
+    def test_gsd_runtime_sync_is_dry_run_safe_and_skips_unknown_hosts(self):
+        with workspace_tempdir() as temp:
+            project = temp / "SyncSafety"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+            config = project / ".planning" / "config.json"
+            config.parent.mkdir(parents=True, exist_ok=True)
+            config.write_text(json.dumps({"runtime": "claude"}), encoding="utf-8")
+
+            result = forge.sync_gsd_runtime(project, forge.host_profile("codex"), apply=False)
+            self.assertEqual(result["action"], "would-update")
+            self.assertEqual(json.loads(config.read_text(encoding="utf-8"))["runtime"], "claude")
+
+            # The generic host has no GSD identifier; skip rather than write junk.
+            self.assertEqual(forge.sync_gsd_runtime(project, forge.host_profile("generic"), True)["action"], "skipped")
 
     def test_packet_registry_has_unique_canonical_ids(self):
         registry_path = ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state" / "packet-registry.json"

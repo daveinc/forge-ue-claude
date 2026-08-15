@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Onboard"
+  short_description: "Onboard an existing Unreal project into Forge and GSD planning"
+  default_prompt: "Use $forge-onboard for this game project."

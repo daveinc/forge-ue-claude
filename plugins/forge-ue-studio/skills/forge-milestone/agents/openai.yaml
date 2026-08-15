@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Milestone"
+  short_description: "Manage game project milestones — start, complete, audit, or summarise"
+  default_prompt: "Use $forge-milestone for this game project."
