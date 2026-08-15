@@ -218,11 +218,11 @@
       "via": "command"
     },
     {
-      "forge": "forge-handoff",
+      "forge": "forge-resume-work",
       "gsd": "gsd-resume-work",
       "gsd_workflow": "resume-project.md",
       "delegation": "contain",
-      "adaptation": "Reached through forge-handoff --resume.",
+      "adaptation": "Reclaims lane leases and editor state, and re-probes qualification after a host change.",
       "disposition": "front",
       "via": "command"
     },

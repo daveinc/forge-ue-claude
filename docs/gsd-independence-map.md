@@ -93,7 +93,8 @@ The discuss → plan → execute → verify sequence. Forge must not fork this; 
 
 | GSD | Forge target | Action | Notes |
 |---|---|---|---|
-| `gsd-pause-work`, `gsd-resume-work` | `forge-handoff` | **Adapt** | Must persist lane leases and editor state, not just context. |
+| `gsd-pause-work` | `forge-handoff` | **Adapt** | Must persist lane leases and editor state, not just context. |
+| `gsd-resume-work` | `forge-resume-work` | **Adapt** | Must reclaim leases and re-probe qualification when the host changed. |
 | `gsd-forensics` | `forge-retrospective` | **Have** | |
 | `gsd-debug` | `forge-debug` | **Adapt** | Needs Unreal crash logs, PIE traces, and editor-closed reproduction. |
 | `gsd-health` | `forge-doctor` | **Have** | Merge planning-health checks into Doctor. |

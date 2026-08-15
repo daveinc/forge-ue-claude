@@ -1,6 +1,6 @@
 ---
 name: forge-handoff
-description: Pause or resume game project work across sessions without losing state. Use before a context reset and when returning to an interrupted project.
+description: Pause game project work before a context reset without losing state. Use when a session must end mid-phase. Resuming afterwards is forge-resume-work.
 ---
 
 # Forge Handoff
@@ -11,13 +11,13 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 ## PRE — Forge
 
-1. On `--resume`, run Forge Next first so routing comes from files rather than chat.
+1. Returning to the work is `forge-resume-work`.
 
 ## CORE — GSD
 
-1. Contain GSD's pause or resume workflow depending on mode.
+1. Contain GSD's pause workflow.
 
 ## POST — Forge
 
-1. Persist lane leases and editor state alongside context. A handoff that forgets a held write-lock strands the next session.
+1. Persist lane leases and editor state alongside context, including every held write-lock.
 2. Record which runtime host produced the handoff. Qualification evidence does not transfer across hosts.

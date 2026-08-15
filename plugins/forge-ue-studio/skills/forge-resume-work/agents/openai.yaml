@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Resume Work"
+  short_description: "Resume interrupted game project work from persisted state"
+  default_prompt: "Use $forge-resume-work for this game project."
