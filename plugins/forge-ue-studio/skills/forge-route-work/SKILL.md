@@ -21,7 +21,7 @@ Use Codex as the resident occupant and supervisor. Select optional local/remote 
 10. Compile an immutable minimal work packet with canonical work order, GSD phase/plan, revision, task/complexity class, objective, non-goals, referrals, inputs, exact write scope, isolation, leases, capabilities, context budget, output contract, acceptance, verification, evidence, and invalidation hashes. Do not forward the full GDD or resident conversation.
 11. Dispatch independent packets concurrently through the typed GSD/Forge agent surface when it is available and authorized. The orchestrator stops related work while agents run. If dispatch is unavailable, record `DEGRADED_INLINE`; do not describe inline work as delegated. Give the verifier the requirement, artifact/diff, acceptance, and evidence, not builder reasoning.
 12. Require a structured attempt result that separates observed facts, inferences, findings, touched artifacts, evidence, verification, residual risk and next action.
-13. On failure, inspect actual artifacts before retry. Substitute a second occupant before changing competence scores when the brief or tool may be defective. Use `$forge-retrospective` for inconsistent or repeated failures.
+13. On failure, inspect actual artifacts before retry. Substitute a second occupant before changing competence scores when the brief or tool may be defective. Use `forge-retrospective` for inconsistent or repeated failures.
 14. Persist transitions, deactivate packet-only surfaces and release leases. Resume from state, never chat memory.
 
-Use `$forge-capability-admin` to qualify or activate routes and `$forge-research` if no verified capability closes a required step. Block only that step when no fallback exists.
+Use `forge-capability-admin` to qualify or activate routes and `forge-research` if no verified capability closes a required step. Block only that step when no fallback exists.

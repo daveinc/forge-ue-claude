@@ -1,7 +1,7 @@
 {
   "name": "forge-ue-studio",
-  "version": "0.1.0+codex.20260815122027",
-  "description": "Codex-resident, capability-routed, GSD-compatible Unreal production orchestration.",
+  "version": "0.2.0",
+  "description": "Host-agnostic, capability-routed, GSD-compatible Unreal production orchestration.",
   "author": {
     "name": "Dave"
   },
@@ -11,13 +11,14 @@
     "game-development",
     "gsd",
     "blender",
-    "orchestration"
+    "orchestration",
+    "host-agnostic"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Forge UE Studio",
     "shortDescription": "Orchestrate a capability-aware Unreal studio.",
-    "longDescription": "Uses Codex as the resident studio worker and supervisor, then discovers, consents, qualifies, activates and routes bounded work across Unreal, Blender, visual development, code, review, research, build and QA with persistent evidence and recovery state.",
+    "longDescription": "Uses an assigned, swappable AI runtime as the resident studio worker and supervisor, then discovers, consents, qualifies, activates and routes bounded work across Unreal, Blender, visual development, code, review, research, build and QA with persistent evidence and recovery state.",
     "developerName": "Dave",
     "category": "Developer Tools",
     "capabilities": [

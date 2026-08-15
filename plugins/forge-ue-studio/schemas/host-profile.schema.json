@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.host-profile/v1",
+  "type": "object",
+  "required": [
+    "id",
+    "display_name",
+    "resident_capability",
+    "cli",
+    "skill_invocation",
+    "home",
+    "discovery",
+    "project_surface",
+    "plugin",
+    "gsd",
+    "provides"
+  ],
+  "properties": {
+    "id": {"type": "string"},
+    "display_name": {"type": "string"},
+    "vendor": {"type": "string"},
+    "resident_capability": {"type": "string"},
+    "cli": {"type": "object"},
+    "skill_invocation": {
+      "type": "object",
+      "required": ["prefix", "style"],
+      "properties": {
+        "prefix": {"type": "string"},
+        "example": {"type": "string"},
+        "style": {"enum": ["slash-command", "dollar-skill", "bare-name"]}
+      }
+    },
+    "home": {"type": "object"},
+    "discovery": {"type": "object"},
+    "project_surface": {
+      "type": "object",
+      "required": ["instruction_file", "agent_dir", "agent_format", "agent_extension"],
+      "properties": {
+        "instruction_file": {"type": "string"},
+        "agent_dir": {"type": "string"},
+        "agent_format": {"enum": ["markdown-frontmatter", "toml"]},
+        "agent_extension": {"type": "string"}
+      }
+    },
+    "plugin": {"type": "object"},
+    "gsd": {"type": "object"},
+    "provides": {"type": "array"}
+  }
+}

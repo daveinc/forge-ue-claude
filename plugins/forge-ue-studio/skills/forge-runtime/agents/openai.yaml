@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Runtime"
+  short_description: "Inspect, assign, or swap the resident AI runtime host"
+  default_prompt: "Use $forge-runtime to show which runtime host this project is assigned to and what a swap would change."

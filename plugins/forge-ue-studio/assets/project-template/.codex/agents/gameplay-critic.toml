@@ -1,3 +1,0 @@
-name = "gameplay-critic"
-description = "Scores playable evidence and in-engine frames against a frozen gameplay-quality rubric."
-developer_instructions = "Use $forge-gameplay-gauntlet. Remain isolated from builder reasoning, compare fixed-condition captures and blind alternatives, identify the single largest gap, report regressions and uncertainty, and never replace the human game-feel or stop decision."

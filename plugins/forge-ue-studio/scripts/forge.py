@@ -28,6 +28,7 @@ SCHEMA_FILES = {
     "attempt-result": "attempt-result.schema.json",
     "bootstrap-report": "bootstrap-report.schema.json",
     "capability-contract": "capability-contract.schema.json",
+    "host-profile": "host-profile.schema.json",
     "lane-lease": "lane-lease.schema.json",
     "lifecycle-state": "lifecycle-state.schema.json",
     "learning-record": "learning-record.schema.json",
@@ -36,9 +37,12 @@ SCHEMA_FILES = {
     "research-record": "research-record.schema.json",
     "review-cycle": "review-cycle.schema.json",
     "route-request": "route-request.schema.json",
+    "runtime-state": "runtime-state.schema.json",
     "smart-entry": "smart-entry.schema.json",
     "work-packet": "work-packet.schema.json",
 }
+
+RESIDENT_PROVIDER = "resident"
 
 LIFECYCLE_EVENTS = {
     "bootstrap-start",
@@ -60,6 +64,349 @@ LIFECYCLE_EVENTS = {
 
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Host runtime layer
+#
+# Forge treats the AI runtime as a swappable assignment rather than a hardcoded
+# vendor. Every host-specific surface (project instruction file, project-local
+# agents, skill command spelling) is rendered from the host-neutral canon under
+# .forge, so a project stays portable and can change runtime at any stage.
+# ---------------------------------------------------------------------------
+
+
+def plugin_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def host_registry() -> dict[str, Any]:
+    return load_json(plugin_root() / "hosts" / "registry.json")
+
+
+def host_profiles() -> dict[str, dict[str, Any]]:
+    return {str(profile["id"]): profile for profile in host_registry().get("hosts", [])}
+
+
+def host_profile(host_id: str) -> dict[str, Any]:
+    profiles = host_profiles()
+    if host_id not in profiles:
+        known = ", ".join(sorted(profiles))
+        raise ValueError(f"Unknown host {host_id!r}; known hosts: {known}")
+    return profiles[host_id]
+
+
+def expand_host_path(value: str) -> Path:
+    return Path(value).expanduser()
+
+
+def host_command(profile: dict[str, Any], skill: str) -> str:
+    """Spell a skill invocation the way the active host expects."""
+    return f"{profile.get('skill_invocation', {}).get('prefix', '')}{skill}"
+
+
+def render_tokens(text: str, profile: dict[str, Any]) -> str:
+    """Resolve host-neutral canon tokens into host-specific text."""
+    rendered = re.sub(
+        r"\{\{skill:([a-z0-9:-]+)\}\}",
+        lambda match: host_command(profile, match.group(1)),
+        text,
+    )
+    surface = profile.get("project_surface", {})
+    replacements = {
+        "{{resident}}": str(profile.get("display_name", profile.get("id", "the resident host"))),
+        "{{host_id}}": str(profile.get("id", "")),
+        "{{host_display_name}}": str(profile.get("display_name", "")),
+        "{{host_agent_dir}}": str(surface.get("agent_dir", "")),
+        "{{host_instruction_file}}": str(surface.get("instruction_file", "")),
+    }
+    for token, value in replacements.items():
+        rendered = rendered.replace(token, value)
+    return rendered
+
+
+def toml_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def render_agent(definition: dict[str, Any], profile: dict[str, Any]) -> str:
+    """Render a neutral agent definition into the active host's agent format."""
+    name = str(definition.get("name", "")).strip()
+    description = render_tokens(str(definition.get("description", "")).strip(), profile)
+    instructions = render_tokens(str(definition.get("instructions", "")).strip(), profile)
+    if not name:
+        raise ValueError("Agent definition is missing a name")
+    fmt = profile.get("project_surface", {}).get("agent_format", "markdown-frontmatter")
+    if fmt == "toml":
+        return (
+            f'name = "{toml_escape(name)}"\n'
+            f'description = "{toml_escape(description)}"\n'
+            f'developer_instructions = "{toml_escape(instructions)}"\n'
+        )
+    if fmt == "markdown-frontmatter":
+        return (
+            "---\n"
+            f"name: {name}\n"
+            f"description: {description}\n"
+            "---\n\n"
+            f"{instructions}\n"
+        )
+    raise ValueError(f"Unsupported agent format: {fmt!r}")
+
+
+def agent_definitions(canon_root: Path) -> list[dict[str, Any]]:
+    directory = canon_root / ".forge" / "agents"
+    if not directory.is_dir():
+        return []
+    return [load_json(path) for path in sorted(directory.glob("*.json"))]
+
+
+def canon_source(root: Path) -> Path:
+    """Prefer the project's own canon; fall back to the plugin template before install."""
+    return root if (root / ".forge" / "agents").is_dir() else template_root()
+
+
+def rendered_surfaces(
+    root: Path,
+    profile: dict[str, Any],
+    canon_root: Path | None = None,
+) -> list[tuple[Path, bytes]]:
+    """Build every host-specific file this project needs, from the neutral canon."""
+    canon = canon_root or canon_source(root)
+    surface = profile.get("project_surface", {})
+    outputs: list[tuple[Path, bytes]] = []
+
+    template = canon / ".forge" / "templates" / "project-instructions.md"
+    if template.is_file():
+        body = render_tokens(template.read_text(encoding="utf-8-sig"), profile)
+        outputs.append((root / str(surface.get("instruction_file", "AGENTS.md")), body.encode("utf-8")))
+
+    agent_dir = root / str(surface.get("agent_dir", ".agents/agents"))
+    extension = str(surface.get("agent_extension", ".md"))
+    for definition in agent_definitions(canon):
+        target = agent_dir / f"{definition['name']}{extension}"
+        outputs.append((target, render_agent(definition, profile).encode("utf-8")))
+    return outputs
+
+
+def runtime_path(root: Path) -> Path:
+    return root / ".forge" / "runtime.json"
+
+
+def read_runtime(root: Path) -> dict[str, Any] | None:
+    path = runtime_path(root)
+    if not path.is_file():
+        return None
+    try:
+        return load_json(path)
+    except ValueError:
+        return None
+
+
+def active_host_id(root: Path, override: str | None = None) -> str:
+    """Resolve the runtime for a project: explicit override, recorded state, then default."""
+    if override:
+        return override
+    runtime = read_runtime(root)
+    if runtime and runtime.get("active_host"):
+        return str(runtime["active_host"])
+    return str(host_registry().get("default_host", "generic"))
+
+
+def active_profile(root: Path, override: str | None = None) -> dict[str, Any]:
+    return host_profile(active_host_id(root, override))
+
+
+def host_prerequisites(profile: dict[str, Any]) -> dict[str, Any]:
+    contract = host_registry().get("prerequisite_contract", {})
+    provided = set(profile.get("provides", []))
+    required = list(contract.get("required", []))
+    optional = list(contract.get("optional", []))
+    missing = [item for item in required if item not in provided]
+    return {
+        "satisfied": not missing,
+        "required": required,
+        "missing_required": missing,
+        "optional_available": [item for item in optional if item in provided],
+        "optional_missing": [item for item in optional if item not in provided],
+    }
+
+
+def write_runtime(root: Path, profile: dict[str, Any], surfaces: list[Path], apply: bool, note: str) -> dict[str, Any]:
+    existing = read_runtime(root) or {}
+    history = list(existing.get("history", []))
+    previous = existing.get("active_host")
+    if previous != profile["id"]:
+        history.append(
+            {
+                "at": utc_now(),
+                "from": previous,
+                "to": profile["id"],
+                "note": note,
+            }
+        )
+    state = {
+        "schema": "forge.runtime-state/v1",
+        "active_host": profile["id"],
+        "display_name": profile.get("display_name", profile["id"]),
+        "portable": True,
+        "prerequisites": host_prerequisites(profile),
+        "canon": {
+            "agents": ".forge/agents",
+            "directives": ".forge/directives.md",
+            "instruction_template": ".forge/templates/project-instructions.md",
+            "phase_state": ".planning",
+        },
+        "rendered_surfaces": sorted(str(path.relative_to(root)).replace("\\", "/") for path in surfaces),
+        "history": history,
+        "updated_at": utc_now(),
+    }
+    if apply:
+        path = runtime_path(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return state
+
+
+def apply_host_surfaces(root: Path, profile: dict[str, Any], apply: bool) -> list[dict[str, str]]:
+    """Write the active host's generated surfaces, preserving unrelated local files."""
+    actions: list[dict[str, str]] = []
+    for destination, payload in rendered_surfaces(root, profile):
+        if not destination.exists():
+            action, target = "create", destination
+        elif destination.read_bytes() == payload:
+            action, target = "unchanged", destination
+        else:
+            existing = destination.read_text(encoding="utf-8-sig", errors="replace")
+            if "<!-- FORGE:generated" in existing or destination.parent.name == "agents":
+                action, target = "regenerate", destination
+            else:
+                action, target = "propose", proposal_payload_path(destination, payload)
+        actions.append({"action": action, "target": str(target), "source": "forge-host-render"})
+        if apply and action in {"create", "regenerate"}:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+        elif apply and action == "propose" and not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+    return actions
+
+
+def retire_host_surfaces(root: Path, profile: dict[str, Any], keep: set[str], apply: bool) -> list[dict[str, str]]:
+    """Remove generated surfaces belonging to a host the project no longer uses."""
+    actions: list[dict[str, str]] = []
+    surface = profile.get("project_surface", {})
+    instruction = root / str(surface.get("instruction_file", ""))
+    candidates: list[Path] = []
+    if instruction.is_file() and str(instruction.relative_to(root)).replace("\\", "/") not in keep:
+        if "<!-- FORGE:generated" in instruction.read_text(encoding="utf-8-sig", errors="replace"):
+            candidates.append(instruction)
+    agent_dir = root / str(surface.get("agent_dir", ""))
+    extension = str(surface.get("agent_extension", ".md"))
+    if agent_dir.is_dir():
+        known = {str(item.get("name")) for item in agent_definitions(root)}
+        for path in sorted(agent_dir.glob(f"*{extension}")):
+            if path.stem in known and str(path.relative_to(root)).replace("\\", "/") not in keep:
+                candidates.append(path)
+    for path in candidates:
+        actions.append({"action": "retire", "target": str(path), "source": "forge-host-swap"})
+        if apply:
+            path.unlink()
+            parent = path.parent
+            while parent != root and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
+    return actions
+
+
+def host_status(project_value: str, host_override: str | None = None) -> dict[str, Any]:
+    root, _ = project_root(project_value)
+    profile = active_profile(root, host_override)
+    runtime = read_runtime(root)
+    surfaces = []
+    for destination, payload in rendered_surfaces(root, profile):
+        if not destination.exists():
+            state = "MISSING"
+        elif destination.read_bytes() == payload:
+            state = "CURRENT"
+        else:
+            state = "STALE"
+        surfaces.append({"path": str(destination), "status": state})
+    return {
+        "schema": "forge.host-status/v1",
+        "project": str(root),
+        "active_host": profile["id"],
+        "display_name": profile.get("display_name"),
+        "assigned": bool(runtime),
+        "resident_capability": profile.get("resident_capability"),
+        "skill_prefix": profile.get("skill_invocation", {}).get("prefix", ""),
+        "instruction_file": profile.get("project_surface", {}).get("instruction_file"),
+        "agent_dir": profile.get("project_surface", {}).get("agent_dir"),
+        "prerequisites": host_prerequisites(profile),
+        "surfaces": surfaces,
+        "history": (runtime or {}).get("history", []),
+        "ok": all(item["status"] == "CURRENT" for item in surfaces) if surfaces else False,
+    }
+
+
+def host_list() -> dict[str, Any]:
+    registry = host_registry()
+    return {
+        "schema": "forge.host-list/v1",
+        "default_host": registry.get("default_host"),
+        "prerequisite_contract": registry.get("prerequisite_contract", {}),
+        "hosts": [
+            {
+                "id": profile["id"],
+                "display_name": profile.get("display_name"),
+                "vendor": profile.get("vendor"),
+                "skill_prefix": profile.get("skill_invocation", {}).get("prefix", ""),
+                "instruction_file": profile.get("project_surface", {}).get("instruction_file"),
+                "agent_format": profile.get("project_surface", {}).get("agent_format"),
+                "cli_detected": bool(executable(*profile.get("cli", {}).get("executables", []))) if profile.get("cli", {}).get("executables") else None,
+                "prerequisites": host_prerequisites(profile),
+            }
+            for profile in registry.get("hosts", [])
+        ],
+        "ok": True,
+    }
+
+
+def host_set(project_value: str, host_id: str, apply: bool) -> dict[str, Any]:
+    """Assign or swap the resident runtime, re-rendering host surfaces from canon."""
+    root, _ = project_root(project_value)
+    if not (root / ".forge" / "config.json").is_file():
+        raise ValueError("Forge is not adopted in this directory; run the install overlay before assigning a runtime")
+    profile = host_profile(host_id)
+    prerequisites = host_prerequisites(profile)
+    if not prerequisites["satisfied"]:
+        raise ValueError(
+            f"Host {host_id!r} does not satisfy the Forge prerequisite contract; missing: "
+            + ", ".join(prerequisites["missing_required"])
+        )
+    previous_id = active_host_id(root)
+    actions = apply_host_surfaces(root, profile, apply)
+    keep = {str(Path(item["target"]).relative_to(root)).replace("\\", "/") for item in actions if Path(item["target"]).is_absolute()}
+    if previous_id != host_id:
+        actions.extend(retire_host_surfaces(root, host_profile(previous_id), keep, apply))
+    surfaces = [destination for destination, _ in rendered_surfaces(root, profile)]
+    state = write_runtime(root, profile, surfaces, apply, note="host set" if previous_id == host_id else f"swapped from {previous_id}")
+    return {
+        "schema": "forge.host-swap/v1",
+        "mode": "apply" if apply else "dry-run",
+        "project": str(root),
+        "previous_host": previous_id,
+        "active_host": host_id,
+        "swapped": previous_id != host_id,
+        "actions": actions,
+        "runtime": state,
+        "follow_up": [
+            f"Start a fresh {profile.get('display_name', host_id)} session in {root}.",
+            f"Run {host_command(profile, 'forge-next')} so Forge resumes from files rather than chat.",
+            "Re-run capability detection; qualification evidence from the previous host is stale.",
+        ],
+        "ok": True,
+    }
 
 
 def executable(*names: str) -> str | None:
@@ -94,13 +441,29 @@ def command_probe(command: list[str], timeout: int = 8) -> dict[str, Any]:
     }
 
 
-def gsd_runtime(root: Path) -> tuple[str | None, str | None]:
+def gsd_runtime_roots(preferred: dict[str, Any] | None = None) -> list[Path]:
+    """GSD runtime locations, active host first, then every other known host."""
+    ordered: list[Path] = []
+    profiles = list(host_profiles().values())
+    if preferred:
+        profiles = [preferred] + [item for item in profiles if item["id"] != preferred["id"]]
+    for profile in profiles:
+        location = profile.get("gsd", {}).get("runtime_root")
+        if location:
+            candidate = expand_host_path(str(location))
+            if candidate not in ordered:
+                ordered.append(candidate)
+    return ordered
+
+
+def gsd_runtime(root: Path, profile: dict[str, Any] | None = None) -> tuple[str | None, str | None]:
     """Return the executable and runtime script for the installed GSD engine."""
-    runtime_candidates = [
-        root / "gsd-core" / "bin" / "gsd-tools.cjs",
-        root / ".codex" / "gsd-core" / "bin" / "gsd-tools.cjs",
-        Path.home() / ".codex" / "gsd-core" / "bin" / "gsd-tools.cjs",
-    ]
+    profile = profile or active_profile(root)
+    runtime_candidates = [root / "gsd-core" / "bin" / "gsd-tools.cjs"]
+    home_dir = profile.get("home", {}).get("dir")
+    if home_dir:
+        runtime_candidates.append(root / str(home_dir) / "gsd-core" / "bin" / "gsd-tools.cjs")
+    runtime_candidates.extend(base / "bin" / "gsd-tools.cjs" for base in gsd_runtime_roots(profile))
     node = executable("node", "node.exe")
     if node:
         for candidate in runtime_candidates:
@@ -110,9 +473,9 @@ def gsd_runtime(root: Path) -> tuple[str | None, str | None]:
     return (cli, None) if cli else (None, None)
 
 
-def gsd_smart_entry(root: Path) -> dict[str, Any]:
+def gsd_smart_entry(root: Path, profile: dict[str, Any] | None = None) -> dict[str, Any]:
     """Read GSD's authoritative project state without mutating the project."""
-    runner, script = gsd_runtime(root)
+    runner, script = gsd_runtime(root, profile)
     if not runner:
         return {"ok": False, "error": "GSD runtime was not found", "snapshot": None}
     command = [runner, script, "smart-entry", "--json"] if script else [runner, "smart-entry", "--json"]
@@ -141,17 +504,32 @@ def gsd_smart_entry(root: Path) -> dict[str, Any]:
     return {"ok": True, "error": "", "snapshot": snapshot, "command": command}
 
 
-def normalize_gsd_command(command: str) -> str:
-    """Translate legacy slash command spelling into installed Codex skill spelling."""
-    match = re.match(r"^/gsd:([a-z0-9-]+)(.*)$", command.strip())
-    return f"$gsd-{match.group(1)}{match.group(2)}" if match else command.strip()
+def normalize_gsd_command(command: str, profile: dict[str, Any] | None = None) -> str:
+    """Translate command spelling into the active host's skill invocation style."""
+    prefix = (profile or {}).get("skill_invocation", {}).get("prefix", "$")
+    text = command.strip()
+    match = re.match(r"^/gsd:([a-z0-9-]+)(.*)$", text)
+    if match:
+        return f"{prefix}gsd-{match.group(1)}{match.group(2)}"
+    # Re-spell a skill name already carrying another host's prefix.
+    match = re.match(r"^[$/]((?:gsd|forge)-[a-z0-9-]+)(.*)$", text)
+    if match:
+        return f"{prefix}{match.group(1)}{match.group(2)}"
+    return text
 
 
-def forge_action(action_id: str, label: str, command: str, recommended: bool = False, reason: str = "") -> dict[str, Any]:
+def forge_action(
+    action_id: str,
+    label: str,
+    command: str,
+    recommended: bool = False,
+    reason: str = "",
+    profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "id": action_id,
         "label": label,
-        "command": normalize_gsd_command(command),
+        "command": normalize_gsd_command(command, profile),
         "recommended": recommended,
         "reason": reason,
     }
@@ -182,17 +560,24 @@ def bootstrap_is_complete(root: Path) -> bool:
     return report.get("verdict") in {"PASS", "DEGRADED_ACCEPTED"} and not report.get("blocking")
 
 
-def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None) -> dict[str, Any]:
+def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, host_override: str | None = None) -> dict[str, Any]:
     """Combine Forge adoption readiness with GSD's authoritative smart-entry snapshot."""
     root, uproject = project_root(project_value)
+    profile = active_profile(root, host_override)
     overlay = (root / ".forge" / "config.json").is_file() and (root / ".forge" / "directives.md").is_file()
     bootstrap_complete = bootstrap_is_complete(root)
     planning = root / ".planning"
     has_planning = planning.is_dir()
     sources = design_sources(root)
     has_code = bool(uproject or (root / "Source").is_dir())
-    gsd = gsd_result if gsd_result is not None else gsd_smart_entry(root)
+    gsd = gsd_result if gsd_result is not None else gsd_smart_entry(root, profile)
     snapshot = gsd.get("snapshot") if isinstance(gsd, dict) else None
+
+    runtime = read_runtime(root)
+    surfaces_current = overlay and all(
+        destination.exists() and destination.read_bytes() == payload
+        for destination, payload in rendered_surfaces(root, profile)
+    )
 
     signals = {
         "forge_overlay": overlay,
@@ -202,28 +587,48 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None) -> 
         "has_source": (root / "Source").is_dir(),
         "design_sources": sources,
         "gsd_available": bool(isinstance(gsd, dict) and gsd.get("ok")),
+        "active_host": profile["id"],
+        "host_assigned": bool(runtime),
+        "host_surfaces_current": bool(surfaces_current),
     }
 
     if not overlay:
         situation = "forge-not-adopted"
         summary = "Forge is not adopted in this directory; install the project overlay before resuming work."
         actions = [
-            forge_action("bootstrap", "Adopt this project with Forge", "$forge-bootstrap", True, "Creates the reversible project-local control plane, then stops for a fresh task."),
-            forge_action("doctor", "Inspect the environment", "$forge-doctor", False, "Read-only capability and dependency diagnosis."),
+            forge_action("bootstrap", "Adopt this project with Forge", "$forge-bootstrap", True, "Creates the reversible project-local control plane, then stops for a fresh session.", profile),
+            forge_action("doctor", "Inspect the environment", "$forge-doctor", False, "Read-only capability and dependency diagnosis.", profile),
+        ]
+    elif not surfaces_current:
+        situation = "host-surfaces-stale"
+        summary = (
+            f"Forge state is present, but the generated surfaces for the active runtime ({profile.get('display_name', profile['id'])}) "
+            "are missing or out of date. Re-render them from the neutral canon before resuming work."
+        )
+        actions = [
+            forge_action(
+                "host-render",
+                f"Re-render host surfaces for {profile.get('display_name', profile['id'])}",
+                f"python <forge-plugin-root>/scripts/forge.py host set --host {profile['id']} --project . --apply",
+                True,
+                "Regenerates the project instruction file and project-local agents from .forge canon.",
+                profile,
+            ),
+            forge_action("doctor", "Inspect the environment", "$forge-doctor", False, "Read-only diagnosis before re-rendering.", profile),
         ]
     elif not bootstrap_complete:
         situation = "forge-bootstrap-incomplete"
         summary = "Forge is present, but bootstrap evidence is incomplete; resume bootstrap before project work."
         actions = [
-            forge_action("bootstrap-resume", "Resume Forge bootstrap", "$forge-bootstrap --resume", True, "Completes capability inventory, delegated checks, verification, and the persisted report."),
-            forge_action("doctor", "Inspect the environment", "$forge-doctor", False, "Read-only diagnosis before resuming bootstrap."),
+            forge_action("bootstrap-resume", "Resume Forge bootstrap", "$forge-bootstrap --resume", True, "Completes capability inventory, delegated checks, verification, and the persisted report.", profile),
+            forge_action("doctor", "Inspect the environment", "$forge-doctor", False, "Read-only diagnosis before resuming bootstrap.", profile),
         ]
     elif not isinstance(gsd, dict) or not gsd.get("ok"):
         situation = "gsd-unavailable"
         summary = "Forge bootstrap was previously accepted, but GSD smart-entry is not currently available."
         actions = [
-            forge_action("doctor", "Repair or inspect GSD", "$forge-doctor", True, str(gsd.get("error", "GSD state unavailable")) if isinstance(gsd, dict) else "Invalid GSD result"),
-            forge_action("bootstrap-resume", "Re-evaluate Forge bootstrap", "$forge-bootstrap --resume", False, "Refresh stale dependency evidence after GSD changes."),
+            forge_action("doctor", "Repair or inspect GSD", "$forge-doctor", True, str(gsd.get("error", "GSD state unavailable")) if isinstance(gsd, dict) else "Invalid GSD result", profile),
+            forge_action("bootstrap-resume", "Re-evaluate Forge bootstrap", "$forge-bootstrap --resume", False, "Refresh stale dependency evidence after GSD changes.", profile),
         ]
     elif has_planning:
         if isinstance(snapshot, dict) and snapshot.get("actions"):
@@ -240,6 +645,7 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None) -> 
                         str(item["command"]),
                         bool(item.get("recommended")),
                         "Authoritative route from GSD smart-entry.",
+                        profile,
                     )
                 )
             if actions and not any(action["recommended"] for action in actions):
@@ -248,30 +654,30 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None) -> 
             situation = "gsd-unavailable"
             summary = "GSD planning state exists, but its smart-entry runtime could not be read safely."
             actions = [
-                forge_action("doctor", "Repair or inspect GSD", "$forge-doctor", True, str(gsd.get("error", "GSD state unavailable"))),
-                forge_action("gsd-health", "Inspect GSD planning health", "$gsd-health", False, "Use only if the GSD skill surface is available."),
+                forge_action("doctor", "Repair or inspect GSD", "$forge-doctor", True, str(gsd.get("error", "GSD state unavailable")), profile),
+                forge_action("gsd-health", "Inspect GSD planning health", "$gsd-health", False, "Use only if the GSD skill surface is available.", profile),
             ]
     elif sources:
         source_arg = str(Path(sources[0]).relative_to(root))
         situation = "existing-design-unplanned"
         summary = "Existing design documents were found, but GSD project memory has not been created."
         actions = [
-            forge_action("ingest-docs", "Ingest existing design documents", f'$gsd-ingest-docs "{source_arg}"', True, "Preserves existing decisions and detects conflicts before planning."),
-            forge_action("onboard", "Onboard the existing project", "$gsd-onboard", False, "Use when codebase mapping should precede document ingestion."),
+            forge_action("ingest-docs", "Ingest existing design documents", f'$gsd-ingest-docs "{source_arg}"', True, "Preserves existing decisions and detects conflicts before planning.", profile),
+            forge_action("onboard", "Onboard the existing project", "$gsd-onboard", False, "Use when codebase mapping should precede document ingestion.", profile),
         ]
     elif has_code:
         situation = "existing-project-unplanned"
         summary = "An existing Unreal/code project was found without GSD project memory."
         actions = [
-            forge_action("onboard", "Onboard the existing project", "$gsd-onboard", True, "Maps the codebase and establishes GSD planning state."),
-            forge_action("ingest-docs", "Ingest project documents", "$gsd-ingest-docs", False, "Use when authoritative planning documents exist outside the standard design folders."),
+            forge_action("onboard", "Onboard the existing project", "$gsd-onboard", True, "Maps the codebase and establishes GSD planning state.", profile),
+            forge_action("ingest-docs", "Ingest project documents", "$gsd-ingest-docs", False, "Use when authoritative planning documents exist outside the standard design folders.", profile),
         ]
     else:
         situation = "greenfield-ready"
         summary = "Forge bootstrap is complete and no existing GSD project, design corpus, or Unreal source was found."
         actions = [
-            forge_action("forge-init", "Start Forge project inception", "$forge-init", True, "Begins the design interview and creates canonical GSD project memory."),
-            forge_action("gsd-new-project", "Start with GSD project discovery", "$gsd-new-project", False, "Use when Forge-specific design inception is not needed."),
+            forge_action("forge-init", "Start Forge project inception", "$forge-init", True, "Begins the design interview and creates canonical GSD project memory.", profile),
+            forge_action("gsd-new-project", "Start with GSD project discovery", "$gsd-new-project", False, "Use when Forge-specific design inception is not needed.", profile),
         ]
 
     recommended = next((action["id"] for action in actions if action["recommended"]), actions[0]["id"] if actions else None)
@@ -284,6 +690,13 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None) -> 
         "actions": actions,
         "signals": signals,
         "authority": {"phase_state": "gsd", "forge_scope": "adoption-capability-routing"},
+        "runtime": {
+            "active_host": profile["id"],
+            "display_name": profile.get("display_name"),
+            "assigned": bool(runtime),
+            "surfaces_current": bool(surfaces_current),
+            "swappable": True,
+        },
         "gsd_snapshot": snapshot,
         "gsd_error": "" if gsd.get("ok") else str(gsd.get("error", "")),
         "dispatch_contract": "choose exactly one action, dispatch it, then stop",
@@ -348,7 +761,7 @@ def plugin_names(uproject: Path | None) -> list[str]:
 def capability(name: str, provider: str, status: str, lane: str, reason: str) -> dict[str, Any]:
     if status not in STATUSES:
         raise ValueError(f"Invalid status: {status}")
-    if provider == "codex":
+    if provider == RESIDENT_PROVIDER:
         kind, locality = "resident-model", "resident"
     elif provider == "local-model-runtime" or provider.startswith("ollama:"):
         kind, locality = "local-model", "local"
@@ -377,7 +790,7 @@ def capability(name: str, provider: str, status: str, lane: str, reason: str) ->
         "context_cost": {"measured": False},
         "enables": [],
         "constraints": [],
-        "fallbacks": ["resident-codex"] if provider != "codex" else [],
+        "fallbacks": ["resident-host"] if provider != RESIDENT_PROVIDER else [],
         "probe": "detection-only" if not qualified else "safe-host-probe",
         "acceptance_suites": ["FORGE-CAP-01"],
         "invalidation_triggers": ["version", "path", "schema", "permissions", "environment"],
@@ -385,17 +798,18 @@ def capability(name: str, provider: str, status: str, lane: str, reason: str) ->
     }
 
 
-def survey(project_value: str) -> dict[str, Any]:
+def survey(project_value: str, host_override: str | None = None) -> dict[str, Any]:
     requested = Path(project_value).expanduser()
     uproject = find_uproject(requested)
     project = (uproject.parent if uproject else requested).resolve()
     plugins = plugin_names(uproject)
     lower_plugins = {name.casefold() for name in plugins}
+    profile = active_profile(project, host_override)
+    host_display = str(profile.get("display_name", profile["id"]))
 
     tools = {
         "python": sys.executable,
         "node": executable("node", "node.exe"),
-        "codex": executable("codex", "codex.exe"),
         "gsd_tools": executable("gsd-tools", "gsd-tools.cmd", "gsd-tools.exe"),
         "git": executable("git", "git.exe"),
         "blender": executable("blender", "blender.exe"),
@@ -407,13 +821,35 @@ def survey(project_value: str) -> dict[str, Any]:
     }
     installed_ollama_models = ollama_models(tools["ollama"])
     lm_studio_probe = command_probe([tools["lm_studio"], "ls"]) if tools["lm_studio"] else None
-    codex_root = Path.home() / ".codex"
-    gsd_skill_roots = [Path.home() / ".agents" / "skills", codex_root / "skills"]
+
+    # Detect every known host, not just the active one, so a swap can be planned
+    # from evidence rather than assumption.
+    host_detection = []
+    for candidate in host_profiles().values():
+        executables = candidate.get("cli", {}).get("executables", [])
+        path = executable(*executables) if executables else None
+        host_detection.append(
+            {
+                "id": candidate["id"],
+                "display_name": candidate.get("display_name"),
+                "cli_detected": bool(path) if executables else None,
+                "cli_path": path,
+                "gsd_runtime_present": (expand_host_path(str(candidate.get("gsd", {}).get("runtime_root", "~/.nonexistent"))) / "bin" / "gsd-tools.cjs").is_file(),
+                "prerequisites": host_prerequisites(candidate),
+                "active": candidate["id"] == profile["id"],
+            }
+        )
+    for entry in host_detection:
+        tools[f"host.{entry['id']}"] = entry["cli_path"]
+
+    discovery = profile.get("discovery", {})
+    gsd_skill_roots = [expand_host_path(item) for item in discovery.get("skill_roots", [])]
     gsd_skills = sorted(
         {path.name for root in gsd_skill_roots for path in root.glob("gsd-*") if path.is_dir()}
     )
-    gsd_agents = sorted(path.name for path in (codex_root / "agents").glob("gsd-*.toml") if path.is_file())
-    gsd_core = codex_root / "gsd-core"
+    agent_root = expand_host_path(str(discovery.get("agent_root", "~/.agents/agents")))
+    gsd_agents = sorted(path.name for path in agent_root.glob(str(discovery.get("agent_glob", "gsd-*"))) if path.is_file())
+    gsd_core = expand_host_path(str(profile.get("gsd", {}).get("runtime_root", "~/.agents/gsd-core")))
     gsd_runtime_script = gsd_core / "bin" / "gsd-tools.cjs"
     gsd_version_file = gsd_core / "VERSION"
     gsd_version = gsd_version_file.read_text(encoding="utf-8").strip() if gsd_version_file.is_file() else None
@@ -434,17 +870,17 @@ def survey(project_value: str) -> dict[str, Any]:
     caps = [
         capability("host.python", "python", "AVAILABLE_VERIFIED", "host", sys.version.split()[0]),
         capability(
-            "worker.codex.resident",
-            "codex",
+            "worker.resident",
+            RESIDENT_PROVIDER,
             "AVAILABLE_UNVERIFIED",
-            "codex-host",
-            "Forge declares Codex as resident default; current model, image generation and tool scopes require host introspection",
+            "resident-host",
+            f"Forge declares {host_display} as the assigned resident runtime; current model, image generation and tool scopes require host introspection",
         ),
         capability(
             "workflow.gsd",
             "gsd-core",
             "AVAILABLE_UNVERIFIED" if gsd_detected else "UNAVAILABLE_BLOCKING",
-            "codex-host",
+            "resident-host",
             (
                 f"Detected GSD Core {gsd_version}, {len(gsd_skills)} GSD skills, {len(gsd_agents)} GSD agents"
                 + (f", and gsd-tools at {tools['gsd_tools']}" if tools["gsd_tools"] else "; gsd-tools was not found on PATH")
@@ -452,7 +888,7 @@ def survey(project_value: str) -> dict[str, Any]:
                 + "; fresh-session compatibility still requires verification"
             )
             if gsd_detected
-            else "GSD Core was not detected; install the pinned Codex runtime before full phase execution",
+            else f"GSD Core was not detected for {host_display}; install the pinned runtime before full phase execution",
         ),
         capability(
             "vcs.git",
@@ -533,7 +969,8 @@ def survey(project_value: str) -> dict[str, Any]:
     assumptions = [
         "Executable and plugin detection does not prove end-to-end capability.",
         "Unreal plugin names vary; live MCP and VibeUE discovery must inspect the configured tool surface.",
-        "Codex is the resident default, but this standalone survey cannot prove the host's current image generation or tool scopes.",
+        f"{host_display} is the assigned resident runtime, but this standalone survey cannot prove the host's current image generation or tool scopes.",
+        "Host detection reports which runtimes could hold the resident seat; it does not qualify any of them for a task class.",
         "A local runtime, model executable, endpoint, or credential does not prove model identity, task quality, complexity ceiling, context savings, cost, or tool access.",
         "Blender and Unreal visual routes remain unranked until representative asset-class benchmarks pass.",
     ]
@@ -552,9 +989,19 @@ def survey(project_value: str) -> dict[str, Any]:
             "editor_scripting_utilities": editor_scripting,
             "control_rig": control_rig,
         },
+        "runtime": {
+            "active_host": profile["id"],
+            "display_name": host_display,
+            "skill_prefix": profile.get("skill_invocation", {}).get("prefix", ""),
+            "instruction_file": profile.get("project_surface", {}).get("instruction_file"),
+            "agent_dir": profile.get("project_surface", {}).get("agent_dir"),
+            "prerequisites": host_prerequisites(profile),
+            "swappable": True,
+            "detected_hosts": host_detection,
+        },
         "providers": {
-            "resident_default": "codex",
-            "codex_cli_detected": bool(tools["codex"]),
+            "resident_default": RESIDENT_PROVIDER,
+            "resident_host": profile["id"],
             "gsd_detected": gsd_detected,
             "gsd_inventory": {
                 "runtime_cli": tools["gsd_tools"],
@@ -565,7 +1012,7 @@ def survey(project_value: str) -> dict[str, Any]:
                 "agents": gsd_agents,
                 "version_probe": gsd_probe,
             },
-            "codex_capabilities_require_host_probe": ["visual-generation", "image-editing", "blender-operation", "unreal-operation"],
+            "resident_capabilities_require_host_probe": ["visual-generation", "image-editing", "blender-operation", "unreal-operation"],
             "local_worker_candidates": [name for name in ("ollama", "lm_studio", "llama_server") if tools[name]],
             "ollama_detected": bool(tools["ollama"]),
             "runtime_inventory": {
@@ -588,7 +1035,7 @@ def file_digest(path: Path) -> str:
 
 
 def template_root() -> Path:
-    return Path(__file__).resolve().parent.parent / "assets" / "project-template"
+    return plugin_root() / "assets" / "project-template"
 
 
 def template_files() -> list[tuple[Path, Path]]:
@@ -658,13 +1105,14 @@ def profile_registry(snapshot: dict[str, Any]) -> dict[str, Any]:
         ).hexdigest(),
         "providers": sorted(providers.values(), key=lambda item: str(item["id"]).casefold()),
         "capabilities": snapshot.get("capabilities", []),
-        "activation": {"mode": "phase-scoped-on-demand", "active": ["worker.codex.resident", "forge.state"]},
+        "activation": {"mode": "phase-scoped-on-demand", "active": ["worker.resident", "forge.state"]},
+        "resident_host": snapshot.get("runtime", {}).get("active_host"),
         "snapshot": snapshot,
     }
 
 
-def write_profile(project_value: str, apply: bool) -> dict[str, Any]:
-    snapshot = survey(project_value)
+def write_profile(project_value: str, apply: bool, host_override: str | None = None) -> dict[str, Any]:
+    snapshot = survey(project_value, host_override)
     profile = profile_registry(snapshot)
     project = Path(snapshot["project"]["root"])
     destination = project / ".forge" / "capabilities" / "detected.json"
@@ -693,10 +1141,11 @@ def write_profile(project_value: str, apply: bool) -> dict[str, Any]:
     }
 
 
-def install_overlay(project_value: str, apply: bool) -> dict[str, Any]:
+def install_overlay(project_value: str, apply: bool, host_override: str | None = None) -> dict[str, Any]:
     root, uproject = project_root(project_value)
     actions: list[dict[str, str]] = []
 
+    # 1. Copy the host-neutral canon verbatim.
     for source, relative in template_files():
         destination = root / relative
         if not destination.exists():
@@ -714,27 +1163,41 @@ def install_overlay(project_value: str, apply: bool) -> dict[str, Any]:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
 
-    detected = write_profile(str(root), apply=apply)
+    # 2. Render the surfaces the assigned runtime needs, from that canon. During a
+    #    dry run the canon is not in the project yet, so read it from the template.
+    profile = active_profile(root, host_override)
+    actions.extend(apply_host_surfaces(root, profile, apply))
+
+    detected = write_profile(str(root), apply=apply, host_override=host_override)
     actions.append({"action": detected["action"], "target": detected["target"], "source": "forge-survey"})
 
+    surfaces = [destination for destination, _ in rendered_surfaces(root, profile)]
+    runtime = write_runtime(root, profile, surfaces, apply, note="initial overlay install")
+
+    instruction_file = profile.get("project_surface", {}).get("instruction_file", "AGENTS.md")
+    next_command = host_command(profile, "forge-next")
     return {
         "mode": "apply" if apply else "dry-run",
         "project": str(root.resolve()),
         "uproject": str(uproject) if uproject else None,
         "project_stage": "unreal-project" if uproject else "pre-project",
+        "host": profile["id"],
+        "runtime": runtime,
         "actions": actions,
         "optional_changes_applied": [],
         "next": [
-            "Stop and open a fresh Codex task in the project so AGENTS.md, project agents, and state are loaded.",
-            "Run $forge-next; it will detect the incomplete bootstrap and route to $forge-bootstrap --resume.",
+            f"Stop and open a fresh {profile.get('display_name', profile['id'])} session in the project so {instruction_file}, project agents, and state are loaded.",
+            f"Run {next_command}; it will detect the incomplete bootstrap and route to {host_command(profile, 'forge-bootstrap')} --resume.",
             "Review .forge/capabilities/detected.json; detection does not qualify optional providers.",
-            "After every fresh-task boundary, run $forge-next to recover from persisted Forge and GSD state.",
+            f"After every fresh-session boundary, run {next_command} to recover from persisted Forge and GSD state.",
+            "To change runtime later, run: forge.py host set --host <id> --project . --apply",
         ],
     }
 
 
-def verify_overlay(project_value: str) -> dict[str, Any]:
+def verify_overlay(project_value: str, host_override: str | None = None) -> dict[str, Any]:
     root, uproject = project_root(project_value)
+    profile = active_profile(root, host_override)
     checks = []
     for source, relative in template_files():
         destination = root / relative
@@ -744,11 +1207,20 @@ def verify_overlay(project_value: str) -> dict[str, Any]:
             status = "MATCH"
         else:
             status = "LOCAL_VARIANT"
-        checks.append({"path": str(destination), "status": status})
+        checks.append({"path": str(destination), "status": status, "kind": "canon"})
+    for destination, payload in rendered_surfaces(root, profile):
+        if not destination.exists():
+            status = "MISSING"
+        elif destination.read_bytes() == payload:
+            status = "MATCH"
+        else:
+            status = "LOCAL_VARIANT"
+        checks.append({"path": str(destination), "status": status, "kind": "host-rendered"})
     return {
         "project": str(root.resolve()),
         "uproject": str(uproject) if uproject else None,
         "project_stage": "unreal-project" if uproject else "pre-project",
+        "host": profile["id"],
         "checks": checks,
         "ok": all(c["status"] != "MISSING" for c in checks),
     }
@@ -782,10 +1254,15 @@ def require_artifacts(root: Path, event: str, phase: int | None) -> list[str]:
         missing_jobs = sorted(expected_jobs - reported_jobs)
         if missing_jobs:
             raise ValueError("Forge bootstrap report omits installation jobs: " + ", ".join(missing_jobs))
-        agents_path = root / "AGENTS.md"
-        if not agents_path.is_file() or "## Forge phase contract" not in agents_path.read_text(encoding="utf-8-sig"):
-            raise ValueError("Forge bootstrap is incomplete; project AGENTS.md does not contain the Forge phase contract (review any AGENTS.md.forge-proposed file)")
-        required.append(agents_path)
+        profile = active_profile(root)
+        instruction_name = str(profile.get("project_surface", {}).get("instruction_file", "AGENTS.md"))
+        instruction_path = root / instruction_name
+        if not instruction_path.is_file() or "## Forge phase contract" not in instruction_path.read_text(encoding="utf-8-sig"):
+            raise ValueError(
+                f"Forge bootstrap is incomplete; project {instruction_name} does not contain the Forge phase contract "
+                f"(review any {instruction_name}.forge-proposed file, or re-render with: forge.py host set --host {profile['id']} --project . --apply)"
+            )
+        required.append(instruction_path)
         return [str(path) for path in required]
     if event == "init-complete":
         required = [root / ".planning" / name for name in ("PROJECT.md", "ROADMAP.md", "STATE.md")]
@@ -831,12 +1308,19 @@ def lifecycle_state(project_value: str, event: str = "status", phase: int | None
         raise ValueError("Forge lifecycle state is missing; apply the project overlay first")
     state = load_json(path)
     if event == "status":
+        profile = active_profile(root)
+        # The stored command is host-neutral; spell it for the assigned runtime.
+        stored = str(state.get("next_command") or "")
+        head, _, tail = stored.partition(" ")
+        spelled = f"{host_command(profile, head)}{' ' + tail if tail else ''}" if head else ""
         return {
             "mode": "read-only",
             "path": str(path),
             "state": state,
             "deprecated": True,
-            "authority": "GSD .planning state via $forge-next",
+            "host": profile["id"],
+            "next_command_for_host": spelled,
+            "authority": f"GSD .planning state via {host_command(profile, 'forge-next')}",
         }
     raise ValueError("Forge lifecycle transitions are deprecated; use $forge-next and let GSD own phase state")
     if event not in LIFECYCLE_EVENTS:
@@ -934,8 +1418,9 @@ def validate_payload(kind: str, input_value: str) -> dict[str, Any]:
     }
 
 
-def route_work(project_value: str, request_value: str) -> dict[str, Any]:
+def route_work(project_value: str, request_value: str, host_override: str | None = None) -> dict[str, Any]:
     root, _ = project_root(project_value)
+    profile = active_profile(root, host_override)
     request_path = Path(request_value).expanduser().resolve()
     request = load_json(request_path)
     required = {"work_order", "task_class", "complexity", "bounded", "required_capabilities", "required_lanes", "mutation_risk"}
@@ -954,11 +1439,12 @@ def route_work(project_value: str, request_value: str) -> dict[str, Any]:
     if canonical_order not in packets:
         raise ValueError(f"Unregistered work_order {requested_order!r}; register the canonical packet or an explicit alias before routing")
 
-    policy = load_json(Path(__file__).resolve().parent.parent / "dependencies" / "route-policy.json")
-    keep_on_codex = set(policy["offload_policy"]["keep_on_codex_by_default"])
+    policy = load_json(plugin_root() / "dependencies" / "route-policy.json")
+    offload = policy["offload_policy"]
+    keep_on_resident = set(offload.get("keep_on_resident_by_default") or offload.get("keep_on_codex_by_default", []))
     hard_resident = (
         not bool(request["bounded"])
-        or request["task_class"] in keep_on_codex
+        or request["task_class"] in keep_on_resident
         or request["complexity"] == "critical"
         or request["mutation_risk"] in {"external-write", "destructive"}
     )
@@ -969,16 +1455,30 @@ def route_work(project_value: str, request_value: str) -> dict[str, Any]:
     qualifications = load_json(qualification_path) if qualification_path.exists() else {"evaluations": []}
     provider_status = {str(item.get("id")): item.get("status") for item in detected.get("providers", [])}
 
-    candidates = [{"provider": "codex", "eligible": True, "score": 0.0, "reason": "resident baseline"}]
+    candidates = [
+        {
+            "provider": RESIDENT_PROVIDER,
+            "host": profile["id"],
+            "eligible": True,
+            "score": 0.0,
+            "reason": f"resident baseline ({profile.get('display_name', profile['id'])})",
+        }
+    ]
     required_capabilities = set(request.get("required_capabilities", []))
     required_lanes = set(request.get("required_lanes", []))
+    # Only the assigned host holds the resident seat. Any other runtime may still
+    # compete as an optional offload worker on its own qualification evidence.
+    resident_aliases = {RESIDENT_PROVIDER, profile["id"]}
     for evaluation in qualifications.get("evaluations", []):
         provider = str(evaluation.get("provider", ""))
-        if not provider or provider == "codex":
+        if not provider or provider in resident_aliases:
             continue
         reasons = []
         if evaluation.get("verdict") != "PASS":
             reasons.append("evaluation did not pass")
+        evidence_host = evaluation.get("host")
+        if evidence_host and evidence_host != profile["id"]:
+            reasons.append(f"qualification recorded under host {evidence_host!r}; re-probe under {profile['id']!r}")
         if evaluation.get("task_class") != request["task_class"] or evaluation.get("complexity") != request["complexity"]:
             reasons.append("task or complexity scope mismatch")
         if not required_capabilities.issubset(set(evaluation.get("capabilities", []))):
@@ -993,6 +1493,7 @@ def route_work(project_value: str, request_value: str) -> dict[str, Any]:
         candidates.append(
             {
                 "provider": provider,
+                "host": evidence_host,
                 "eligible": not reasons,
                 "score": round(score, 6),
                 "reason": "; ".join(reasons) if reasons else "exact qualification passed",
@@ -1000,18 +1501,18 @@ def route_work(project_value: str, request_value: str) -> dict[str, Any]:
         )
 
     eligible_optional = sorted(
-        (item for item in candidates if item["provider"] != "codex" and item["eligible"]),
+        (item for item in candidates if item["provider"] != RESIDENT_PROVIDER and item["eligible"]),
         key=lambda item: (item["score"], item["provider"]),
         reverse=True,
     )
     if hard_resident:
-        selected = "codex"
+        selected = RESIDENT_PROVIDER
         decision = "resident-required-by-policy"
     elif eligible_optional and eligible_optional[0]["score"] > 0:
         selected = eligible_optional[0]["provider"]
         decision = "qualified-optional-advantage"
     else:
-        selected = "codex"
+        selected = RESIDENT_PROVIDER
         decision = "no-qualified-positive-advantage"
     return {
         "schema": "forge.route-decision/v1",
@@ -1019,9 +1520,10 @@ def route_work(project_value: str, request_value: str) -> dict[str, Any]:
         "request": request,
         "canonical_work_order": canonical_order,
         "selected": selected,
+        "resident_host": profile["id"],
         "decision": decision,
         "candidates": candidates,
-        "fallback": "codex",
+        "fallback": RESIDENT_PROVIDER,
         "requires_independent_verification": True,
     }
 
@@ -1041,13 +1543,28 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("survey", "install", "verify", "profile", "next"):
         command = sub.add_parser(name)
         command.add_argument("--project", required=True)
+        command.add_argument("--host", help="Override the assigned runtime host for this invocation")
         command.add_argument("--output")
         if name in {"install", "profile"}:
             mode = command.add_mutually_exclusive_group()
             mode.add_argument("--apply", action="store_true")
             mode.add_argument("--dry-run", action="store_true")
+    host = sub.add_parser("host", help="Inspect or assign the resident runtime host")
+    host_sub = host.add_subparsers(dest="host_command", required=True)
+    host_list_parser = host_sub.add_parser("list", help="List known runtime hosts and their prerequisites")
+    host_list_parser.add_argument("--output")
+    host_status_parser = host_sub.add_parser("status", help="Show the assigned runtime and surface freshness")
+    host_status_parser.add_argument("--project", required=True)
+    host_status_parser.add_argument("--host")
+    host_status_parser.add_argument("--output")
+    host_set_parser = host_sub.add_parser("set", help="Assign or swap the resident runtime host")
+    host_set_parser.add_argument("--project", required=True)
+    host_set_parser.add_argument("--host", required=True)
+    host_set_parser.add_argument("--apply", action="store_true")
+    host_set_parser.add_argument("--output")
     route = sub.add_parser("route")
     route.add_argument("--project", required=True)
+    route.add_argument("--host")
     route.add_argument("--request", required=True)
     route.add_argument("--output")
     validate = sub.add_parser("validate")
@@ -1067,17 +1584,24 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.command == "survey":
-            result = survey(args.project)
+            result = survey(args.project, args.host)
         elif args.command == "install":
-            result = install_overlay(args.project, apply=bool(args.apply))
+            result = install_overlay(args.project, apply=bool(args.apply), host_override=args.host)
         elif args.command == "verify":
-            result = verify_overlay(args.project)
+            result = verify_overlay(args.project, args.host)
         elif args.command == "profile":
-            result = write_profile(args.project, apply=bool(args.apply))
+            result = write_profile(args.project, apply=bool(args.apply), host_override=args.host)
         elif args.command == "next":
-            result = forge_next(args.project)
+            result = forge_next(args.project, host_override=args.host)
+        elif args.command == "host":
+            if args.host_command == "list":
+                result = host_list()
+            elif args.host_command == "status":
+                result = host_status(args.project, args.host)
+            else:
+                result = host_set(args.project, args.host, apply=bool(args.apply))
         elif args.command == "route":
-            result = route_work(args.project, args.request)
+            result = route_work(args.project, args.request, args.host)
         elif args.command == "lifecycle":
             result = lifecycle_state(args.project, args.event, args.phase, apply=bool(args.apply))
         else:

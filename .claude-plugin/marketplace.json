@@ -1,0 +1,25 @@
+{
+  "name": "forge-ue-studio-local",
+  "owner": {
+    "name": "Dave"
+  },
+  "metadata": {
+    "description": "Local marketplace for the host-agnostic Forge UE Studio plugin.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "forge-ue-studio",
+      "source": "./plugins/forge-ue-studio",
+      "description": "Orchestrate a capability-aware Unreal studio from a swappable resident AI runtime.",
+      "version": "0.2.0",
+      "category": "Developer Tools",
+      "keywords": [
+        "unreal-engine",
+        "game-development",
+        "gsd",
+        "orchestration"
+      ]
+    }
+  ]
+}

@@ -18,6 +18,6 @@ Run art as a parallel studio department. Preserve human visual approval and keep
 7. Have the selected model/tool route build blockout, mesh, UV/material, rig, skin, and animation with asset-class checkpoints. Preserve native source and versioned export/save settings.
 8. Integrate in Unreal through the appropriate native MCP, live Python, or editor-closed route. Run structural, animation, reference, memory, and performance checks.
 9. Capture camera-locked evidence. Visual QA compares objective requirements; the human art owner decides subjective likeness, style, and appeal.
-10. Promote the asset manifest or reactivate the last valid placeholder. Invalidate gameplay only when a declared asset interface changed. Use `$forge-gameplay-gauntlet` for bounded in-game comparison after integration.
+10. Promote the asset manifest or reactivate the last valid placeholder. Invalidate gameplay only when a declared asset interface changed. Use `forge-gameplay-gauntlet` for bounded in-game comparison after integration.
 
 Codex is the resident concept, critique, planning and tool-operation worker. Optional local or remote workers may take bounded stages only after task-specific qualification proves a quality, context, throughput, independence, or verified-cost advantage; no provider owns an art seat. Qualify image generation, image-to-3D breakdown, modelling scripts, Blender operation and review separately. Credit the actual image, Blender or Unreal route that created and verified each artifact.

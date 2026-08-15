@@ -3,19 +3,21 @@
   "phase_engine": "gsd",
   "manual_stage_boundaries": "fresh-task-required",
   "canonical_packet_registry": "state/packet-registry.json",
-  "routing_policy": "codex-resident-with-qualified-local-offload",
-  "resident_default_worker": "codex",
+  "routing_policy": "resident-host-with-qualified-local-offload",
+  "resident_default_worker": "resident",
+  "runtime_state": "runtime.json",
+  "runtime_is_swappable": true,
   "local_offload": {
     "enabled_when_verified": true,
     "prefer_for_bounded_context_heavy_work": true,
     "require_task_and_complexity_eval": true,
-    "fallback": "codex"
+    "fallback": "resident"
   },
   "human_gates": ["game-mandate", "primary-visual-direction", "subjective-art", "game-feel", "release"],
   "parallel_departments": ["design", "engineering", "visual", "audio", "research", "qa"],
   "capability_activation": {
     "mode": "phase-scoped-on-demand",
-    "always_on": ["worker.codex.resident", "vcs.revision", "forge.state"],
+    "always_on": ["worker.resident", "vcs.revision", "forge.state"],
     "disable_duplicate_surfaces": true,
     "require_consent_for_executable_surfaces": true
   },

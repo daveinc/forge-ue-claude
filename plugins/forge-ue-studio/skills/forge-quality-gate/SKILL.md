@@ -15,6 +15,6 @@ Require fresh evidence before accepting work.
 4. Run fresh verification commands or inspect fresh tool-produced evidence. Separate observed facts, inferences, uncertainties and residual risk.
 5. Return the attempt-result contract from [result-contract.md](references/result-contract.md), with findings ordered by severity.
 6. Accept only when every required criterion has current evidence and required human gates are signed. A review finding never grants permission to apply its own fix.
-7. On `FAIL`, `PARTIAL`, `BLOCKED` or `INDETERMINATE`, preserve the attempt and route the next action through `$forge-route-work` or `$forge-retrospective`.
+7. On `FAIL`, `PARTIAL`, `BLOCKED` or `INDETERMINATE`, preserve the attempt and route the next action through `forge-route-work` or `forge-retrospective`.
 
 Never replace human decisions for primary art direction, likeness, appeal, game feel or release responsibility.

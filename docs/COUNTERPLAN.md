@@ -1,8 +1,16 @@
-# Forge: a Codex-native, GSD-compatible Unreal studio
+# Forge: a resident-host, GSD-compatible Unreal studio
 
 Status: counter-plan for design review
 Date: 2026-08-14
 Target: Unreal Engine 5.8, from project inception through release and live operation
+
+> **Superseded on one axis.** This document was written when Forge assumed a single
+> runtime vendor, and its body still says "Codex" wherever it means "the resident
+> host". Forge now treats the resident runtime as a swappable assignment recorded in
+> `.forge/runtime.json`. Read every "Codex" below as "the assigned resident host",
+> and see [host runtimes](host-runtimes.md) for the current contract. The
+> architecture — resident seat, capability qualification, bounded packets, review
+> gates, lane control — is unchanged.
 
 ## Executive verdict
 

@@ -9,7 +9,7 @@ Manage optional capability surfaces without changing Forge's permanent directive
 
 ## Workflow
 
-1. Run `$forge-doctor` and load the capability registry, consent ledger, qualification registry, phase activation policy, dependency catalog, and route policy.
+1. Run `forge-doctor` and load the capability registry, consent ledger, qualification registry, phase activation policy, dependency catalog, and route policy.
 2. Register the capability contract from [lifecycle.md](references/lifecycle.md). Treat executable detection as availability evidence only; start optional providers `UNQUALIFIED`.
 3. Classify permissions, external effects, secret boundary, executable surfaces, integrity, provenance, licence, locality, cost, context cost, lanes, fallbacks, and invalidation triggers.
 4. Require explicit scoped consent before installing packages/models, enabling plugins, activating executable surfaces, using secrets/network, changing PATH, editing project descriptors, or allowing external writes.

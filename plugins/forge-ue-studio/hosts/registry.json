@@ -1,0 +1,184 @@
+{
+  "schema": "forge.host-registry/v1",
+  "default_host": "claude",
+  "prerequisite_contract": {
+    "required": [
+      "filesystem-read-write",
+      "shell-execution",
+      "skill-loading",
+      "project-instruction-file",
+      "fresh-session-boundary",
+      "gsd-engine"
+    ],
+    "optional": [
+      "project-local-agents",
+      "interactive-question-tool",
+      "image-generation",
+      "mcp-client"
+    ],
+    "notes": "A host that declares every required capability can run Forge. Missing optional capabilities degrade specific behaviours (delegation, visual generation, typed tool routes) without blocking the phase engine."
+  },
+  "hosts": [
+    {
+      "id": "claude",
+      "display_name": "Claude Code",
+      "vendor": "Anthropic",
+      "resident_capability": "worker.claude.resident",
+      "cli": {
+        "executables": ["claude", "claude.exe"],
+        "version_args": ["--version"]
+      },
+      "skill_invocation": {
+        "prefix": "/",
+        "example": "/forge-next",
+        "style": "slash-command"
+      },
+      "home": {
+        "dir": ".claude"
+      },
+      "discovery": {
+        "skill_roots": ["~/.claude/skills", "~/.claude/plugins/cache", "~/.agents/skills"],
+        "agent_root": "~/.claude/agents",
+        "agent_glob": "gsd-*.md"
+      },
+      "project_surface": {
+        "instruction_file": "CLAUDE.md",
+        "agent_dir": ".claude/agents",
+        "agent_format": "markdown-frontmatter",
+        "agent_extension": ".md"
+      },
+      "plugin": {
+        "manifest_dir": ".claude-plugin",
+        "marketplace_manifest": ".claude-plugin/marketplace.json",
+        "marketplace_name": "forge-ue-studio-local",
+        "install_commands": [
+          "/plugin marketplace add \"<repo-root>\"",
+          "/plugin install forge-ue-studio@forge-ue-studio-local"
+        ],
+        "install_is_interactive": true,
+        "install_note": "Claude Code installs plugins from inside a session. The installer prints the exact commands rather than shelling out."
+      },
+      "gsd": {
+        "install_args": ["--claude", "--global"],
+        "runtime_root": "~/.claude/gsd-core"
+      },
+      "provides": [
+        "filesystem-read-write",
+        "shell-execution",
+        "skill-loading",
+        "project-instruction-file",
+        "fresh-session-boundary",
+        "gsd-engine",
+        "project-local-agents",
+        "interactive-question-tool",
+        "mcp-client"
+      ]
+    },
+    {
+      "id": "codex",
+      "display_name": "OpenAI Codex CLI",
+      "vendor": "OpenAI",
+      "resident_capability": "worker.codex.resident",
+      "cli": {
+        "executables": ["codex", "codex.exe"],
+        "version_args": ["--version"]
+      },
+      "skill_invocation": {
+        "prefix": "$",
+        "example": "$forge-next",
+        "style": "dollar-skill"
+      },
+      "home": {
+        "dir": ".codex"
+      },
+      "discovery": {
+        "skill_roots": ["~/.agents/skills", "~/.codex/skills"],
+        "agent_root": "~/.codex/agents",
+        "agent_glob": "gsd-*.toml"
+      },
+      "project_surface": {
+        "instruction_file": "AGENTS.md",
+        "agent_dir": ".codex/agents",
+        "agent_format": "toml",
+        "agent_extension": ".toml"
+      },
+      "plugin": {
+        "manifest_dir": ".codex-plugin",
+        "marketplace_manifest": ".agents/plugins/marketplace.json",
+        "marketplace_name": "forge-ue-studio-local",
+        "install_commands": [
+          "codex plugin marketplace add \"<repo-root>\"",
+          "codex plugin add forge-ue-studio@forge-ue-studio-local"
+        ],
+        "install_is_interactive": false,
+        "install_note": "The Codex CLI installs plugins non-interactively, so the installer can run these commands directly."
+      },
+      "gsd": {
+        "install_args": ["--codex", "--global"],
+        "runtime_root": "~/.codex/gsd-core"
+      },
+      "provides": [
+        "filesystem-read-write",
+        "shell-execution",
+        "skill-loading",
+        "project-instruction-file",
+        "fresh-session-boundary",
+        "gsd-engine",
+        "project-local-agents",
+        "interactive-question-tool",
+        "mcp-client"
+      ]
+    },
+    {
+      "id": "generic",
+      "display_name": "Generic Forge-capable agent host",
+      "vendor": "unspecified",
+      "resident_capability": "worker.generic.resident",
+      "cli": {
+        "executables": [],
+        "version_args": []
+      },
+      "skill_invocation": {
+        "prefix": "",
+        "example": "forge-next",
+        "style": "bare-name"
+      },
+      "home": {
+        "dir": ".agents"
+      },
+      "discovery": {
+        "skill_roots": ["~/.agents/skills"],
+        "agent_root": "~/.agents/agents",
+        "agent_glob": "gsd-*.md"
+      },
+      "project_surface": {
+        "instruction_file": "AGENTS.md",
+        "agent_dir": ".agents/agents",
+        "agent_format": "markdown-frontmatter",
+        "agent_extension": ".md"
+      },
+      "plugin": {
+        "manifest_dir": ".agents/plugins",
+        "marketplace_manifest": ".agents/plugins/marketplace.json",
+        "marketplace_name": "forge-ue-studio-local",
+        "install_commands": [
+          "Copy or symlink plugins/forge-ue-studio/skills into the host's skill root."
+        ],
+        "install_is_interactive": true,
+        "install_note": "No package manager is assumed. Forge only requires that the host loads SKILL.md files and the project instruction file."
+      },
+      "gsd": {
+        "install_args": ["--global"],
+        "runtime_root": "~/.agents/gsd-core"
+      },
+      "provides": [
+        "filesystem-read-write",
+        "shell-execution",
+        "skill-loading",
+        "project-instruction-file",
+        "fresh-session-boundary",
+        "gsd-engine"
+      ]
+    }
+  ]
+}

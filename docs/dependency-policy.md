@@ -9,18 +9,18 @@ GSD is the required phase engine for the full Forge workflow. Forge exposes it a
 .\install.ps1 -Mode GSD -Apply
 ```
 
-The preview displays the exact package, stable pinned version, scope, command, and current detection state without writing. Apply is the only Forge mode that downloads an external package for GSD; it requires explicit user approval and installs the Codex integration globally. Survey then inventories the GSD runtime, skills, and agents, but leaves `workflow.gsd` unqualified until a fresh-session compatibility check proves that GSD and Forge can coexist in the current environment.
+The preview displays the exact package, stable pinned version, scope, command, and current detection state without writing. Apply is the only Forge mode that downloads an external package for GSD; it requires explicit user approval and installs the integration for the selected runtime host globally. Survey then inventories the GSD runtime, skills, and agents, but leaves `workflow.gsd` unqualified until a fresh-session compatibility check proves that GSD and Forge can coexist in the current environment.
 
 ## Selection rule
 
-Codex is the resident default because Forge already runs inside it. First establish the Codex baseline for a task, then reject offload routes that lack required access, modality, safety, context, quality, or acceptance evidence. Rank the survivors using:
+The assigned runtime host is the resident default because Forge already runs inside it. First establish the resident baseline for a task, then reject offload routes that lack required access, modality, safety, context, quality, or acceptance evidence. Rank the survivors using:
 
 ```text
 quality + locality advantage + verified cost advantage + parallelism gain
 - retry risk - elapsed time - money - queue pressure - lane contention - handoff cost
 ```
 
-An installed local route normally wins qualified bounded work when it reduces total context, time or measured monetary cost. Complex, ambiguous, cross-system and final-synthesis work stays on Codex by default. Zero marginal cost is an optimization, not a waiver of verification, and must be measured rather than inferred from locality or licensing labels.
+An installed local route normally wins qualified bounded work when it reduces total context, time or measured monetary cost. Complex, ambiguous, cross-system and final-synthesis work stays on the resident host by default. Zero marginal cost is an optimization, not a waiver of verification, and must be measured rather than inferred from locality or licensing labels.
 
 ## Context-efficient offload
 
@@ -42,9 +42,9 @@ Blender is normally the independent DCC lane for mesh, UV, baking, rigging, skin
 
 Visual production begins after the compact GDD and primary visual anchors are approved. Gameplay continues with interface-compatible placeholders.
 
-## Codex and model providers
+## Runtime hosts and model providers
 
-Use Codex as resident worker and supervisor. For offload capacity, probe already-installed local runtimes/endpoints first, followed by already-entitled services and approved remote APIs. Do not download weights or install a runtime implicitly. Register providers through capability contracts rather than hard-coded model names, and store capability, benchmark, and effective-cost evidence by task type and complexity instead of using a global “best model” label.
+Use the assigned runtime host as resident worker and supervisor. The host is recorded in `.forge/runtime.json` and may be swapped at any stage; see [host runtimes](host-runtimes.md). Qualification evidence is host-scoped and does not survive a swap. For offload capacity, probe already-installed local runtimes/endpoints first, followed by already-entitled services and approved remote APIs. Do not download weights or install a runtime implicitly. Register providers through capability contracts rather than hard-coded model names, and store capability, benchmark, and effective-cost evidence by task type and complexity instead of using a global “best model” label.
 
 ## Optional integration contract
 

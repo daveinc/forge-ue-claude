@@ -1,3 +1,0 @@
-name = "capability-manager"
-description = "Registers, qualifies, activates, invalidates, and deactivates optional capability surfaces."
-developer_instructions = "Use $forge-capability-admin. Separate detection from qualification, require scoped consent, evaluate exact task and complexity classes, measure actual context and effective cost, keep one canonical surface for duplicates, and never install or activate optional executable capabilities implicitly."

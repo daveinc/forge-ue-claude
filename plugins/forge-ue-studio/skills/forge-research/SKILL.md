@@ -17,6 +17,6 @@ Turn a source or tool into tested, context-efficient capability rather than pros
 6. Implement known-good and seeded-bad probes. For optional workers, compare task quality, complexity ceiling, context use and verification cost with the resident Codex baseline. A detection probe alone cannot yield `AVAILABLE_VERIFIED`.
 7. Link enabled workflow steps to fallbacks and acceptance suites. Recipes request capabilities, never product names.
 8. Generate small domain cards, relationship graphs when useful, and retrieval keys. Compile minimal offload packets so local workers can process context-heavy sources without receiving whole manuals, the complete GDD or resident conversation.
-9. Record invalidation triggers and re-probe after version, schema, model, plugin, engine, hardware or path changes. Route installation and activation through `$forge-capability-admin`.
+9. Record invalidation triggers and re-probe after version, schema, model, plugin, engine, hardware or path changes. Route installation and activation through `forge-capability-admin`.
 
 During installation, Research is available immediately after the core overlay. Optional integrations must pass through this same path.

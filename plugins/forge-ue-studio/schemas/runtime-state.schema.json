@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.runtime-state/v1",
+  "type": "object",
+  "required": ["schema", "active_host", "portable", "rendered_surfaces", "history"],
+  "properties": {
+    "schema": {"const": "forge.runtime-state/v1"},
+    "active_host": {"type": "string"},
+    "portable": {
+      "type": "boolean",
+      "description": "True when every host-specific surface is generated from the neutral canon in .forge and can be regenerated for another host."
+    },
+    "canon": {
+      "type": "object",
+      "description": "Paths of the host-neutral sources that host surfaces are rendered from."
+    },
+    "rendered_surfaces": {
+      "type": "array",
+      "description": "Files written for the active host, so a swap can regenerate or retire them."
+    },
+    "history": {
+      "type": "array",
+      "description": "Ordered record of host assignments and swaps."
+    },
+    "updated_at": {"type": "string"}
+  }
+}

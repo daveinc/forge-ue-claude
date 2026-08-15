@@ -1,0 +1,17 @@
+{
+  "name": "forge-ue-studio",
+  "version": "0.2.0",
+  "description": "Host-agnostic, capability-routed, GSD-compatible Unreal production orchestration. The resident AI runtime is an assignment that can be swapped at any stage.",
+  "author": {
+    "name": "Dave"
+  },
+  "license": "MIT",
+  "keywords": [
+    "unreal-engine",
+    "game-development",
+    "gsd",
+    "blender",
+    "orchestration",
+    "host-agnostic"
+  ]
+}

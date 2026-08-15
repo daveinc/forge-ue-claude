@@ -33,23 +33,69 @@ def main() -> int:
         except (OSError, json.JSONDecodeError) as exc:
             fail(f"Invalid JSON {path.relative_to(ROOT)}: {exc}", failures)
 
-    manifest_path = PLUGIN / ".codex-plugin" / "plugin.json"
-    manifest = parsed.get(manifest_path, {})
-    if manifest.get("name") != PLUGIN.name:
-        fail("Plugin folder and manifest name differ", failures)
-    if not re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", str(manifest.get("version", ""))):
-        fail("Plugin version is not semver", failures)
-    for field in ("description", "author", "skills", "interface"):
-        if not manifest.get(field):
-            fail(f"Plugin manifest missing {field}", failures)
+    # Every host that declares a plugin manifest directory must actually ship one,
+    # so the repo installs cleanly under any supported runtime.
+    registry_path = PLUGIN / "hosts" / "registry.json"
+    registry = parsed.get(registry_path, {})
+    hosts = registry.get("hosts", [])
+    if not hosts:
+        fail("Host registry declares no hosts", failures)
+    host_ids = [host.get("id") for host in hosts]
+    if len(host_ids) != len(set(host_ids)) or any(not item for item in host_ids):
+        fail("Host IDs must be non-empty and unique", failures)
+    if registry.get("default_host") not in host_ids:
+        fail("Host registry default_host is not a declared host", failures)
+    contract = registry.get("prerequisite_contract", {})
+    if not contract.get("required"):
+        fail("Host registry must declare a required prerequisite contract", failures)
 
-    marketplace_path = ROOT / ".agents" / "plugins" / "marketplace.json"
-    marketplace = parsed.get(marketplace_path, {})
-    entries = [entry for entry in marketplace.get("plugins", []) if entry.get("name") == PLUGIN.name]
-    if len(entries) != 1:
-        fail("Marketplace must contain exactly one Forge entry", failures)
-    elif entries[0].get("source", {}).get("path") != "./plugins/forge-ue-studio":
-        fail("Marketplace source path is incorrect", failures)
+    prefixes = {}
+    for host in hosts:
+        host_id = host.get("id")
+        for field in ("display_name", "resident_capability", "cli", "skill_invocation", "discovery", "project_surface", "plugin", "gsd", "provides"):
+            if not host.get(field):
+                fail(f"Host {host_id} missing {field}", failures)
+        surface = host.get("project_surface", {})
+        if surface.get("agent_format") not in {"markdown-frontmatter", "toml"}:
+            fail(f"Host {host_id} declares an unsupported agent format", failures)
+        missing = [item for item in contract.get("required", []) if item not in host.get("provides", [])]
+        if missing:
+            fail(f"Host {host_id} cannot satisfy the Forge prerequisite contract: {', '.join(missing)}", failures)
+        prefix = host.get("skill_invocation", {}).get("prefix")
+        if prefix in prefixes:
+            fail(f"Hosts {prefixes[prefix]} and {host_id} share skill prefix {prefix!r}", failures)
+        prefixes[prefix] = host_id
+
+    for host in hosts:
+        manifest_dir = host.get("plugin", {}).get("manifest_dir")
+        if not manifest_dir or host.get("id") == "generic":
+            continue
+        manifest_path = PLUGIN / manifest_dir / "plugin.json"
+        if not manifest_path.is_file():
+            fail(f"Host {host.get('id')} declares {manifest_dir} but no plugin.json exists there", failures)
+            continue
+        manifest = parsed.get(manifest_path, {})
+        if manifest.get("name") != PLUGIN.name:
+            fail(f"Plugin folder and manifest name differ in {manifest_dir}", failures)
+        if not re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", str(manifest.get("version", ""))):
+            fail(f"Plugin version is not semver in {manifest_dir}", failures)
+        for field in ("description", "author"):
+            if not manifest.get(field):
+                fail(f"Plugin manifest in {manifest_dir} missing {field}", failures)
+
+        marketplace_path = ROOT / host.get("plugin", {}).get("marketplace_manifest", "")
+        if not marketplace_path.is_file():
+            fail(f"Host {host.get('id')} declares a marketplace manifest that does not exist", failures)
+            continue
+        marketplace = parsed.get(marketplace_path, {})
+        entries = [entry for entry in marketplace.get("plugins", []) if entry.get("name") == PLUGIN.name]
+        if len(entries) != 1:
+            fail(f"Marketplace {marketplace_path.name} must contain exactly one Forge entry", failures)
+        else:
+            source = entries[0].get("source")
+            path_value = source.get("path") if isinstance(source, dict) else source
+            if path_value != "./plugins/forge-ue-studio":
+                fail(f"Marketplace source path is incorrect in {marketplace_path.name}", failures)
 
     catalog_path = PLUGIN / "dependencies" / "catalog.json"
     dependencies = parsed.get(catalog_path, {}).get("dependencies", [])
@@ -70,11 +116,19 @@ def main() -> int:
 
     route_policy_path = PLUGIN / "dependencies" / "route-policy.json"
     route_policy = parsed.get(route_policy_path, {})
-    if route_policy.get("resident_default", {}).get("provider") != "codex":
-        fail("Route policy must declare Codex as resident default", failures)
+    resident = route_policy.get("resident_default", {})
+    if resident.get("provider") != "resident":
+        fail("Route policy must declare a host-neutral 'resident' default provider", failures)
+    if not resident.get("provider_is_host_assigned"):
+        fail("Route policy must mark the resident provider as host-assigned", failures)
     offload = route_policy.get("offload_policy", {})
     if not offload.get("require_task_and_complexity_eval") or not offload.get("packet"):
         fail("Route policy must constrain local offload by evaluation and bounded packet", failures)
+    if not offload.get("keep_on_resident_by_default"):
+        fail("Route policy must list task classes kept on the resident host", failures)
+    swap = route_policy.get("host_swap", {})
+    if not swap.get("allowed_at_any_stage") or not swap.get("preserves"):
+        fail("Route policy must permit a host swap at any stage and declare what it preserves", failures)
 
     skills = sorted((PLUGIN / "skills").glob("*/SKILL.md"))
     if not skills:
@@ -106,12 +160,40 @@ def main() -> int:
         PLUGIN / "assets" / "project-template" / ".forge" / "reviews" / "registry.json",
         PLUGIN / "assets" / "project-template" / ".forge" / "research" / "index.json",
         PLUGIN / "assets" / "project-template" / ".forge" / "learnings" / "registry.json",
-        PLUGIN / "assets" / "project-template" / ".codex" / "agents" / "studio-director.toml",
-        PLUGIN / "assets" / "project-template" / "AGENTS.md",
+        PLUGIN / "assets" / "project-template" / ".forge" / "directives.md",
+        PLUGIN / "assets" / "project-template" / ".forge" / "agents" / "studio-director.json",
+        PLUGIN / "assets" / "project-template" / ".forge" / "templates" / "project-instructions.md",
     ]
     for path in required_template:
         if not path.is_file():
             fail(f"Missing project template file: {path.relative_to(ROOT)}", failures)
+
+    # The project template must stay host-neutral: no host-specific surface may be
+    # shipped verbatim, because those are rendered per host at install time.
+    template_root = PLUGIN / "assets" / "project-template"
+    host_dirs = {host.get("project_surface", {}).get("agent_dir", "").split("/")[0] for host in hosts}
+    host_files = {host.get("project_surface", {}).get("instruction_file") for host in hosts}
+    for path in template_root.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(template_root)
+        if relative.parts[0] in host_dirs and relative.parts[0]:
+            fail(f"Project template ships a host-specific directory: {relative}", failures)
+        if str(relative) in host_files:
+            fail(f"Project template ships a host-specific instruction file: {relative}", failures)
+
+    agent_defs = sorted((template_root / ".forge" / "agents").glob("*.json"))
+    if len(agent_defs) < 9:
+        fail(f"Expected at least 9 neutral agent definitions, found {len(agent_defs)}", failures)
+    for path in agent_defs:
+        definition = parsed.get(path, {})
+        if definition.get("name") != path.stem:
+            fail(f"Agent definition name/file mismatch: {path.relative_to(ROOT)}", failures)
+        if not definition.get("description") or not definition.get("instructions"):
+            fail(f"Agent definition incomplete: {path.relative_to(ROOT)}", failures)
+        for host_prefix in ("$forge-", "/forge-", "$gsd-", "/gsd-"):
+            if host_prefix in str(definition.get("instructions", "")):
+                fail(f"Agent definition hardcodes a host skill prefix: {path.relative_to(ROOT)}", failures)
 
     for path in repository_files("*"):
         if path.is_file() and path.suffix.lower() in {".md", ".json", ".py", ".toml", ".yml", ".yaml", ".ps1"}:

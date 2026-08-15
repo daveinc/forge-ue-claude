@@ -11,7 +11,7 @@ Create the durable project control plane before design or Unreal project-shell w
 
 1. Resolve the intended project root. It may be an existing empty/pre-project directory or contain exactly one `.uproject`.
 2. If `.forge/config.json` or `.forge/directives.md` is absent, apply the bundled project overlay with `scripts/forge.py install --project <root> --apply`. This is a reversible project-file installation and must not install packages, models, plugins, MCPs, or change the machine.
-3. **STOP after first overlay installation.** Tell the user to open a fresh task in the project and run `$forge-next`. Do not continue in the current task: the new `AGENTS.md`, project agents, state and skill surface must be loaded by a fresh host context.
+3. **STOP after first overlay installation.** Tell the user to open a fresh task in the project and run `forge-next`. Do not continue in the current task: the new `AGENTS.md`, project agents, state and skill surface must be loaded by a fresh host context.
 4. On `--resume`, read `AGENTS.md`, `.forge/directives.md`, install state, and the canonical packet registry. Treat any `.forge/state/lifecycle.json` as deprecated compatibility history.
 5. Run deterministic Survey and Profile first; write `.forge/capabilities/detected.json`. Detection never grants qualification.
 6. Compile only applicable installation jobs from [installation-waves.md](references/installation-waves.md). Record each job's canonical `FI-*` work order, objective, inputs, read/write scope, agent type, expected result and acceptance in `.forge/state/install-jobs.json` before dispatch.
@@ -20,7 +20,7 @@ Create the durable project control plane before design or Unreal project-shell w
 9. Persist observations, evidence, failures, proposed capability contracts and unresolved human actions. A provider is not qualified merely because an investigator found it.
 10. Dispatch a fresh read-only verifier against the deterministic profile, job results and acceptance criteria. The verifier must not receive investigator reasoning beyond the returned artifacts.
 11. Write `.forge/state/bootstrap-report.json` against `forge.bootstrap-report/v1` with `verdict`, every canonical `FI-*` job (including evidence-backed `NOT_APPLICABLE` entries), `delegation`, `verified`, `assumed`, `unavailable`, `blocking`, `human_actions`, `evidence`, and `next_action`. If overlay installation preserved an existing `AGENTS.md` and wrote `AGENTS.md.forge-proposed`, stop for an explicit merge decision; bootstrap cannot pass until the active `AGENTS.md` contains the Forge phase contract.
-12. Verify that the detected profile and a closable bootstrap report exist. Set the report's `next_action` to `$forge-next`; do not maintain a competing Forge phase pointer.
-13. **STOP.** Require a fresh project task and present `$forge-next`. Forge Next will inspect existing docs, Unreal/code, and GSD state before deciding whether inception, ingestion, onboarding, or phase recovery is correct.
+12. Verify that the detected profile and a closable bootstrap report exist. Set the report's `next_action` to `forge-next`; do not maintain a competing Forge phase pointer.
+13. **STOP.** Require a fresh project task and present `forge-next`. Forge Next will inspect existing docs, Unreal/code, and GSD state before deciding whether inception, ingestion, onboarding, or phase recovery is correct.
 
-Use `$forge-doctor` for read-only environment classification, `$forge-research` for newly discovered sources, and `$forge-capability-admin` for consent/qualification after bootstrap.
+Use `forge-doctor` for read-only environment classification, `forge-research` for newly discovered sources, and `forge-capability-admin` for consent/qualification after bootstrap.

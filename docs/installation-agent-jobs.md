@@ -2,7 +2,7 @@
 
 Deterministic probes run first. Agents interpret bounded artifacts rather than rediscovering the machine through chat.
 
-These jobs are executed by `$forge-bootstrap`; this table is not merely advisory. The overlay is installed first, then the workflow stops so a fresh project task can load `AGENTS.md`, project-local agents, and directives. `$forge-next` detects the incomplete bootstrap and routes to `$forge-bootstrap --resume`; applicable jobs are compiled into `.forge/state/install-jobs.json`, dispatched by wave, independently verified, and summarized in `.forge/state/bootstrap-report.json`. A host that cannot dispatch agents records `DEGRADED_INLINE` rather than silently collapsing the jobs into the orchestrator.
+These jobs are executed by `forge-bootstrap`; this table is not merely advisory. The overlay is installed first, then the workflow stops so a fresh project task can load `AGENTS.md`, project-local agents, and directives. `forge-next` detects the incomplete bootstrap and routes to `forge-bootstrap --resume`; applicable jobs are compiled into `.forge/state/install-jobs.json`, dispatched by wave, independently verified, and summarized in `.forge/state/bootstrap-report.json`. A host that cannot dispatch agents records `DEGRADED_INLINE` rather than silently collapsing the jobs into the orchestrator.
 
 | Wave | Agent job | Output |
 |---:|---|---|
@@ -27,4 +27,4 @@ GSD itself uses a deterministic bootstrap before these jobs: preview the exact p
 
 The deterministic installer also writes `.forge/capabilities/detected.json`. This is a detection profile, not a qualification grant. Capability Admin records consent and task-specific evaluation separately, then activates only the phase surfaces needed by compiled work packets.
 
-Bootstrap completion writes `$forge-next` as its handoff and stops. Forge Next then selects Forge Init only for a true greenfield project; existing documents, Unreal/code, or GSD state route through ingestion, onboarding, or GSD's exact smart-entry action instead.
+Bootstrap completion writes `forge-next` as its handoff and stops. Forge Next then selects Forge Init only for a true greenfield project; existing documents, Unreal/code, or GSD state route through ingestion, onboarding, or GSD's exact smart-entry action instead.

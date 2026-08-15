@@ -18,7 +18,9 @@ Use GSD as the sole phase-state authority. Forge Next is a launcher, not another
 
 3. Parse the `forge.smart-entry/v1` result. It combines Forge readiness with GSD's `smart-entry --json` snapshot.
 4. Treat `.planning` and the GSD snapshot as authoritative for phase status. Treat `.forge/state/lifecycle.json` as deprecated compatibility history only; never use it to override GSD or mutate it.
-5. If the detector fails, run `$forge-doctor`; do not guess the active phase.
+5. Read the `runtime` block. It names the assigned host and whether its rendered surfaces are current. Commands in `actions` are already spelled for that host — present them verbatim.
+6. If the situation is `host-surfaces-stale`, the project's generated surfaces do not match the assigned runtime. Route to `forge-runtime` and stop; do not perform production work against stale instructions or agents.
+7. If the detector fails, run `forge-doctor`; do not guess the active phase.
 
 ## Present and dispatch
 
@@ -32,9 +34,9 @@ Use GSD as the sole phase-state authority. Forge Next is a launcher, not another
 
 When Forge Init invokes this detector at its entry gate:
 
-- If the recommended command is `$forge-init`, return control to Forge Init and continue inception without recursively invoking it.
+- If the recommended command is `forge-init`, return control to Forge Init and continue inception without recursively invoking it.
 - Otherwise dispatch the recommended action and stop Forge Init.
-- Existing design documents route through `$gsd-ingest-docs`; an existing Unreal/code project without planning routes through `$gsd-onboard`; an existing `.planning` tree follows the exact GSD smart-entry action.
-- A missing or incomplete Forge control plane routes through `$forge-bootstrap` or `$forge-bootstrap --resume` before any design or production work.
+- Existing design documents route through `gsd-ingest-docs`; an existing Unreal/code project without planning routes through `gsd-onboard`; an existing `.planning` tree follows the exact GSD smart-entry action.
+- A missing or incomplete Forge control plane routes through `forge-bootstrap` or `forge-bootstrap --resume` before any design or production work.
 
-This makes re-running `$forge-init` safe in a partially built project: it becomes a state scan and handoff, not a restart.
+This makes re-running `forge-init` safe in a partially built project: it becomes a state scan and handoff, not a restart.
