@@ -13,6 +13,54 @@ ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugins" / "forge-ue-studio"
 IGNORED_PARTS = {".git", ".tmp", "__pycache__"}
 
+# Canon must never name a runtime vendor. These are the only places allowed to.
+NEUTRALITY_EXEMPT_FILES = {
+    PLUGIN / "hosts" / "registry.json",
+}
+
+# "OpenAI-compatible" is the ecosystem's name for a wire protocol, not a
+# dependency on a vendor. Anything else matching a banned token is a leak.
+NEUTRALITY_ALLOWED_SUBSTRINGS = ("openai-compatible",)
+
+# Skill spellings belong to a host, never to canon. The leading boundary keeps
+# path segments such as "plugins/forge-ue-studio" and "open-gsd/gsd-core" from
+# matching, since only a real invocation is preceded by whitespace or nothing.
+HOST_SKILL_INVOCATION = re.compile(r"(?<![\w./\\-])[$/](?:forge|gsd)-[a-z0-9-]+")
+
+
+def neutrality_banned_tokens(hosts: list) -> list[str]:
+    """Derive banned vendor tokens from the host registry itself.
+
+    Keyed off the registry so adding a host automatically extends the guard.
+    Hosts with no CLI executables (the `generic` placeholder profile) contribute
+    nothing, because their identifiers are common words rather than vendor names.
+    """
+    tokens: set[str] = set()
+    for host in hosts:
+        if not host.get("cli", {}).get("executables"):
+            continue
+        surface = host.get("project_surface", {})
+        for value in (
+            host.get("id"),
+            host.get("display_name"),
+            host.get("vendor"),
+            host.get("home", {}).get("dir"),
+            surface.get("instruction_file"),
+            surface.get("agent_dir"),
+        ):
+            if value:
+                tokens.add(str(value).casefold())
+    return sorted(tokens, key=len, reverse=True)
+
+
+def neutrality_violations(text: str, banned: list[str]) -> list[str]:
+    haystack = text.casefold()
+    for allowed in NEUTRALITY_ALLOWED_SUBSTRINGS:
+        haystack = haystack.replace(allowed, "~" * len(allowed))
+    found = [token for token in banned if token in haystack]
+    found.extend(sorted({match for match in HOST_SKILL_INVOCATION.findall(text)}))
+    return found
+
 
 def repository_files(pattern: str):
     return (path for path in ROOT.rglob(pattern) if not any(part in IGNORED_PARTS for part in path.relative_to(ROOT).parts))
@@ -191,9 +239,22 @@ def main() -> int:
             fail(f"Agent definition name/file mismatch: {path.relative_to(ROOT)}", failures)
         if not definition.get("description") or not definition.get("instructions"):
             fail(f"Agent definition incomplete: {path.relative_to(ROOT)}", failures)
-        for host_prefix in ("$forge-", "/forge-", "$gsd-", "/gsd-"):
-            if host_prefix in str(definition.get("instructions", "")):
-                fail(f"Agent definition hardcodes a host skill prefix: {path.relative_to(ROOT)}", failures)
+
+    # Canon neutrality: no vendor name, host path, host instruction file, or host
+    # skill prefix may appear anywhere in the shipped canon. Banned tokens come
+    # from the registry, so this guard extends itself when a host is added.
+    banned = neutrality_banned_tokens(hosts)
+    canon_files = [
+        *(p for p in template_root.rglob("*") if p.is_file()),
+        *sorted((PLUGIN / "dependencies").glob("*.json")),
+        *sorted((PLUGIN / "schemas").glob("*.json")),
+    ]
+    for path in canon_files:
+        if path in NEUTRALITY_EXEMPT_FILES:
+            continue
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+        for token in neutrality_violations(text, banned):
+            fail(f"Canon leaks host-specific token {token!r}: {path.relative_to(ROOT)}", failures)
 
     for path in repository_files("*"):
         if path.is_file() and path.suffix.lower() in {".md", ".json", ".py", ".toml", ".yml", ".yaml", ".ps1"}:

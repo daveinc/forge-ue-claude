@@ -4,7 +4,18 @@ param(
     [string]$Mode = 'Plugin',
     # The resident AI runtime. Defaults to the registry's default_host.
     # Named -RuntimeHost because $Host is a reserved PowerShell automatic variable.
-    [ValidateSet('claude', 'codex', 'generic')]
+    # Deliberately NOT a ValidateSet: hosts are declared in hosts/registry.json, and
+    # binding-time validation here would reject a newly added profile before the
+    # script could read it. Validation happens against the registry below.
+    [ArgumentCompleter({
+        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+        $registry = Join-Path (Split-Path -Parent $commandAst.CommandElements[0].Value) 'plugins\forge-ue-studio\hosts\registry.json'
+        if (Test-Path -LiteralPath $registry) {
+            (Get-Content -LiteralPath $registry -Raw | ConvertFrom-Json).hosts |
+                ForEach-Object { $_.id } |
+                Where-Object { $_ -like "$wordToComplete*" }
+        }
+    })]
     [string]$RuntimeHost,
     [ValidateSet('list', 'status', 'set')]
     [string]$HostAction = 'status',
@@ -62,8 +73,8 @@ if ($Mode -eq 'Plugin') {
     }
 
     if ($interactive) {
-        # Claude Code and generic hosts install plugins from inside a session. There is
-        # no non-interactive CLI to shell out to, so print the exact commands to run.
+        # Hosts flagged install_is_interactive install plugins from inside a session.
+        # There is no non-interactive CLI to shell out to, so print the commands to run.
         [pscustomobject]@{
             mode = 'manual'
             host = $RuntimeHost

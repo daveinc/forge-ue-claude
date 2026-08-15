@@ -16,12 +16,8 @@
       "fallback": null,
       "host_assigned": true,
       "assigned_in": ".forge/runtime.json",
-      "known_hosts": [
-        "claude",
-        "codex",
-        "generic"
-      ],
-      "note": "The resident seat is an assignment, not a vendor. Any host satisfying the Forge prerequisite contract may hold it."
+      "note": "The resident seat is an assignment, not a vendor. Any host satisfying the Forge prerequisite contract may hold it.",
+      "known_hosts_source": "plugins/forge-ue-studio/hosts/registry.json"
     },
     {
       "id": "gsd",

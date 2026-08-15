@@ -21,4 +21,4 @@ For documentation or project corpora, also record discovery scope, source author
 
 For local models, also record model identity, quantization, context, modalities, tool behavior, VRAM/RAM use, throughput, task-specific quality, and verification cost. For MCPs, record transport, tool catalog, schemas, read/write classification, health, and failure isolation.
 
-Treat Codex as the resident baseline. Qualify local extraction, code, review, visual breakdown, image work and Blender/Unreal operation independently by complexity tier. Record measured resident-context savings; do not infer savings from model locality alone.
+Treat the resident host as the baseline. Qualify local extraction, code, review, visual breakdown, image work and Blender/Unreal operation independently by complexity tier. Record measured resident-context savings; do not infer savings from model locality alone.

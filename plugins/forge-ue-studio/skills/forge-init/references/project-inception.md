@@ -23,4 +23,4 @@ Launch the playable DAG when the core-loop contract exists. Launch visual, narra
 
 Workers receive their objective, relevant GDD IDs, inputs, write scope, capabilities, acceptance criteria, evidence requirements, and referrals. They do not receive the entire interview or studio history.
 
-Codex creates the resident baseline and owns synthesis. Local workers receive decomposed packets only after their task and complexity class passes evaluation. Use them for parallel alternatives and heavy bounded source processing, not as automatic owners of a department.
+The resident host creates the baseline and owns synthesis. Local workers receive decomposed packets only after their task and complexity class passes evaluation. Use them for parallel alternatives and heavy bounded source processing, not as automatic owners of a department.

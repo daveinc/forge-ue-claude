@@ -1,11 +1,11 @@
 ---
 name: forge-route-work
-description: Use Codex as resident supervisor while compiling, ranking, and dispatching bounded game-production work across qualified local/remote models, Unreal routes, Blender, research, build, and QA lanes. Use when choosing work batches, parallelizing departments, offloading context-heavy tasks, minimizing token/tool cost, recovering attempts, or adapting after capability changes.
+description: Use the assigned resident host as supervisor while compiling, ranking, and dispatching bounded game-production work across qualified local/remote models, Unreal routes, Blender, research, build, and QA lanes. Use when choosing work batches, parallelizing departments, offloading context-heavy tasks, minimizing token/tool cost, recovering attempts, or adapting after capability changes.
 ---
 
 # Forge Route Work
 
-Use Codex as the resident occupant and supervisor. Select optional local/remote occupants per bounded attempt; do not assign a department to a provider or serialize independent departments.
+Use the assigned resident host as the resident occupant and supervisor. Select optional local/remote occupants per bounded attempt; do not assign a department to a provider or serialize independent departments.
 
 ## Dispatch workflow
 
@@ -13,7 +13,7 @@ Use Codex as the resident occupant and supervisor. Select optional local/remote 
 2. Finish or unblock in-flight work before opening avoidable new work.
 3. Find ready work with satisfied hard prerequisites and disjoint write sets.
 4. Keep design, gameplay, visual, audio, research, and QA lanes concurrent once their contracts exist.
-5. Decide whether the task is safely decomposable. Keep unresolved design, novel architecture, cross-system integration, delicate mutation and final synthesis on Codex by default.
+5. Decide whether the task is safely decomposable. Keep unresolved design, novel architecture, cross-system integration, delicate mutation and final synthesis on the resident host by default.
 6. For bounded work, apply hard filters and rank offload routes using [routing.md](references/routing.md). Prefer qualified free/local/already-installed workers when resident-context, time or lane savings exceed handoff and verification cost.
 7. Select isolation before dispatch: use a clean-base Git worktree for concurrent text/code writers, an LFS lock or project-exclusive lease for binary assets, and read-only isolation for reviewers. Never let two workers share an undeclared write surface.
 8. Activate only the packet's required optional surfaces and acquire declared resources atomically. Every Unreal package writer shares the project super-lock; editor-open, editor-closed, and human routes are mutually exclusive.

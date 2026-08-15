@@ -5,7 +5,7 @@
     {"id": "FORGE-CTX-01", "purpose": "bounded cold-start work packet"},
     {"id": "FORGE-UE-01", "purpose": "Unreal route isolation and fallback"},
     {"id": "FORGE-VIS-01", "purpose": "concept-to-Unreal asset evidence"},
-    {"id": "FORGE-ROUTE-01", "purpose": "Codex resident baseline and qualified local offload"},
+    {"id": "FORGE-ROUTE-01", "purpose": "resident-host baseline and qualified local offload"},
     {"id": "FORGE-ROUTE-02", "purpose": "Blender-versus-Unreal authoring benchmark"},
     {"id": "FORGE-CTX-02", "purpose": "bounded local-worker context and structured evidence return"},
     {"id": "FORGE-CAP-01", "purpose": "capability trust, consent, integrity, activation and invalidation"},

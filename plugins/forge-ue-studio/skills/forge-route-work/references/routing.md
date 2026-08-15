@@ -1,13 +1,13 @@
 # Routing and lanes
 
-Use Codex as the resident route. Reject offload routes missing required access, modality, quality, safety, context, acceptance proof, or mutation permission. Rank survivors by their advantage over the Codex baseline:
+Use the resident host as the resident route. Reject offload routes missing required access, modality, quality, safety, context, acceptance proof, or mutation permission. Rank survivors by their advantage over the resident-host baseline:
 
 ```text
 expected quality + free/local advantage + parallelism gain
 - retry risk - latency - money - queue cost - lane contention - handoff cost
 ```
 
-Installed local routes normally win qualified bounded work when they save resident context or parallel time. Free routes never bypass acceptance. Keep complex/ambiguous/integrative work with Codex by default. Scores are per task and complexity class and decay after relevant change.
+Installed local routes normally win qualified bounded work when they save resident context or parallel time. Free routes never bypass acceptance. Keep complex/ambiguous/integrative work with the resident host by default. Scores are per task and complexity class and decay after relevant change.
 
 Activate only the selected packet's required optional surfaces. Charge their measured host instruction/schema context, startup, briefing and shutdown costs. Keep one canonical surface for duplicate capabilities unless a controlled comparison requires both.
 

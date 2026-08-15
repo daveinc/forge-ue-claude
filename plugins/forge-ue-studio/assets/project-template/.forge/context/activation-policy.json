@@ -1,7 +1,7 @@
 {
   "schema": "forge.context-activation/v1",
   "mode": "phase-scoped-on-demand",
-  "always_on": ["worker.codex.resident", "forge.state", "vcs.revision"],
+  "always_on": ["worker.resident", "forge.state", "vcs.revision"],
   "profiles": {
     "design": ["worker.visual-direction", "research.retrieval"],
     "gameplay": ["ue.project", "ue.build", "qa.gameplay"],

@@ -4,18 +4,18 @@
   "snapshot": null,
   "providers": [
     {
-      "id": "codex",
+      "id": "resident",
       "kind": "resident-model",
       "locality": "resident",
       "status": "AVAILABLE_UNVERIFIED",
       "qualification": {"state": "PARTIAL", "task_classes": ["orchestration", "final-synthesis"]},
-      "note": "Resident default. Runtime-specific tools and modalities still require host probes."
+      "note": "Resident default. The host filling this seat is recorded in .forge/runtime.json; its tools and modalities still require host probes."
     }
   ],
   "capabilities": [],
   "activation": {
     "mode": "phase-scoped-on-demand",
-    "active": ["worker.codex.resident", "forge.state"],
+    "active": ["worker.resident", "forge.state"],
     "disabled_duplicates": []
   },
   "note": "Populate only from probes. Detection without a safe probe is AVAILABLE_UNVERIFIED; optional workers begin UNQUALIFIED."

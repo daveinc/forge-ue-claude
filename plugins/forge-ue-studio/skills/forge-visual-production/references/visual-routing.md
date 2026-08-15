@@ -9,7 +9,7 @@
 
 Benchmark representative tasks on quality, elapsed time, rework, GPU pressure, editor contention, and handoff cost. Re-rank after relevant version or hardware changes. A valid split may use Blender for mesh/UV and Unreal for rigging/animation, or the reverse when evidence supports it.
 
-Codex operates the selected route by default and can use exposed image generation for concepts and photos. Consider local workers for bounded variants, image-to-3D breakdowns, scripts, batch modelling steps or first-pass visual review when their asset-class and complexity eval passes. Charge briefing, verification and rework against claimed token savings.
+The resident host operates the selected route by default and can use exposed image generation for concepts and photos. Consider local workers for bounded variants, image-to-3D breakdowns, scripts, batch modelling steps or first-pass visual review when their asset-class and complexity eval passes. Charge briefing, verification and rework against claimed token savings.
 
 Do not collapse these capabilities:
 

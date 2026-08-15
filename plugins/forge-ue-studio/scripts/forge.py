@@ -505,14 +505,20 @@ def gsd_smart_entry(root: Path, profile: dict[str, Any] | None = None) -> dict[s
 
 
 def normalize_gsd_command(command: str, profile: dict[str, Any] | None = None) -> str:
-    """Translate command spelling into the active host's skill invocation style."""
-    prefix = (profile or {}).get("skill_invocation", {}).get("prefix", "$")
+    """Translate command spelling into the active host's skill invocation style.
+
+    Accepts a bare skill name, a legacy `/gsd:name` spelling, or a name already
+    carrying another host's prefix. The neutral fallback is no prefix, so a caller
+    that forgets to pass a profile degrades to a bare name rather than silently
+    emitting some other host's spelling.
+    """
+    prefix = (profile or {}).get("skill_invocation", {}).get("prefix", "")
     text = command.strip()
     match = re.match(r"^/gsd:([a-z0-9-]+)(.*)$", text)
     if match:
         return f"{prefix}gsd-{match.group(1)}{match.group(2)}"
-    # Re-spell a skill name already carrying another host's prefix.
-    match = re.match(r"^[$/]((?:gsd|forge)-[a-z0-9-]+)(.*)$", text)
+    # Bare names are the canonical internal form; a leading $ or / is re-spelled.
+    match = re.match(r"^[$/]?((?:gsd|forge)-[a-z0-9-]+)(.*)$", text)
     if match:
         return f"{prefix}{match.group(1)}{match.group(2)}"
     return text
@@ -596,8 +602,8 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
         situation = "forge-not-adopted"
         summary = "Forge is not adopted in this directory; install the project overlay before resuming work."
         actions = [
-            forge_action("bootstrap", "Adopt this project with Forge", "$forge-bootstrap", True, "Creates the reversible project-local control plane, then stops for a fresh session.", profile),
-            forge_action("doctor", "Inspect the environment", "$forge-doctor", False, "Read-only capability and dependency diagnosis.", profile),
+            forge_action("bootstrap", "Adopt this project with Forge", "forge-bootstrap", True, "Creates the reversible project-local control plane, then stops for a fresh session.", profile),
+            forge_action("doctor", "Inspect the environment", "forge-doctor", False, "Read-only capability and dependency diagnosis.", profile),
         ]
     elif not surfaces_current:
         situation = "host-surfaces-stale"
@@ -614,21 +620,21 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
                 "Regenerates the project instruction file and project-local agents from .forge canon.",
                 profile,
             ),
-            forge_action("doctor", "Inspect the environment", "$forge-doctor", False, "Read-only diagnosis before re-rendering.", profile),
+            forge_action("doctor", "Inspect the environment", "forge-doctor", False, "Read-only diagnosis before re-rendering.", profile),
         ]
     elif not bootstrap_complete:
         situation = "forge-bootstrap-incomplete"
         summary = "Forge is present, but bootstrap evidence is incomplete; resume bootstrap before project work."
         actions = [
-            forge_action("bootstrap-resume", "Resume Forge bootstrap", "$forge-bootstrap --resume", True, "Completes capability inventory, delegated checks, verification, and the persisted report.", profile),
-            forge_action("doctor", "Inspect the environment", "$forge-doctor", False, "Read-only diagnosis before resuming bootstrap.", profile),
+            forge_action("bootstrap-resume", "Resume Forge bootstrap", "forge-bootstrap --resume", True, "Completes capability inventory, delegated checks, verification, and the persisted report.", profile),
+            forge_action("doctor", "Inspect the environment", "forge-doctor", False, "Read-only diagnosis before resuming bootstrap.", profile),
         ]
     elif not isinstance(gsd, dict) or not gsd.get("ok"):
         situation = "gsd-unavailable"
         summary = "Forge bootstrap was previously accepted, but GSD smart-entry is not currently available."
         actions = [
-            forge_action("doctor", "Repair or inspect GSD", "$forge-doctor", True, str(gsd.get("error", "GSD state unavailable")) if isinstance(gsd, dict) else "Invalid GSD result", profile),
-            forge_action("bootstrap-resume", "Re-evaluate Forge bootstrap", "$forge-bootstrap --resume", False, "Refresh stale dependency evidence after GSD changes.", profile),
+            forge_action("doctor", "Repair or inspect GSD", "forge-doctor", True, str(gsd.get("error", "GSD state unavailable")) if isinstance(gsd, dict) else "Invalid GSD result", profile),
+            forge_action("bootstrap-resume", "Re-evaluate Forge bootstrap", "forge-bootstrap --resume", False, "Refresh stale dependency evidence after GSD changes.", profile),
         ]
     elif has_planning:
         if isinstance(snapshot, dict) and snapshot.get("actions"):
@@ -654,30 +660,30 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
             situation = "gsd-unavailable"
             summary = "GSD planning state exists, but its smart-entry runtime could not be read safely."
             actions = [
-                forge_action("doctor", "Repair or inspect GSD", "$forge-doctor", True, str(gsd.get("error", "GSD state unavailable")), profile),
-                forge_action("gsd-health", "Inspect GSD planning health", "$gsd-health", False, "Use only if the GSD skill surface is available.", profile),
+                forge_action("doctor", "Repair or inspect GSD", "forge-doctor", True, str(gsd.get("error", "GSD state unavailable")), profile),
+                forge_action("gsd-health", "Inspect GSD planning health", "gsd-health", False, "Use only if the GSD skill surface is available.", profile),
             ]
     elif sources:
         source_arg = str(Path(sources[0]).relative_to(root))
         situation = "existing-design-unplanned"
         summary = "Existing design documents were found, but GSD project memory has not been created."
         actions = [
-            forge_action("ingest-docs", "Ingest existing design documents", f'$gsd-ingest-docs "{source_arg}"', True, "Preserves existing decisions and detects conflicts before planning.", profile),
-            forge_action("onboard", "Onboard the existing project", "$gsd-onboard", False, "Use when codebase mapping should precede document ingestion.", profile),
+            forge_action("ingest-docs", "Ingest existing design documents", f'gsd-ingest-docs "{source_arg}"', True, "Preserves existing decisions and detects conflicts before planning.", profile),
+            forge_action("onboard", "Onboard the existing project", "gsd-onboard", False, "Use when codebase mapping should precede document ingestion.", profile),
         ]
     elif has_code:
         situation = "existing-project-unplanned"
         summary = "An existing Unreal/code project was found without GSD project memory."
         actions = [
-            forge_action("onboard", "Onboard the existing project", "$gsd-onboard", True, "Maps the codebase and establishes GSD planning state.", profile),
-            forge_action("ingest-docs", "Ingest project documents", "$gsd-ingest-docs", False, "Use when authoritative planning documents exist outside the standard design folders.", profile),
+            forge_action("onboard", "Onboard the existing project", "gsd-onboard", True, "Maps the codebase and establishes GSD planning state.", profile),
+            forge_action("ingest-docs", "Ingest project documents", "gsd-ingest-docs", False, "Use when authoritative planning documents exist outside the standard design folders.", profile),
         ]
     else:
         situation = "greenfield-ready"
         summary = "Forge bootstrap is complete and no existing GSD project, design corpus, or Unreal source was found."
         actions = [
-            forge_action("forge-init", "Start Forge project inception", "$forge-init", True, "Begins the design interview and creates canonical GSD project memory.", profile),
-            forge_action("gsd-new-project", "Start with GSD project discovery", "$gsd-new-project", False, "Use when Forge-specific design inception is not needed.", profile),
+            forge_action("forge-init", "Start Forge project inception", "forge-init", True, "Begins the design interview and creates canonical GSD project memory.", profile),
+            forge_action("gsd-new-project", "Start with GSD project discovery", "gsd-new-project", False, "Use when Forge-specific design inception is not needed.", profile),
         ]
 
     recommended = next((action["id"] for action in actions if action["recommended"]), actions[0]["id"] if actions else None)
@@ -1322,7 +1328,16 @@ def lifecycle_state(project_value: str, event: str = "status", phase: int | None
             "next_command_for_host": spelled,
             "authority": f"GSD .planning state via {host_command(profile, 'forge-next')}",
         }
-    raise ValueError("Forge lifecycle transitions are deprecated; use $forge-next and let GSD own phase state")
+    raise ValueError(
+        "Forge lifecycle transitions are deprecated; use "
+        f"{host_command(active_profile(root), 'forge-next')} and let GSD own phase state"
+    )
+
+    # UNREACHABLE. Retained as a record of the pre-GSD lifecycle transitions and
+    # their artifact requirements (see require_artifacts, which only this block
+    # calls). Command spellings here are bare skill names, so reviving it would
+    # not reintroduce a host-specific spelling. Delete both if the lifecycle
+    # engine is never coming back.
     if event not in LIFECYCLE_EVENTS:
         raise ValueError(f"Unknown lifecycle event: {event}")
 
@@ -1338,12 +1353,12 @@ def lifecycle_state(project_value: str, event: str = "status", phase: int | None
         "verify-start": ("verify", "verify"),
     }
     complete_events = {
-        "bootstrap-complete": ("bootstrap", "bootstrap", None, "$forge-init"),
-        "init-complete": ("init", "discuss", 1, "$gsd-discuss-phase 1"),
-        "discuss-complete": ("discuss", "plan", current_phase, f"$gsd-plan-phase {current_phase}"),
-        "plan-complete": ("plan", "execute", current_phase, f"$gsd-execute-phase {current_phase}"),
-        "execute-complete": ("execute", "verify", current_phase, f"$gsd-verify-work {current_phase}"),
-        "verify-complete": ("verify", "phase-complete", current_phase, "$gsd-progress"),
+        "bootstrap-complete": ("bootstrap", "bootstrap", None, "forge-init"),
+        "init-complete": ("init", "discuss", 1, "gsd-discuss-phase 1"),
+        "discuss-complete": ("discuss", "plan", current_phase, f"gsd-plan-phase {current_phase}"),
+        "plan-complete": ("plan", "execute", current_phase, f"gsd-execute-phase {current_phase}"),
+        "execute-complete": ("execute", "verify", current_phase, f"gsd-verify-work {current_phase}"),
+        "verify-complete": ("verify", "phase-complete", current_phase, "gsd-progress"),
     }
 
     evidence: list[str] = []
@@ -1351,7 +1366,7 @@ def lifecycle_state(project_value: str, event: str = "status", phase: int | None
         expected, destination = start_events[event]
         if current_stage != expected or current_status not in {"READY", "AWAITING_FRESH_TASK"}:
             raise ValueError(f"Cannot apply {event} from {current_stage}/{current_status}")
-        expected_command = {"bootstrap-start": "$forge-bootstrap --resume", "init-start": "$forge-init"}.get(event)
+        expected_command = {"bootstrap-start": "forge-bootstrap --resume", "init-start": "forge-init"}.get(event)
         if expected_command and state.get("next_command") != expected_command:
             raise ValueError(f"Cannot apply {event}; lifecycle next command is {state.get('next_command')!r}")
         if event not in {"bootstrap-start", "init-start"} and phase != current_phase:
@@ -1370,7 +1385,7 @@ def lifecycle_state(project_value: str, event: str = "status", phase: int | None
             raise ValueError(f"Cannot start a next phase from {current_stage}/{current_status}")
         if phase is None or phase <= int(current_phase or 0):
             raise ValueError("next-phase requires a phase number greater than the completed phase")
-        next_state = {"stage": "discuss", "status": "AWAITING_FRESH_TASK", "phase": phase, "requires_fresh_task": True, "next_command": f"$gsd-discuss-phase {phase}"}
+        next_state = {"stage": "discuss", "status": "AWAITING_FRESH_TASK", "phase": phase, "requires_fresh_task": True, "next_command": f"gsd-discuss-phase {phase}"}
     else:
         if current_stage != "phase-complete" or current_status != "AWAITING_USER":
             raise ValueError(f"Cannot complete the project from {current_stage}/{current_status}")
@@ -1441,7 +1456,7 @@ def route_work(project_value: str, request_value: str, host_override: str | None
 
     policy = load_json(plugin_root() / "dependencies" / "route-policy.json")
     offload = policy["offload_policy"]
-    keep_on_resident = set(offload.get("keep_on_resident_by_default") or offload.get("keep_on_codex_by_default", []))
+    keep_on_resident = set(offload["keep_on_resident_by_default"])
     hard_resident = (
         not bool(request["bounded"])
         or request["task_class"] in keep_on_resident

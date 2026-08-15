@@ -14,7 +14,7 @@ Turn a source or tool into tested, context-efficient capability rather than pros
 3. Classify sources in bounded parallel packets when independent. Extract decisions, requirements, constraints, conflicts, atomic operations, inputs/outputs, mutation behavior, lanes, error surfaces and rollback evidence.
 4. Stage conflicts without merging competing acceptance variants. Block destination contracts until the human owner resolves material contradictions.
 5. Create the capability or research contract described in [absorption-contract.md](references/absorption-contract.md).
-6. Implement known-good and seeded-bad probes. For optional workers, compare task quality, complexity ceiling, context use and verification cost with the resident Codex baseline. A detection probe alone cannot yield `AVAILABLE_VERIFIED`.
+6. Implement known-good and seeded-bad probes. For optional workers, compare task quality, complexity ceiling, context use and verification cost with the resident-host baseline. A detection probe alone cannot yield `AVAILABLE_VERIFIED`.
 7. Link enabled workflow steps to fallbacks and acceptance suites. Recipes request capabilities, never product names.
 8. Generate small domain cards, relationship graphs when useful, and retrieval keys. Compile minimal offload packets so local workers can process context-heavy sources without receiving whole manuals, the complete GDD or resident conversation.
 9. Record invalidation triggers and re-probe after version, schema, model, plugin, engine, hardware or path changes. Route installation and activation through `forge-capability-admin`.

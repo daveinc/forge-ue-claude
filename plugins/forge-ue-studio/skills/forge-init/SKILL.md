@@ -12,7 +12,7 @@ Turn an idea into approved, schedulable studio work, then hand control to GSD's 
 1. Run the bundled `scripts/forge.py next --project <root>` detector before interpreting or changing project state.
 2. If its recommended action is not `forge-init`, dispatch that one action and **STOP**. This includes Forge adoption/bootstrap, GSD document ingestion, existing-code onboarding, recovery, remediation, and resuming a partially completed GSD phase.
 3. Continue below only when the detector reports `greenfield-ready` and recommends `forge-init`. Do not recursively invoke Forge Init.
-4. Read the project `AGENTS.md`, `.forge/state/packet-registry.json`, `.forge/directives.md`, and current `.planning` artifacts. Treat `.planning` and GSD's smart-entry snapshot as the only phase authority; `.forge/state/lifecycle.json` is deprecated compatibility history.
+4. Read the project instruction file named by the active host profile, `.forge/state/packet-registry.json`, `.forge/directives.md`, and current `.planning` artifacts. Treat `.planning` and GSD's smart-entry snapshot as the only phase authority; `.forge/state/lifecycle.json` is deprecated compatibility history.
 5. Run `gsd-new-project` without `--auto` as the canonical project/requirements/roadmap initialization workflow. Preserve all of its questions, agent dispatch, approvals, commits, state files, and stop points. Forge artifacts link to GSD decisions; they do not create a competing phase engine.
 
 ## Workflow
@@ -22,7 +22,7 @@ Turn an idea into approved, schedulable studio work, then hand control to GSD's 
 3. Record unknowns as explicit hypotheses, deferrals or spikes. Do not silently choose them or make changeable art block the playable contract.
 4. Run a divergent design pass before locking the compact GDD. Generate materially different core-loop, progression, narrative and production options, test them against the mandate, and preserve rejected tradeoffs in the decision ledger.
 5. Produce the compact GDD, decision ledger and acceptance spine. Keep large lore, research, and references as linked sources rather than worker payload.
-6. Have Codex develop the first visual pillars, negative references, character/world sheets and storyboard/beat-board candidates, using exposed image generation for art/photo concepts when available. Send bounded alternatives or breakdowns to qualified local workers when useful; preserve prompts, model/source, licence and date.
+6. Have the resident host develop the first visual pillars, negative references, character/world sheets and storyboard/beat-board candidates, using exposed image generation for art/photo concepts when available. Send bounded alternatives or breakdowns to qualified local workers when useful; preserve prompts, model/source, licence and date.
 7. Obtain human approval for the primary visual direction. Create replacement-safe asset interfaces for scale, skeleton, sockets, collision, material slots, animation events, and budgets.
 8. Compile concurrent playable, visual, narrative, audio, research and QA workstreams. Synchronize them only through explicit requirements, accepted decisions and asset interfaces. Register each canonical packet ID once in `.forge/state/packet-registry.json`; later plans must reuse it. An alias requires an explicit alias record, and a genuinely new packet requires `derived_from` provenance.
 9. Run `forge-plan-convergence` on the inception/roadmap artifacts. Do **not** dispatch a walking-skeleton packet from Forge Init.

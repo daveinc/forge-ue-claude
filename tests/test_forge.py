@@ -20,6 +20,16 @@ assert SPEC and SPEC.loader
 forge = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(forge)
 
+VALIDATE_PATH = ROOT / "scripts" / "validate_repo.py"
+VALIDATE_SPEC = importlib.util.spec_from_file_location("validate_repo", VALIDATE_PATH)
+assert VALIDATE_SPEC and VALIDATE_SPEC.loader
+validate_repo = importlib.util.module_from_spec(VALIDATE_SPEC)
+VALIDATE_SPEC.loader.exec_module(validate_repo)
+
+HOSTS = json.loads(
+    (ROOT / "plugins" / "forge-ue-studio" / "hosts" / "registry.json").read_text(encoding="utf-8")
+)["hosts"]
+
 
 @contextmanager
 def workspace_tempdir():
@@ -510,14 +520,54 @@ class ForgeInstallerTests(unittest.TestCase):
                     self.assertNotIn("{{", path.read_text(encoding="utf-8"), str(path))
 
     def test_canon_never_carries_a_host_specific_spelling(self):
-        template = ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template"
-        for path in template.rglob("*"):
-            if not path.is_file():
-                continue
-            text = path.read_text(encoding="utf-8-sig")
-            for banned in ("$forge-", "$gsd-", "/forge-", "/gsd-"):
-                # The instruction template carries tokens, never resolved spellings.
-                self.assertNotIn(banned, text, f"{path.relative_to(ROOT)} hardcodes {banned}")
+        banned = validate_repo.neutrality_banned_tokens(HOSTS)
+        self.assertIn("codex", banned)
+        self.assertIn("claude", banned)
+        # The generic placeholder host contributes no tokens; its identifiers are
+        # ordinary words that would produce false positives.
+        self.assertNotIn("generic", banned)
+
+        roots = [
+            ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template",
+            ROOT / "plugins" / "forge-ue-studio" / "dependencies",
+            ROOT / "plugins" / "forge-ue-studio" / "schemas",
+        ]
+        for root in roots:
+            for path in root.rglob("*"):
+                if not path.is_file() or path in validate_repo.NEUTRALITY_EXEMPT_FILES:
+                    continue
+                found = validate_repo.neutrality_violations(
+                    path.read_text(encoding="utf-8-sig"), banned
+                )
+                self.assertEqual(found, [], f"{path.relative_to(ROOT)} leaks {found}")
+
+    def test_neutrality_guard_catches_planted_leaks(self):
+        # The guard is only worth having if it actually fails on a leak.
+        banned = validate_repo.neutrality_banned_tokens(HOSTS)
+        for leak in (
+            '{"active": ["worker.codex.resident"]}',
+            "Use Claude Code as the resident default.",
+            "Run $forge-next to resume.",
+            "Run /gsd-execute-phase next.",
+            "Read the project AGENTS.md before working.",
+        ):
+            self.assertNotEqual(
+                validate_repo.neutrality_violations(leak, banned), [], f"missed: {leak}"
+            )
+
+    def test_neutrality_guard_tolerates_paths_and_protocol_names(self):
+        # Path segments and the OpenAI-compatible protocol name are not leaks.
+        banned = validate_repo.neutrality_banned_tokens(HOSTS)
+        for benign in (
+            "plugins/forge-ue-studio/hosts/registry.json",
+            "https://github.com/open-gsd/gsd-core",
+            '"capability": "model.openai-compatible-endpoint"',
+            "Use {{skill:forge-next}} after every boundary.",
+            "The resident host owns {{resident}} synthesis.",
+        ):
+            self.assertEqual(
+                validate_repo.neutrality_violations(benign, banned), [], f"false positive: {benign}"
+            )
 
     def test_packet_registry_has_unique_canonical_ids(self):
         registry_path = ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state" / "packet-registry.json"
