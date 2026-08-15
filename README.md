@@ -135,13 +135,14 @@ Invoke a Forge workflow by naming its skill in your prompt. You can give Forge a
 | `forge-next` | Entering or resuming any Forge project. The normal front door: detects adoption, bootstrap, existing docs/code, and the authoritative next action. |
 | `forge-init` | Starting greenfield game inception; on an existing/partial project it first defers to Forge Next. |
 | `forge-spec-phase` | A phase goal is vague or contested and needs ambiguity scoring before discussion. |
-| `forge-discuss-phase` | Settling gameplay and art decisions for a phase before a plan exists. |
-| `forge-plan-phase` | Turning a discussed phase into plans that declare asset interfaces, lanes, and mutation risk. |
+| `forge-mvp-phase` | Reducing a phase to the thinnest playable loop, and splitting it if it is too big. |
+| `forge-discuss-phase` | Settling gameplay and art decisions for a phase before a plan exists. Modes: `--assumptions` (codebase-first, best on an existing project), `--power` (batch all questions), `--list-assumptions`. |
+| `forge-plan-phase` | Turning a discussed phase into plans that declare asset interfaces, lanes, and mutation risk. `--dependencies` detects file overlap between phases and feeds the lane leases. |
 | `forge-execute-phase` | Running approved plans under the Unreal write-lock and lane leases. |
 | `forge-verify-work` | Validating completed work through UAT plus in-engine evidence. |
 | `forge-progress` | Checking phase state, execution coverage, and the next action. |
 | `forge-phase` | Adding, inserting, removing, or editing phases in the roadmap. |
-| `forge-milestone` | Starting, completing, auditing, or summarising a milestone. |
+| `forge-milestone` | Starting, completing, auditing, or summarising a milestone. `--plan-gaps` turns an audit's findings into fix phases. |
 | `forge-ship` | Cooking, packaging, verifying, and opening a PR for a verified milestone. |
 
 ### Quality and review
@@ -252,7 +253,7 @@ plugins/forge-ue-studio/               installable plugin
   hosts/registry.json                  runtime host profiles and prerequisite contract
   verbs/registry.json                  GSD command -> Forge verb map, with delegation modes
   references/delegation-contract.md    the PRE / CORE / POST shape every delegating verb follows
-  skills/                              progressive studio workflows (30)
+  skills/                              progressive studio workflows (31)
   dependencies/                        capability and route declarations
   schemas/                             contracts for state and work packets
   assets/project-template/             reversible, host-neutral project overlay

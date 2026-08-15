@@ -467,12 +467,6 @@
     },
     {
       "forge": null,
-      "gsd": "gsd-mvp-phase",
-      "disposition": "drop",
-      "reason": "Planned: forge-mvp-phase (playable vertical slice)."
-    },
-    {
-      "forge": null,
       "gsd": "gsd-review-backlog",
       "disposition": "drop",
       "reason": "Planned: forge-capture."
@@ -500,6 +494,60 @@
       "delegation": "contain",
       "adaptation": "Reached through forge-phase --edit.",
       "disposition": "front"
+    },
+    {
+      "forge": "forge-mvp-phase",
+      "gsd": "gsd-mvp-phase",
+      "gsd_workflow": "mvp-phase.md",
+      "delegation": "relay",
+      "adaptation": "A vertical slice is the thinnest playable loop, not a user story. Placeholder art is expected; a split that leaves no playable loop is the wrong split.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-milestone",
+      "gsd": "gsd-plan-milestone-gaps",
+      "gsd_workflow": "plan-milestone-gaps.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-milestone --plan-gaps. Closes the loop from forge-milestone --audit, which produces the gaps this consumes.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-plan-phase",
+      "gsd": "gsd-analyze-dependencies",
+      "gsd_workflow": "analyze-dependencies.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-plan-phase --dependencies. File-overlap and semantic dependency detection feeds Forge's lane leases and the Unreal write-lock, not only merge-conflict avoidance.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-discuss-phase",
+      "gsd": "gsd-discuss-phase-assumptions",
+      "gsd_workflow": "discuss-phase-assumptions.md",
+      "delegation": "relay",
+      "adaptation": "Reached through forge-discuss-phase --assumptions. Codebase-first assumption surfacing; preferred over interviewing on an existing Unreal project.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-discuss-phase",
+      "gsd": "gsd-discuss-phase-power",
+      "gsd_workflow": "discuss-phase-power.md",
+      "delegation": "relay",
+      "adaptation": "Reached through forge-discuss-phase --power. Batches all questions upfront for a large phase with many gray areas.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-discuss-phase",
+      "gsd": "gsd-list-phase-assumptions",
+      "gsd_workflow": "list-phase-assumptions.md",
+      "delegation": "relay",
+      "adaptation": "Reached through forge-discuss-phase --list-assumptions. Analysis of what the host believes, with no file output.",
+      "disposition": "front"
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-discovery-phase",
+      "disposition": "drop",
+      "reason": "Dangling upstream: its own docstring says plan-phase invokes it, but nothing in GSD 1.9.1 references it. Not Forge's to front."
     }
   ]
 }

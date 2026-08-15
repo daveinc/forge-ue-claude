@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge MVP Phase"
+  short_description: "Plan a phase as a vertical slice — the thinnest playable loop"
+  default_prompt: "Use $forge-mvp-phase to reduce this phase to the thinnest playable loop and split it if it is too big."

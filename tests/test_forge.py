@@ -789,6 +789,28 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertIsNotNone(result["recommended"])
             self.assertEqual(result["actions"][0]["command"], "/forge-progress")
 
+    def test_planning_helpers_are_fronted_not_orphaned(self):
+        # These reach real GSD capability a game project needs. Leaving them
+        # unclassified would strand parts of GSD's own chain:
+        #   plan-milestone-gaps closes the loop from forge-milestone --audit
+        #   analyze-dependencies feeds Forge's lane leases
+        #   the discussion variants are modes forge-discuss-phase must offer
+        fronted = forge.gsd_to_forge_verbs()
+        expected = {
+            "gsd-mvp-phase": "forge-mvp-phase",
+            "gsd-plan-milestone-gaps": "forge-milestone",
+            "gsd-analyze-dependencies": "forge-plan-phase",
+            "gsd-discuss-phase-assumptions": "forge-discuss-phase",
+            "gsd-discuss-phase-power": "forge-discuss-phase",
+            "gsd-list-phase-assumptions": "forge-discuss-phase",
+            "gsd-insert-phase": "forge-phase",
+            "gsd-remove-phase": "forge-phase",
+            "gsd-edit-phase": "forge-phase",
+        }
+        for gsd_verb, forge_verb in expected.items():
+            with self.subTest(gsd=gsd_verb):
+                self.assertEqual(fronted.get(gsd_verb), forge_verb)
+
     def test_every_command_smart_entry_can_emit_is_classified(self):
         # Anything smart-entry can recommend must be fronted or explicitly
         # dropped; an unclassified command would leak as UNMAPPED at runtime.

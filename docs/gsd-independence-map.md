@@ -180,6 +180,46 @@ This cadence cuts both ways and is the real input to the decision:
 
 Either way, **fix the pin mismatch before anything else** — Forge currently claims to install a version nobody is testing against.
 
+## Measured: does GSD's chain still run end to end?
+
+The tier tables above classify GSD's *commands*. That is not the same question as whether GSD's *workflows* still execute — workflows chain to each other by command name and by file reference, and several load nested step files. A command Forge chooses not to front is not thereby disabled, but a workflow nothing can reach is genuinely stranded.
+
+Reachability graph over GSD 1.9.1, seeded from the workflow files Forge enters:
+
+| | Before fronting the helpers | After |
+|---|---:|---:|
+| Workflow files | 91 | 91 |
+| Forge entry points | 39 | **45** |
+| Reachable total | 55 | **64** |
+| Unreachable | 36 | **27** |
+
+Plus 25 nested step files under `execute-phase/steps/`, `plan-phase/steps/`, and `discuss-phase/modes/`.
+
+**Internal chaining is safe and must not be touched.** A contained subagent reads GSD's files directly, so `execute-phase` still loads its drift, isolation, worktree, post-merge and regression gates; `code-review` still calls `code-review-fix` and `verify-phase`; `verify-work` still calls `diagnose-issues`. The verb registry governs only which Forge verbs exist and how `smart-entry`'s terminal action list is presented — it has no reach inside a running workflow.
+
+### Gaps the graph found
+
+| Gap | Consequence | Resolution |
+|---|---|---|
+| `forge-phase` referenced only `add-phase.md` | `insert-phase` (decimal ID arithmetic), `remove-phase` (renumbering), `edit-phase` unreachable | All three fronted |
+| `plan-milestone-gaps` unreachable | `forge-milestone --audit` produced gaps with no verb to close them | Fronted as `--plan-gaps` |
+| `analyze-dependencies` unreachable | File-overlap detection feeding lane leases was unavailable | Fronted as `forge-plan-phase --dependencies` |
+| `mvp-phase` dropped as "planned" | Vertical-slice planning is core to game work, not deferrable | Fronted as `forge-mvp-phase` |
+| Three discussion variants unreachable | Codebase-first, batch, and assumption-listing modes lost — the highest-value area for Forge | Fronted as `forge-discuss-phase` modes |
+| Suppression could empty the action list | Hard stall: no actions, no recommendation | Falls back to a Forge verb, reports suppressions |
+
+### An upstream orphan, not Forge's
+
+`discovery-phase.md` states it is "called from plan-phase.md's mandatory_discovery step", but nothing in GSD 1.9.1 references it — not `plan-phase.md`, not any workflow, not the capability registry. It is dead upstream. Recorded as a `drop` with that reason rather than fronted.
+
+### The 27 that remain unreachable
+
+Workspaces, todos, seeds, `thread`, `stats`, `profile-user`, `inbox`, `import`, `ultraplan-phase`, `eval-review`, `settings-*`, `sync-skills`, `reapply-patches`, `update`, `scan`, `session-report`, and the sketch/spike wrap-ups. All GSD-general tooling with no caller inside GSD's own chain — safe to leave un-fronted.
+
+### One collision to watch
+
+`execute-phase/steps/` contains `per-plan-worktree-gate` and `worktree-recovery-policy`, while `forge-execute-phase` acquires lane leases and the Unreal write-lock in PRE. Both want to manage isolation for the same lane. The delegation contract records the division — Forge holds the lease, GSD manages isolation within it — but this is unproven until that verb runs for real.
+
 ## Remaining open question
 
 - **Gate authority.** If Forge wraps GSD's verification gate, GSD stays the authority and the RunnerRoyale invariant holds. If Forge replaces it, Forge must become the *sole* authority — never both. That invariant is what the incident was about.
