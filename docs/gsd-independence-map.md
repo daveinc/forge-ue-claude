@@ -142,8 +142,44 @@ These are Forge's reason to exist and need no GSD equivalent: capability discove
 3. **Adapt the four game-critical skills:** `forge-execute-phase` (write-lock), `forge-verify-work` (in-engine evidence), `forge-debug` (Unreal traces), `forge-ship` (cook/package).
 4. **Then decide on vendoring.** Steps 1–3 deliver the full `forge-*` vocabulary while GSD is still underneath. Vendoring becomes a mechanical follow-up rather than a prerequisite.
 
-## Open questions
+## Measured: how much engine can you actually shed?
 
-- **Version pin.** Forge pins `@opengsd/gsd-core@1.8.0`; the workstation runs 1.9.1. Resolve before vendoring — you would be forking a version you have not been testing against.
-- **Licence.** GSD's terms must permit vendoring and redistribution inside the Forge plugin. Unverified.
+Classifying all 92 workflows into the set Forge would keep (Tier 1–6) versus drop (Tier 7 and GSD-general tooling), then counting which runtime verbs each set invokes:
+
+| | Workflows | Runtime verbs required |
+|---|---:|---:|
+| **Keep** (Forge's path) | 62 | **55** |
+| **Drop** | 30 | 28 |
+| Verbs used *only* by dropped workflows | — | **11** |
+| Verbs shared by both sets | — | 17 |
+
+**Dropping a third of the command surface removes eleven verbs.** The eleven are `capability`, `config-ensure-section`, `dispatch-should-flatten`, `generate-claude-profile`, `generate-dev-preferences`, `profile-questionnaire`, `profile-sample`, `quick-tasks-append`, `scan-sessions`, `stats`, `write-profile` — all peripheral.
+
+The engine core is shared almost everywhere. Verb call frequency across all workflows shows how concentrated it is: `config-get` (96 call sites), `commit` (64), `init` (50), `config-set` (38), `agent-skills` (33), `roadmap` (30), `state` (28). These are load-bearing for every lifecycle command Forge intends to keep.
+
+**Decision consequence:** you cannot meaningfully shrink the engine by narrowing the command surface. Vendoring means taking substantially the whole runtime, not a curated subset. The choice is therefore between wrapping it and owning all of it — a partial fork is not on the table.
+
+## Resolved: the two open questions
+
+**Licence — MIT.** `@opengsd/gsd-core` is published MIT, the same licence as Forge. Vendoring and redistribution inside the plugin are permitted, subject to retaining the copyright notice and licence text. No blocker.
+
+**Version — Forge is behind, and the target moves fast.**
+
+| | Version | Published |
+|---|---|---|
+| Forge pins | 1.8.0 | 2026-07-22 |
+| Workstation runs | 1.9.1 | 2026-07-31 |
+| Latest published | 1.10.0 | 2026-08-08 |
+
+Three minor releases in eighteen days. All analysis in this document was performed against the installed 1.9.1, not the pinned 1.8.0.
+
+This cadence cuts both ways and is the real input to the decision:
+
+- *Against wrapping:* a fast-moving upstream means Forge's pin drifts continuously, and every GSD release is a potential break in behaviour Forge depends on.
+- *Against vendoring:* the same cadence is the merge burden you inherit. At ~1 minor release per week, a fork diverges quickly, and MIT gives you the right to fork but not the capacity to keep up.
+
+Either way, **fix the pin mismatch before anything else** — Forge currently claims to install a version nobody is testing against.
+
+## Remaining open question
+
 - **Gate authority.** If Forge wraps GSD's verification gate, GSD stays the authority and the RunnerRoyale invariant holds. If Forge replaces it, Forge must become the *sole* authority — never both. That invariant is what the incident was about.
