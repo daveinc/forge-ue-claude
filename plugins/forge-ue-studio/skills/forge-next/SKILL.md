@@ -20,7 +20,7 @@ Use GSD as the sole phase-state authority. Forge Next is a launcher, not another
 4. Treat `.planning` and the GSD snapshot as authoritative for phase status. Treat `.forge/state/lifecycle.json` as deprecated compatibility history only; never use it to override GSD or mutate it.
 5. Read the `runtime` block. It names the assigned host and whether its rendered surfaces are current. Commands in `actions` are already spelled for that host — present them verbatim.
 6. If the situation is `host-surfaces-stale`, the project's generated surfaces do not match the assigned runtime. Route to `forge-runtime` and stop; do not perform production work against stale instructions or agents.
-7. Surface any `warnings` verbatim alongside the summary, then continue. They are advisory and never change the routed action. The current warning reports a phase whose plans lack matching summaries — GSD computes the same set but does not block completion on it, so an interrupted phase can otherwise reach 100% silently. `execution_coverage` carries the per-phase detail. A partially executed phase is normal mid-execution; treat it as a question for the user, not an error.
+7. Surface any `warnings` verbatim alongside the summary, then continue. They are advisory and never change the routed action. `execution_coverage` carries the per-phase detail behind a warning about plans without matching summaries. A partially executed phase is normal mid-execution; treat it as a question for the user, not an error.
 8. If the detector fails, run `forge-doctor`; do not guess the active phase.
 
 ## Present and dispatch

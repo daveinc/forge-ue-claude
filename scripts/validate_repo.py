@@ -154,6 +154,133 @@ def main() -> int:
         if not item.get("classification") or not item.get("capabilities"):
             fail(f"Dependency {item.get('id')} is incomplete", failures)
 
+    # Typed tool routes. The registry is the only place a server is declared, so
+    # every reference leaving it must resolve: to a dependency, to a lane, to a
+    # probe kind, to an acceptance suite, and to a host capability. A row that
+    # points at nothing would render an agent that silently cannot work.
+    mcp_path = PLUGIN / "dependencies" / "mcp-registry.json"
+    mcp_registry = parsed.get(mcp_path, {})
+    mcp_providers = mcp_registry.get("providers", [])
+    mcp_lanes = set(mcp_registry.get("lanes", {}))
+    mcp_probe_kinds = set(mcp_registry.get("probe_kinds", {}))
+    dependency_by_id = {item.get("id"): item for item in dependencies}
+    acceptance_path = PLUGIN / "assets" / "project-template" / ".forge" / "acceptance" / "registry.json"
+    acceptance_ids = {suite.get("id") for suite in parsed.get(acceptance_path, {}).get("suites", [])}
+    contract_capabilities = set(contract.get("required", [])) | set(contract.get("optional", []))
+    isolation_modes = {"read-only", "git-worktree", "lfs-lock", "project-exclusive"}
+    mcp_required = ("id", "server", "kind", "capabilities", "lane", "isolation_mode", "requires_host_provides", "probe", "fallbacks", "permissions", "acceptance_suites", "invalidation_triggers")
+
+    if not mcp_providers:
+        fail("MCP registry declares no providers", failures)
+    seen_servers: dict[str, str] = {}
+    seen_capabilities: dict[str, str] = {}
+    for provider in mcp_providers:
+        provider_id = provider.get("id")
+        missing_fields = [field for field in mcp_required if not provider.get(field)]
+        if missing_fields:
+            fail(f"MCP provider {provider_id!r} missing {', '.join(missing_fields)}", failures)
+            continue
+        if provider.get("kind") != "mcp":
+            fail(f"MCP provider {provider_id!r} must declare kind 'mcp'", failures)
+        dependency = dependency_by_id.get(provider_id)
+        if dependency is None:
+            fail(f"MCP provider {provider_id!r} is not a declared dependency in catalog.json", failures)
+        else:
+            # One dependency truth: the route a server degrades to must be the
+            # route the catalog already promises for that dependency.
+            if dependency.get("fallback") not in provider.get("fallbacks", []):
+                fail(f"MCP provider {provider_id!r} fallbacks do not include the catalog fallback {dependency.get('fallback')!r}", failures)
+            unknown_caps = [item for item in provider.get("capabilities", []) if item not in dependency.get("capabilities", [])]
+            if unknown_caps:
+                fail(f"MCP provider {provider_id!r} serves capabilities the catalog does not declare: {', '.join(unknown_caps)}", failures)
+        server = provider.get("server", "")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", str(server)):
+            fail(f"MCP provider {provider_id!r} declares a malformed server id {server!r}", failures)
+        if server in seen_servers:
+            fail(f"MCP server {server!r} is declared by both {seen_servers[server]!r} and {provider_id!r}", failures)
+        seen_servers[str(server)] = str(provider_id)
+        for capability in provider.get("capabilities", []):
+            if capability in seen_capabilities:
+                fail(f"Capability {capability!r} is served by both {seen_capabilities[capability]!r} and {provider_id!r}; routing would be ambiguous", failures)
+            seen_capabilities[str(capability)] = str(provider_id)
+        if provider.get("lane") not in mcp_lanes:
+            fail(f"MCP provider {provider_id!r} names undeclared lane {provider.get('lane')!r}", failures)
+        if provider.get("isolation_mode") not in isolation_modes:
+            fail(f"MCP provider {provider_id!r} declares an unsupported isolation mode {provider.get('isolation_mode')!r}", failures)
+        if provider.get("probe") not in mcp_probe_kinds:
+            fail(f"MCP provider {provider_id!r} names undeclared probe kind {provider.get('probe')!r}", failures)
+        for suite in provider.get("acceptance_suites", []):
+            if suite not in acceptance_ids:
+                fail(f"MCP provider {provider_id!r} names unknown acceptance suite {suite!r}", failures)
+        for capability in provider.get("requires_host_provides", []):
+            if capability not in contract_capabilities:
+                fail(f"MCP provider {provider_id!r} requires host capability {capability!r}, which the prerequisite contract does not declare", failures)
+
+    # A new game project starts with a declaration file it can amend, not with
+    # servers it never chose. The template must parse and start empty.
+    project_mcp_path = PLUGIN / "assets" / "project-template" / ".forge" / "mcp.json"
+    project_mcp = parsed.get(project_mcp_path, {})
+    if project_mcp.get("schema") != "forge.project-mcp/v1":
+        fail("Project MCP template must declare schema forge.project-mcp/v1", failures)
+    if not isinstance(project_mcp.get("servers"), list):
+        fail("Project MCP template must declare a servers array", failures)
+    elif project_mcp["servers"]:
+        fail("Project MCP template must ship empty; a project declares its own routes", failures)
+
+    # A host either speaks MCP and knows how to spell a namespace, or it does
+    # neither. Half a declaration renders agents with tools that cannot bind.
+    for host in hosts:
+        host_id = host.get("id")
+        mcp = host.get("mcp", {})
+        speaks = "mcp-client" in host.get("provides", [])
+        if speaks and not mcp:
+            fail(f"Host {host_id} provides mcp-client but declares no mcp block", failures)
+        if mcp and not speaks:
+            fail(f"Host {host_id} declares an mcp block without providing mcp-client", failures)
+        if not mcp:
+            continue
+        template = mcp.get("tool_namespace_template", "")
+        if "{server}" not in str(template):
+            fail(f"Host {host_id} mcp.tool_namespace_template must interpolate {{server}}", failures)
+        if not mcp.get("config_paths"):
+            fail(f"Host {host_id} declares no MCP config paths, so no server can ever be probed", failures)
+        # Where a project's own routes land is a deliberate decision per host,
+        # including "nowhere". An absent key is a forgotten one.
+        if "project_surface" not in mcp:
+            fail(f"Host {host_id} declares no mcp.project_surface; state the path or state null", failures)
+        project_surface = mcp.get("project_surface")
+        if project_surface is None and not mcp.get("project_surface_note"):
+            fail(f"Host {host_id} renders no project MCP surface but records no reason", failures)
+        # Publishing to user scope writes outside every project on the machine,
+        # so a host must say where that lands and whether Forge may write it.
+        if "user_surface" not in mcp:
+            fail(f"Host {host_id} declares no mcp.user_surface; state the path or state null", failures)
+        user_surface = mcp.get("user_surface")
+        if isinstance(user_surface, dict):
+            for field in ("path", "format", "server_key"):
+                if not user_surface.get(field):
+                    fail(f"Host {host_id} mcp.user_surface missing {field}", failures)
+            if "writable" not in user_surface:
+                fail(f"Host {host_id} mcp.user_surface must state writable", failures)
+            if user_surface.get("writable") and user_surface.get("format") != "json":
+                fail(f"Host {host_id} marks a non-JSON user surface writable; Forge only rewrites JSON it can merge safely", failures)
+            if not user_surface.get("writable") and not user_surface.get("note"):
+                fail(f"Host {host_id} declares an unwritable user surface with no reason", failures)
+        if isinstance(project_surface, dict):
+            for field in ("path", "format", "server_key"):
+                if not project_surface.get(field):
+                    fail(f"Host {host_id} mcp.project_surface missing {field}", failures)
+            if project_surface.get("format") not in {"json", "toml-table"}:
+                fail(f"Host {host_id} declares an unsupported project MCP format {project_surface.get('format')!r}", failures)
+        for entry in mcp.get("config_paths", []):
+            for field in ("path", "format", "server_key", "scope"):
+                if not entry.get(field):
+                    fail(f"Host {host_id} MCP config path missing {field}", failures)
+            if entry.get("format") not in {"json", "toml-table"}:
+                fail(f"Host {host_id} declares an unsupported MCP config format {entry.get('format')!r}", failures)
+            if "subagent_visible" not in entry:
+                fail(f"Host {host_id} MCP config path {entry.get('path')!r} must state subagent_visible", failures)
+
     schemas = sorted((PLUGIN / "schemas").glob("*.schema.json"))
     for schema_path in schemas:
         schema = parsed.get(schema_path, {})
@@ -174,6 +301,8 @@ def main() -> int:
         fail("Route policy must constrain local offload by evaluation and bounded packet", failures)
     if not offload.get("keep_on_resident_by_default"):
         fail("Route policy must list task classes kept on the resident host", failures)
+    if "user_scope_config_write" not in route_policy.get("never_implicit", []):
+        fail("Route policy must forbid an implicit machine-wide config write", failures)
     swap = route_policy.get("host_swap", {})
     if not swap.get("allowed_at_any_stage") or not swap.get("preserves"):
         fail("Route policy must permit a host swap at any stage and declare what it preserves", failures)
@@ -198,6 +327,7 @@ def main() -> int:
 
     required_template = [
         PLUGIN / "assets" / "project-template" / ".forge" / "config.json",
+        PLUGIN / "assets" / "project-template" / ".forge" / "mcp.json",
         PLUGIN / "assets" / "project-template" / ".forge" / "capabilities" / "registry.json",
         PLUGIN / "assets" / "project-template" / ".forge" / "capabilities" / "consent-ledger.json",
         PLUGIN / "assets" / "project-template" / ".forge" / "capabilities" / "qualifications.json",
@@ -239,6 +369,21 @@ def main() -> int:
             fail(f"Agent definition name/file mismatch: {path.relative_to(ROOT)}", failures)
         if not definition.get("description") or not definition.get("instructions"):
             fail(f"Agent definition incomplete: {path.relative_to(ROOT)}", failures)
+        declared_caps = definition.get("mcp_capabilities", [])
+        if declared_caps:
+            # An agent that names a capability no provider serves would render
+            # with a tool it can never bind, and its fallback prose would never
+            # be reached because nothing reports the gap.
+            if definition.get("schema") != "forge.agent-definition/v2":
+                fail(f"Agent {path.stem!r} declares mcp_capabilities but not schema v2", failures)
+            if not definition.get("tools"):
+                fail(f"Agent {path.stem!r} declares mcp_capabilities without a built-in tool surface", failures)
+            for capability in declared_caps:
+                if capability not in seen_capabilities:
+                    fail(f"Agent {path.stem!r} declares capability {capability!r}, which no MCP provider serves", failures)
+            instructions = str(definition.get("instructions", ""))
+            if "fallback" not in instructions.casefold():
+                fail(f"Agent {path.stem!r} routes typed tools but names no fallback route", failures)
 
     # Verb registry: Forge owns the whole user-facing vocabulary, so every verb it
     # promises must exist as a skill, and every GSD command Forge may encounter

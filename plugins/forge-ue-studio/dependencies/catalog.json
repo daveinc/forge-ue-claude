@@ -29,13 +29,13 @@
       "source": "https://github.com/open-gsd/gsd-core",
       "install": {
         "package": "@opengsd/gsd-core",
-        "pinned_version": "1.9.1",
+        "pinned_version": "1.10.0",
         "runtime": "resident-host",
         "scope": "global",
         "preview_command": ".\\install.ps1 -Mode GSD -RuntimeHost <id>",
         "apply_command": ".\\install.ps1 -Mode GSD -RuntimeHost <id> -Apply",
         "requires_user_approval": true,
-        "pin_rationale": "Matches the version Forge is tested against. 1.10.0 is available but unvalidated."
+        "pin_rationale": "Matches the version Forge is tested against. Validated against 1.10.0: the smart-entry contract is unchanged, and every workflow the verb registry fronts resolves."
       }
     },
     {

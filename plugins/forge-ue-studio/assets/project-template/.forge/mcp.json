@@ -1,0 +1,10 @@
+{
+  "schema": "forge.project-mcp/v1",
+  "note": "Typed tool routes this game project uses. Declared when the game is created and amendable at any time with `forge.py mcp add|remove|enable|disable`. This file is the project's truth: the host-specific MCP surface is rendered from it, so a session started from this project sees the servers regardless of what the machine had configured when the project was made.",
+  "rules": [
+    "An entry naming a provider in dependencies/mcp-registry.json inherits its capabilities, lane, isolation mode and fallbacks. Do not restate them here.",
+    "An entry naming anything else must declare server, capabilities, lane, isolation_mode and fallbacks itself, so routing can still resolve it.",
+    "Rendering preserves servers this file does not declare. Forge only owns the entries listed here."
+  ],
+  "servers": []
+}

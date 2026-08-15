@@ -38,7 +38,7 @@ Modes compose. `--code --security` runs both and returns one merged verdict.
 ## POST — Forge
 
 1. Grade findings against the acceptance registry, not only against the reviewer's own severity. A finding that breaks a registered suite is blocking regardless of how the reviewer scored it.
-2. Apply the game-specific checks GSD has no notion of:
+2. Apply Forge's own game-specific checks on top of the returned result:
    - a change touching Unreal content must have declared the project-exclusive lane
    - a change to a registered asset interface must be flagged, because it invalidates parallel visual work
    - placeholder art is acceptable; an undeclared interface change is not

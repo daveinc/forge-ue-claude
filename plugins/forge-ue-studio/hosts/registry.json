@@ -75,6 +75,46 @@
         "runtime_root": "~/.claude/gsd-core",
         "runtime_name": "claude"
       },
+      "mcp": {
+        "tool_namespace_template": "mcp__{server}__*",
+        "config_paths": [
+          {
+            "path": "~/.claude.json",
+            "format": "json",
+            "server_key": "mcpServers",
+            "scope": "user",
+            "subagent_visible": true
+          },
+          {
+            "path": "~/.claude/mcp.json",
+            "format": "json",
+            "server_key": "mcpServers",
+            "scope": "user",
+            "subagent_visible": true
+          },
+          {
+            "path": ".mcp.json",
+            "format": "json",
+            "server_key": "mcpServers",
+            "scope": "project",
+            "subagent_visible": false
+          }
+        ],
+        "project_surface": {
+          "path": ".mcp.json",
+          "format": "json",
+          "server_key": "mcpServers",
+          "subagent_visible": false,
+          "note": "Rendered from .forge/mcp.json. The session started from this project reads it. Servers a spawned agent must also see have to be declared at user scope as well."
+        },
+        "user_surface": {
+          "path": "~/.claude.json",
+          "format": "json",
+          "server_key": "mcpServers",
+          "writable": true,
+          "note": "Machine-wide. Written only with recorded consent, surgically, preserving every other key."
+        }
+      },
       "provides": [
         "filesystem-read-write",
         "shell-execution",
@@ -141,6 +181,27 @@
         ],
         "runtime_root": "~/.codex/gsd-core",
         "runtime_name": "codex"
+      },
+      "mcp": {
+        "tool_namespace_template": "mcp__{server}__*",
+        "config_paths": [
+          {
+            "path": "~/.codex/config.toml",
+            "format": "toml-table",
+            "server_key": "mcp_servers",
+            "scope": "user",
+            "subagent_visible": true
+          }
+        ],
+        "project_surface": null,
+        "project_surface_note": "This host declares MCP servers at user scope only. Forge renders nothing into the project and reports what must be added at user scope instead.",
+        "user_surface": {
+          "path": "~/.codex/config.toml",
+          "format": "toml-table",
+          "server_key": "mcp_servers",
+          "writable": false,
+          "note": "Forge reports the entry this host needs rather than rewriting a config it does not own the format for."
+        }
       },
       "provides": [
         "filesystem-read-write",

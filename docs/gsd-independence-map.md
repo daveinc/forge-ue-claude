@@ -2,7 +2,7 @@
 
 What GSD does today, what Forge would have to own to reach the same end-to-end result on a game project, and what it would cost to retire the `gsd-` command surface.
 
-Measured against the installed GSD **1.9.1** (Forge pins 1.8.0 — see [Open questions](#open-questions)).
+Measured against GSD **1.10.0**, which Forge now pins and is validated against.
 
 ## The dependency is not where it looks
 
@@ -167,24 +167,24 @@ The engine core is shared almost everywhere. Verb call frequency across all work
 
 | | Version | Published |
 |---|---|---|
-| Forge pins | 1.8.0 | 2026-07-22 |
-| Workstation runs | 1.9.1 | 2026-07-31 |
+| Forge pins | 1.10.0 | 2026-08-08 |
+| Workstation runs | 1.10.0 | 2026-08-08 |
 | Latest published | 1.10.0 | 2026-08-08 |
 
-Three minor releases in eighteen days. All analysis in this document was performed against the installed 1.9.1, not the pinned 1.8.0.
+Three minor releases in eighteen days. The pin, the workstation and this document are now the same version.
 
 This cadence cuts both ways and is the real input to the decision:
 
 - *Against wrapping:* a fast-moving upstream means Forge's pin drifts continuously, and every GSD release is a potential break in behaviour Forge depends on.
 - *Against vendoring:* the same cadence is the merge burden you inherit. At ~1 minor release per week, a fork diverges quickly, and MIT gives you the right to fork but not the capacity to keep up.
 
-Either way, **fix the pin mismatch before anything else** — Forge currently claims to install a version nobody is testing against.
+The pin mismatch is closed: Forge installs the version it is tested against.
 
 ## Measured: does GSD's chain still run end to end?
 
 The tier tables above classify GSD's *commands*. That is not the same question as whether GSD's *workflows* still execute — workflows chain to each other by command name and by file reference, and several load nested step files. A command Forge chooses not to front is not thereby disabled, but a workflow nothing can reach is genuinely stranded.
 
-Reachability graph over GSD 1.9.1, seeded from the workflow files Forge enters:
+Reachability graph over GSD 1.10.0, seeded from the workflow files Forge enters:
 
 | | Before fronting the helpers | After |
 |---|---:|---:|
@@ -193,7 +193,7 @@ Reachability graph over GSD 1.9.1, seeded from the workflow files Forge enters:
 | Reachable total | 55 | **64** |
 | Unreachable | 36 | **27** |
 
-Plus 25 nested step files under `execute-phase/steps/`, `plan-phase/steps/`, and `discuss-phase/modes/`.
+Plus 62 nested step and mode files. 1.10.0 moved thirteen more workflows onto the fragment model, so a contained subagent now reads only the branch its invocation takes.
 
 **Internal chaining is safe and must not be touched.** A contained subagent reads GSD's files directly, so `execute-phase` still loads its drift, isolation, worktree, post-merge and regression gates; `code-review` still calls `code-review-fix` and `verify-phase`; `verify-work` still calls `diagnose-issues`. The verb registry governs only which Forge verbs exist and how `smart-entry`'s terminal action list is presented — it has no reach inside a running workflow.
 
@@ -210,7 +210,7 @@ Plus 25 nested step files under `execute-phase/steps/`, `plan-phase/steps/`, and
 
 ### An upstream orphan, not Forge's
 
-`discovery-phase.md` states it is "called from plan-phase.md's mandatory_discovery step", but nothing in GSD 1.9.1 references it — not `plan-phase.md`, not any workflow, not the capability registry. It is dead upstream. Recorded as a `drop` with that reason rather than fronted.
+`discovery-phase.md` states it is "called from plan-phase.md's mandatory_discovery step", but nothing in GSD 1.10.0 references it — not `plan-phase.md`, not any workflow, not the capability registry. It is dead upstream. Recorded as a `drop` with that reason rather than fronted.
 
 ### The 27 that remain unreachable
 

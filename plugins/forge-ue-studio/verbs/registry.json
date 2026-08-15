@@ -596,7 +596,7 @@
       "forge": null,
       "gsd": "gsd-discovery-phase",
       "disposition": "drop",
-      "reason": "Dangling upstream: its own docstring says plan-phase invokes it, but nothing in GSD 1.9.1 references it. Not Forge's to front."
+      "reason": "Dangling upstream: its own docstring says plan-phase invokes it, but nothing in GSD 1.10.0 references it. Not Forge's to front."
     }
   ]
 }

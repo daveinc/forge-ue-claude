@@ -18,16 +18,24 @@ Turn an idea into approved, schedulable studio work, then hand control to GSD's 
 ## Workflow
 
 1. Run `forge-doctor` before committing to tool-specific routes. Preserve verified and assumed facts separately.
-2. Map unresolved gaps, then ask one highest-value question at a time. Resolve mandate, audience, platforms, camera, core loop, progression, tone, scope, content boundaries, references, performance envelope, business constraints, and decision owners. Offer concrete options without forcing the framing.
-3. Record unknowns as explicit hypotheses, deferrals or spikes. Do not silently choose them or make changeable art block the playable contract.
-4. Run a divergent design pass before locking the compact GDD. Generate materially different core-loop, progression, narrative and production options, test them against the mandate, and preserve rejected tradeoffs in the decision ledger.
-5. Produce the compact GDD, decision ledger and acceptance spine. Keep large lore, research, and references as linked sources rather than worker payload.
-6. Have the resident host develop the first visual pillars, negative references, character/world sheets and storyboard/beat-board candidates, using exposed image generation for art/photo concepts when available. Send bounded alternatives or breakdowns to qualified local workers when useful; preserve prompts, model/source, licence and date.
-7. Obtain human approval for the primary visual direction. Create replacement-safe asset interfaces for scale, skeleton, sockets, collision, material slots, animation events, and budgets.
-8. Compile concurrent playable, visual, narrative, audio, research and QA workstreams. Synchronize them only through explicit requirements, accepted decisions and asset interfaces. Register each canonical packet ID once in `.forge/state/packet-registry.json`; later plans must reuse it. An alias requires an explicit alias record, and a genuinely new packet requires `derived_from` provenance.
-9. Run `forge-plan-convergence` on the inception/roadmap artifacts. Do **not** dispatch a walking-skeleton packet from Forge Init.
-10. Run `scripts/forge.py next --project <root>` again after inception artifacts are persisted. It must obtain the next phase action from GSD smart-entry rather than hardcoding a phase number or command.
-11. **STOP.** Require a fresh project task and present `forge-next` as the stable resume entry plus the detected recommended action for transparency. Do not invoke phase discussion, planning, routing, implementation or verification in the Forge Init task.
+2. Declare the typed tool routes this game will use, while the project is being created:
+
+   ```powershell
+   python <forge-plugin-root>/scripts/forge.py mcp add --project <project-root> --id <provider> --command <exe> --arg <arg> --apply
+   ```
+
+   Declaring a route writes it into the project and renders the host's own MCP surface from it, so a session opened from this project sees the server whatever the machine happened to have configured today. Run `mcp-status` to confirm each declared route before depending on it. A provider in the shipped catalog inherits its capabilities, lane and fallbacks; anything else must declare them in the same entry. Routes stay amendable for the life of the project through `forge-capability-admin` — this step chooses the starting set, it does not close the list.
+
+3. Map unresolved gaps, then ask one highest-value question at a time. Resolve mandate, audience, platforms, camera, core loop, progression, tone, scope, content boundaries, references, performance envelope, business constraints, and decision owners. Offer concrete options without forcing the framing.
+4. Record unknowns as explicit hypotheses, deferrals or spikes. Do not silently choose them or make changeable art block the playable contract.
+5. Run a divergent design pass before locking the compact GDD. Generate materially different core-loop, progression, narrative and production options, test them against the mandate, and preserve rejected tradeoffs in the decision ledger.
+6. Produce the compact GDD, decision ledger and acceptance spine. Keep large lore, research, and references as linked sources rather than worker payload.
+7. Have the resident host develop the first visual pillars, negative references, character/world sheets and storyboard/beat-board candidates, using exposed image generation for art/photo concepts when available. Send bounded alternatives or breakdowns to qualified local workers when useful; preserve prompts, model/source, licence and date.
+8. Obtain human approval for the primary visual direction. Create replacement-safe asset interfaces for scale, skeleton, sockets, collision, material slots, animation events, and budgets.
+9. Compile concurrent playable, visual, narrative, audio, research and QA workstreams. Synchronize them only through explicit requirements, accepted decisions and asset interfaces. Register each canonical packet ID once in `.forge/state/packet-registry.json`; later plans must reuse it. An alias requires an explicit alias record, and a genuinely new packet requires `derived_from` provenance.
+10. Run `forge-plan-convergence` on the inception/roadmap artifacts. Do **not** dispatch a walking-skeleton packet from Forge Init.
+11. Run `scripts/forge.py next --project <root>` again after inception artifacts are persisted. It must obtain the next phase action from GSD smart-entry rather than hardcoding a phase number or command.
+12. **STOP.** Require a fresh project task and present `forge-next` as the stable resume entry plus the detected recommended action for transparency. Do not invoke phase discussion, planning, routing, implementation or verification in the Forge Init task.
 
 Read [project-inception.md](references/project-inception.md) when conducting the interview or compiling the two DAGs.
 Read [gsd-lifecycle.md](references/gsd-lifecycle.md) before completing inception or describing the next step.

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import uuid
@@ -182,7 +184,7 @@ class ForgeInstallerTests(unittest.TestCase):
         )
         preview = json.loads(result.stdout)
         self.assertEqual(preview["mode"], "dry-run")
-        self.assertEqual(preview["package"], "@opengsd/gsd-core@1.9.1")
+        self.assertEqual(preview["package"], "@opengsd/gsd-core@1.10.0")
         self.assertEqual(preview["scope"], "global-claude")
         self.assertIn("--claude", preview["command"])
         self.assertFalse(preview["changed"])
@@ -523,7 +525,9 @@ class ForgeInstallerTests(unittest.TestCase):
                 surface = profile["project_surface"]
                 self.assertTrue((project / surface["instruction_file"]).is_file())
                 agents = list((project / surface["agent_dir"]).glob(f"*{surface['agent_extension']}"))
-                self.assertEqual(len(agents), 9)
+                # Derived from canon so adding an agent definition cannot leave
+                # this assertion behind asserting a stale count.
+                self.assertEqual(len(agents), len(forge.agent_definitions(forge.template_root())))
                 self.assertTrue(forge.verify_overlay(str(project), host_id)["ok"])
                 # No unresolved canon tokens may survive rendering.
                 for path in [project / surface["instruction_file"], *agents]:
@@ -905,6 +909,534 @@ class ForgeInstallerTests(unittest.TestCase):
                     text = path.read_text(encoding="utf-8-sig").casefold()
                     self.assertFalse(any(term in text for term in banned), str(path.relative_to(ROOT)))
         self.assertTrue(checked)
+
+
+class McpRouteTests(unittest.TestCase):
+    """Typed tool routes: composition, host neutrality, probing, and the gates."""
+
+    def setUp(self):
+        self.registry = forge.mcp_registry()
+        self.providers = self.registry["providers"]
+        self.template = forge.template_root()
+        self.agents = {item["name"]: item for item in forge.agent_definitions(self.template)}
+
+    def test_every_provider_id_is_a_declared_dependency(self):
+        catalog = json.loads(
+            (ROOT / "plugins" / "forge-ue-studio" / "dependencies" / "catalog.json").read_text(encoding="utf-8")
+        )
+        declared = {item["id"] for item in catalog["dependencies"]}
+        for provider in self.providers:
+            self.assertIn(provider["id"], declared, provider["id"])
+
+    def test_registry_names_no_host_spelling(self):
+        """Canon declares servers; only the host registry spells a namespace."""
+        text = (ROOT / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json").read_text(encoding="utf-8")
+        self.assertNotIn("mcp__", text)
+
+    def test_namespace_is_composed_from_the_host(self):
+        claude = forge.host_profile("claude")
+        self.assertEqual(forge.mcp_tool_namespace(claude, "unreal-mcp"), "mcp__unreal-mcp__*")
+
+    def test_agent_tool_surface_includes_typed_routes_on_an_mcp_host(self):
+        surface = forge.agent_tool_surface(self.agents["unreal-operator"], forge.host_profile("claude"))
+        self.assertIn("mcp__unreal-mcp__*", surface)
+        self.assertIn("Read", surface)
+
+    def test_agent_tool_surface_degrades_on_a_host_without_an_mcp_client(self):
+        """generic declares no mcp-client, so no typed tool may be rendered."""
+        surface = forge.agent_tool_surface(self.agents["unreal-operator"], forge.host_profile("generic"))
+        self.assertFalse([item for item in surface if item.startswith("mcp__")])
+        self.assertIn("Read", surface)
+
+    def test_unknown_capability_is_a_hard_error(self):
+        broken = dict(self.agents["unreal-operator"], mcp_capabilities=["ue.does.not.exist"])
+        with self.assertRaises(ValueError) as caught:
+            forge.agent_tool_surface(broken, forge.host_profile("claude"))
+        self.assertIn("ue.does.not.exist", str(caught.exception))
+
+    def test_rendered_agent_carries_the_namespace_per_format(self):
+        markdown = forge.render_agent(self.agents["unreal-operator"], forge.host_profile("claude"))
+        self.assertIn("tools: Read, Write, Edit, Bash, Grep, Glob, mcp__unreal-mcp__*", markdown)
+        toml = forge.render_agent(self.agents["unreal-operator"], forge.host_profile("codex"))
+        self.assertIn('"mcp__unreal-mcp__*"', toml)
+
+    def test_agents_without_declarations_keep_an_unrestricted_surface(self):
+        rendered = forge.render_agent(self.agents["studio-director"], forge.host_profile("claude"))
+        self.assertNotIn("tools:", rendered)
+
+    def test_probe_reports_absence_without_guessing(self):
+        with workspace_tempdir() as root:
+            result = forge.probe_mcp_server(root, forge.host_profile("claude"), "unreal-mcp")
+        self.assertFalse(result["found"])
+        self.assertEqual(result["status"], "UNAVAILABLE_OPTIONAL")
+        self.assertFalse(result["subagent_visible"])
+
+    def test_probe_finds_a_project_scoped_server_but_marks_it_invisible_to_agents(self):
+        """The scope distinction is the whole point: present for the session,
+        absent for anything it spawns."""
+        with workspace_tempdir() as root:
+            (root / ".mcp.json").write_text(json.dumps({"mcpServers": {"unreal-mcp": {}}}), encoding="utf-8")
+            result = forge.probe_mcp_server(root, forge.host_profile("claude"), "unreal-mcp")
+        self.assertTrue(result["found"])
+        self.assertEqual(result["scope"], "project")
+        self.assertFalse(result["subagent_visible"])
+        self.assertIn("fallback", result["note"])
+
+    def test_probe_ignores_a_bare_mention(self):
+        with workspace_tempdir() as root:
+            (root / ".mcp.json").write_text(json.dumps({"note": "unreal-mcp is great"}), encoding="utf-8")
+            result = forge.probe_mcp_server(root, forge.host_profile("claude"), "unreal-mcp")
+        self.assertFalse(result["found"])
+
+    def test_probe_on_a_host_without_an_mcp_client_never_searches(self):
+        with workspace_tempdir() as root:
+            result = forge.probe_mcp_server(root, forge.host_profile("generic"), "unreal-mcp")
+        self.assertFalse(result["found"])
+        self.assertEqual(result["searched"], [])
+
+    def test_contracts_cover_every_capability_and_never_self_qualify(self):
+        with workspace_tempdir() as root:
+            contracts = forge.mcp_capability_contracts(root, forge.host_profile("claude"))
+        expected = sum(len(provider["capabilities"]) for provider in self.providers)
+        self.assertEqual(len(contracts), expected)
+        for contract in contracts:
+            self.assertEqual(contract["qualification"]["state"], "UNQUALIFIED")
+            self.assertIn(contract["status"], forge.STATUSES)
+            self.assertTrue(contract["fallbacks"])
+            self.assertTrue(contract["acceptance_suites"])
+
+    def test_contract_shape_satisfies_the_capability_contract_schema(self):
+        schema = json.loads(
+            (ROOT / "plugins" / "forge-ue-studio" / "schemas" / "capability-contract.schema.json").read_text(encoding="utf-8")
+        )
+        with workspace_tempdir() as root:
+            contracts = forge.mcp_capability_contracts(root, forge.host_profile("claude"))
+        for contract in contracts:
+            for field in schema["required"]:
+                self.assertIn(field, contract, field)
+
+
+class ProjectMcpTests(unittest.TestCase):
+    """The game project owns its routes; the machine's config is not the truth."""
+
+    def setUp(self):
+        self.original_command_probe = forge.command_probe
+        forge.command_probe = lambda command, timeout=8: {
+            "ok": False, "exit_code": 1, "output": "", "error": "probe isolated in unit test",
+        }
+        self.profile = forge.host_profile("claude")
+
+    def tearDown(self):
+        forge.command_probe = self.original_command_probe
+
+    @contextmanager
+    def game(self):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            yield root
+
+    def test_a_new_project_starts_with_an_amendable_declaration(self):
+        with self.game() as root:
+            self.assertTrue((root / ".forge" / "mcp.json").is_file())
+            self.assertEqual(forge.resolve_project_servers(root), [])
+
+    def test_declared_server_reaches_the_session_surface(self):
+        with self.game() as root:
+            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx", args=["unreal-mcp"])
+            surface = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
+            self.assertIn("unreal-mcp", surface["mcpServers"])
+            self.assertEqual(surface["mcpServers"]["unreal-mcp"]["command"], "uvx")
+
+    def test_a_catalog_entry_inherits_its_routing_fields(self):
+        with self.game() as root:
+            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
+            resolved = forge.resolve_project_servers(root)[0]
+            self.assertEqual(resolved["source"], "catalog")
+            self.assertEqual(resolved["lane"], "ue.editor")
+            self.assertEqual(resolved["isolation_mode"], "project-exclusive")
+            self.assertIn("ue.live.typed", resolved["capabilities"])
+
+    def test_a_catalog_entry_may_not_restate_catalog_fields(self):
+        with self.game() as root:
+            path = root / ".forge" / "mcp.json"
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["servers"] = [{
+                "id": "unreal-native-mcp", "enabled": True,
+                "transport": {"command": "uvx"}, "lane": "somewhere-else",
+            }]
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaises(ValueError) as caught:
+                forge.resolve_project_servers(root)
+            self.assertIn("restates catalog-owned field", str(caught.exception))
+
+    def test_a_project_local_server_must_declare_its_own_routing(self):
+        with self.game() as root:
+            path = root / ".forge" / "mcp.json"
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["servers"] = [{"id": "some-new-tool", "enabled": True, "transport": {"command": "node"}}]
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaises(ValueError) as caught:
+                forge.resolve_project_servers(root)
+            self.assertIn("must declare", str(caught.exception))
+
+    def test_a_fully_declared_project_local_server_routes(self):
+        """Any other app: adoptable without shipping a catalog change."""
+        with self.game() as root:
+            path = root / ".forge" / "mcp.json"
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["servers"] = [{
+                "id": "some-new-tool", "enabled": True, "transport": {"command": "node", "args": ["srv.js"]},
+                "server": "some-new-tool", "capabilities": ["audio.mix"], "lane": "audio.authoring",
+                "isolation_mode": "git-worktree", "fallbacks": ["human-audio-pass"],
+            }]
+            path.write_text(json.dumps(document), encoding="utf-8")
+            resolved = forge.resolve_project_servers(root)[0]
+            self.assertEqual(resolved["source"], "project")
+            self.assertEqual(resolved["lane"], "audio.authoring")
+            rendered = forge.render_project_mcp(root, self.profile, root)
+            self.assertIn("some-new-tool", json.loads(rendered[1].decode("utf-8"))["mcpServers"])
+
+    def test_rendering_preserves_servers_forge_does_not_own(self):
+        with self.game() as root:
+            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
+            surface = root / ".mcp.json"
+            document = json.loads(surface.read_text(encoding="utf-8"))
+            document["mcpServers"]["hand-added"] = {"command": "node"}
+            document["unrelatedKey"] = {"kept": True}
+            surface.write_text(json.dumps(document), encoding="utf-8")
+            forge.mcp_amend(root, self.profile, "add", "blender-gateway", apply=True, command="uvx")
+            after = json.loads(surface.read_text(encoding="utf-8"))
+            self.assertIn("hand-added", after["mcpServers"])
+            self.assertEqual(after["unrelatedKey"], {"kept": True})
+
+    def test_disabling_withdraws_only_that_server(self):
+        with self.game() as root:
+            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
+            forge.mcp_amend(root, self.profile, "add", "blender-gateway", apply=True, command="uvx")
+            forge.mcp_amend(root, self.profile, "disable", "blender-gateway", apply=True)
+            servers = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]
+            self.assertIn("unreal-mcp", servers)
+            self.assertNotIn("blender-mcp", servers)
+
+    def test_dry_run_amend_writes_nothing(self):
+        with self.game() as root:
+            before = (root / ".forge" / "mcp.json").read_text(encoding="utf-8")
+            result = forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=False, command="uvx")
+            self.assertEqual(result["mode"], "dry-run")
+            self.assertEqual((root / ".forge" / "mcp.json").read_text(encoding="utf-8"), before)
+            self.assertFalse((root / ".mcp.json").exists())
+
+    def test_status_reports_session_visibility_from_the_project(self):
+        with self.game() as root:
+            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
+            status = forge.mcp_status(root, self.profile)
+            route = next(item for item in status["routes"] if item["provider"] == "unreal-native-mcp")
+            self.assertTrue(route["declared_in_project"])
+            self.assertTrue(route["rendered_to_host"])
+            self.assertTrue(route["session_visible"])
+            self.assertFalse(route["subagent_visible"])
+
+    def test_the_project_surface_is_tracked_like_every_other_rendered_surface(self):
+        """Hand-editing the surface is reported as a variant, as for any rendered
+        file. The consequence that matters — the session no longer seeing a
+        declared server — is reported by status, which probes rather than diffs."""
+        with self.game() as root:
+            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
+            surface_path = str((root / ".mcp.json").resolve())
+            checks = {c["path"]: c for c in forge.verify_overlay(str(root), "claude")["checks"]}
+            tracked = next(c for path, c in checks.items() if Path(path).name == ".mcp.json")
+            self.assertEqual(tracked["status"], "MATCH")
+            self.assertEqual(tracked["kind"], "host-rendered")
+
+            (root / ".mcp.json").write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+            checks = {c["path"]: c for c in forge.verify_overlay(str(root), "claude")["checks"]}
+            tracked = next(c for path, c in checks.items() if Path(path).name == ".mcp.json")
+            self.assertEqual(tracked["status"], "LOCAL_VARIANT")
+            route = next(
+                item for item in forge.mcp_status(root, self.profile)["routes"]
+                if item["provider"] == "unreal-native-mcp"
+            )
+            self.assertFalse(route["session_visible"])
+            self.assertTrue(surface_path)
+
+    def test_a_host_without_a_project_surface_renders_nothing(self):
+        with self.game() as root:
+            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
+            self.assertIsNone(forge.render_project_mcp(root, forge.host_profile("codex"), root))
+
+
+class ActionSurfaceTests(unittest.TestCase):
+    """Forge owns the whole user-facing vocabulary, ids included."""
+
+    def test_no_routed_action_id_carries_a_gsd_prefix(self):
+        """The command is translated at dispatch, but an id is displayed too.
+        A `gsd-` id is the same leak by a quieter route."""
+        source = (ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge.py").read_text(encoding="utf-8")
+        ids = re.findall(r"forge_action\(\s*\"([^\"]+)\"", source)
+        self.assertTrue(ids, "no forge_action ids found; the guard would assert over nothing")
+        self.assertEqual([item for item in ids if item.startswith("gsd-")], [])
+
+    def test_every_routed_action_id_is_unique_per_situation(self):
+        source = (ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge.py").read_text(encoding="utf-8")
+        for block in re.findall(r"actions\s*=\s*\[(.*?)\n\s*\]", source, re.DOTALL):
+            ids = re.findall(r"forge_action\(\s*\"([^\"]+)\"", block)
+            self.assertEqual(len(ids), len(set(ids)), f"duplicate action id in block: {ids}")
+
+
+class UserScopeMcpTests(unittest.TestCase):
+    """Publishing to user scope is a machine-wide external write: planned by
+    default, consented when applied, and never destructive to what it finds."""
+
+    def setUp(self):
+        self.original_command_probe = forge.command_probe
+        forge.command_probe = lambda command, timeout=8: {
+            "ok": False, "exit_code": 1, "output": "", "error": "probe isolated in unit test",
+        }
+
+    def tearDown(self):
+        forge.command_probe = self.original_command_probe
+
+    @contextmanager
+    def game(self, host="claude"):
+        """Yield a project plus a profile whose user surface points at a sandbox
+        file, so no test can ever write the developer's real config."""
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            profile = json.loads(json.dumps(forge.host_profile(host)))
+            surface = profile.get("mcp", {}).get("user_surface")
+            if surface:
+                surface["path"] = str(temp / "userconfig.json")
+            yield root, profile, temp / "userconfig.json"
+
+    def test_project_scope_stays_out_of_user_scope(self):
+        with self.game() as (root, profile, user_file):
+            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="project")
+            plan = forge.sync_user_mcp(root, profile, apply=False)
+            self.assertEqual(plan["wanted"], [])
+            self.assertEqual(plan["planned"], [])
+            self.assertFalse(user_file.exists())
+
+    def test_user_scope_only_stays_out_of_the_project_surface(self):
+        with self.game() as (root, profile, _):
+            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            self.assertIsNone(forge.render_project_mcp(root, profile, root))
+
+    def test_both_reaches_each_surface(self):
+        with self.game() as (root, profile, user_file):
+            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="both")
+            project = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
+            self.assertIn("unreal-mcp", project["mcpServers"])
+            forge.sync_user_mcp(root, profile, apply=True)
+            self.assertIn("unreal-mcp", json.loads(user_file.read_text(encoding="utf-8"))["mcpServers"])
+
+    def test_sync_is_a_plan_until_asked(self):
+        with self.game() as (root, profile, user_file):
+            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            plan = forge.sync_user_mcp(root, profile, apply=False)
+            self.assertEqual(plan["mode"], "dry-run")
+            self.assertFalse(plan["applied"])
+            self.assertTrue(plan["consent_required"])
+            self.assertFalse(user_file.exists())
+
+    def test_applying_preserves_every_other_key_and_server(self):
+        with self.game() as (root, profile, user_file):
+            user_file.write_text(json.dumps({
+                "numStartups": 42,
+                "projects": {"/elsewhere": {"history": ["a", "b"]}},
+                "mcpServers": {"someone-elses": {"command": "node"}},
+            }), encoding="utf-8")
+            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            forge.sync_user_mcp(root, profile, apply=True)
+            after = json.loads(user_file.read_text(encoding="utf-8"))
+            self.assertEqual(after["numStartups"], 42)
+            self.assertEqual(after["projects"], {"/elsewhere": {"history": ["a", "b"]}})
+            self.assertIn("someone-elses", after["mcpServers"])
+            self.assertIn("unreal-mcp", after["mcpServers"])
+
+    def test_applying_backs_up_and_records_consent(self):
+        with self.game() as (root, profile, user_file):
+            user_file.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            result = forge.sync_user_mcp(root, profile, apply=True)
+            self.assertTrue(Path(result["backup"]).is_file())
+            ledger = json.loads((root / ".forge" / "capabilities" / "consent-ledger.json").read_text(encoding="utf-8"))
+            self.assertTrue(any(e["scope"] == "mcp.user-scope-write" for e in ledger["entries"]))
+
+    def test_withdrawing_reclaims_only_an_unmodified_entry(self):
+        with self.game() as (root, profile, user_file):
+            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            forge.sync_user_mcp(root, profile, apply=True)
+            forge.mcp_amend(root, profile, "disable", "unreal-native-mcp", apply=True)
+            forge.sync_user_mcp(root, profile, apply=True)
+            self.assertNotIn("unreal-mcp", json.loads(user_file.read_text(encoding="utf-8"))["mcpServers"])
+
+    def test_a_hand_edited_entry_is_reported_not_reclaimed(self):
+        with self.game() as (root, profile, user_file):
+            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            forge.sync_user_mcp(root, profile, apply=True)
+            document = json.loads(user_file.read_text(encoding="utf-8"))
+            document["mcpServers"]["unreal-mcp"] = {"command": "my-own-wrapper"}
+            user_file.write_text(json.dumps(document), encoding="utf-8")
+            forge.mcp_amend(root, profile, "disable", "unreal-native-mcp", apply=True)
+            plan = forge.sync_user_mcp(root, profile, apply=False)
+            retained = [c for c in plan["planned"] if c["action"] == "retain-modified"]
+            self.assertEqual([c["server"] for c in retained], ["unreal-mcp"])
+            forge.sync_user_mcp(root, profile, apply=True)
+            after = json.loads(user_file.read_text(encoding="utf-8"))
+            self.assertEqual(after["mcpServers"]["unreal-mcp"], {"command": "my-own-wrapper"})
+
+    def test_an_unparseable_config_is_never_rewritten(self):
+        with self.game() as (root, profile, user_file):
+            user_file.write_text("{ this is not json", encoding="utf-8")
+            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            result = forge.sync_user_mcp(root, profile, apply=True)
+            self.assertEqual(result["mode"], "blocked")
+            self.assertFalse(result["applied"])
+            self.assertEqual(user_file.read_text(encoding="utf-8"), "{ this is not json")
+
+    def test_a_host_forge_may_not_write_reports_instead(self):
+        with self.game(host="codex") as (root, profile, _):
+            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            result = forge.sync_user_mcp(root, profile, apply=True)
+            self.assertEqual(result["mode"], "report-only")
+            self.assertFalse(result["applied"])
+            self.assertEqual([c["action"] for c in result["planned"]], ["declare-by-hand"])
+
+
+class McpGateTests(unittest.TestCase):
+    """The validator gates must actually fire. A guard that cannot fail is not a guard."""
+
+    def _validate(self, mutate):
+        """Run the repo validator against a mutated copy of the repository."""
+        with workspace_tempdir() as root:
+            copy = root / "repo"
+            shutil.copytree(
+                ROOT,
+                copy,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", ".tmp"),
+            )
+            mutate(copy)
+            completed = subprocess.run(
+                [sys.executable, str(copy / "scripts" / "validate_repo.py")],
+                capture_output=True,
+                text=True,
+                cwd=str(copy),
+            )
+            return completed.returncode, completed.stdout + completed.stderr
+
+    @staticmethod
+    def _rewrite(path: Path, mutate):
+        document = json.loads(path.read_text(encoding="utf-8"))
+        mutate(document)
+        path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+    def test_baseline_repository_passes(self):
+        code, output = self._validate(lambda root: None)
+        self.assertEqual(code, 0, output)
+
+    def test_provider_without_a_dependency_fails(self):
+        def mutate(root):
+            self._rewrite(
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json",
+                lambda doc: doc["providers"][0].__setitem__("id", "not-a-dependency"),
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("not a declared dependency", output)
+
+    def test_undeclared_lane_fails(self):
+        def mutate(root):
+            self._rewrite(
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json",
+                lambda doc: doc["providers"][0].__setitem__("lane", "ue.imaginary"),
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("undeclared lane", output)
+
+    def test_unknown_acceptance_suite_fails(self):
+        def mutate(root):
+            self._rewrite(
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json",
+                lambda doc: doc["providers"][0].__setitem__("acceptance_suites", ["FORGE-NOPE-99"]),
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("unknown acceptance suite", output)
+
+    def test_two_providers_serving_one_capability_fails(self):
+        def mutate(root):
+            self._rewrite(
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json",
+                lambda doc: doc["providers"][1].__setitem__("capabilities", doc["providers"][0]["capabilities"]),
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("ambiguous", output)
+
+    def test_agent_capability_with_no_provider_fails(self):
+        def mutate(root):
+            self._rewrite(
+                root / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "agents" / "unreal-operator.json",
+                lambda doc: doc.__setitem__("mcp_capabilities", ["ue.phantom"]),
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("no MCP provider serves", output)
+
+    def test_typed_agent_without_a_fallback_route_fails(self):
+        def mutate(root):
+            self._rewrite(
+                root / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "agents" / "unreal-operator.json",
+                lambda doc: doc.__setitem__("instructions", "Operate the editor."),
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("names no fallback route", output)
+
+    def test_host_providing_mcp_client_without_an_mcp_block_fails(self):
+        def mutate(root):
+            def drop(doc):
+                for host in doc["hosts"]:
+                    host.pop("mcp", None)
+
+            self._rewrite(root / "plugins" / "forge-ue-studio" / "hosts" / "registry.json", drop)
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("declares no mcp block", output)
+
+    def test_namespace_template_without_the_server_token_fails(self):
+        def mutate(root):
+            def blunt(doc):
+                doc["hosts"][0]["mcp"]["tool_namespace_template"] = "mcp__fixed__*"
+
+            self._rewrite(root / "plugins" / "forge-ue-studio" / "hosts" / "registry.json", blunt)
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("interpolate", output)
+
+    def test_fallback_diverging_from_the_catalog_fails(self):
+        def mutate(root):
+            self._rewrite(
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json",
+                lambda doc: doc["providers"][0].__setitem__("fallbacks", ["something-else"]),
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("catalog fallback", output)
 
 
 if __name__ == "__main__":

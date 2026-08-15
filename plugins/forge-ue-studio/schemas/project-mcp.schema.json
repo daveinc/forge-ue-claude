@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.project-mcp/v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "servers"
+  ],
+  "properties": {
+    "schema": {
+      "const": "forge.project-mcp/v1"
+    },
+    "note": {
+      "type": "string"
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "servers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "enabled",
+          "transport"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A provider id from dependencies/mcp-registry.json, or a project-local id that declares its own routing fields."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "transport": {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "server": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Required only for a project-local id; a catalog id inherits its server name."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "lane": {
+            "type": "string",
+            "minLength": 1
+          },
+          "isolation_mode": {
+            "enum": [
+              "read-only",
+              "git-worktree",
+              "lfs-lock",
+              "project-exclusive"
+            ]
+          },
+          "fallbacks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "note": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "project",
+              "user",
+              "both"
+            ],
+            "default": "project",
+            "description": "project: the session opened from this game sees it. user: agents this session spawns see it too, at the cost of a machine-wide write that requires consent. both: rendered to each."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

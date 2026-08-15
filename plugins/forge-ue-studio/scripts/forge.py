@@ -113,6 +113,211 @@ def toml_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+# ---------------------------------------------------------------------------
+# Typed tool routes (MCP)
+#
+# A capability is routable when three things agree: the canon declares a server
+# for it, the active host can speak MCP and knows how to spell that server's
+# tool namespace, and a probe found the server declared in a configuration the
+# host actually reads. None of the three is inferred from the others — an
+# installed server is not a granted tool, and a granted tool is not a verified
+# route. Missing pieces degrade to the row's declared fallback; they never
+# silently drop the capability.
+# ---------------------------------------------------------------------------
+
+
+def mcp_registry() -> dict[str, Any]:
+    return load_json(plugin_root() / "dependencies" / "mcp-registry.json")
+
+
+def mcp_providers() -> list[dict[str, Any]]:
+    return list(mcp_registry().get("providers", []))
+
+
+def mcp_capability_index() -> dict[str, dict[str, Any]]:
+    """Capability id -> the provider row that serves it."""
+    index: dict[str, dict[str, Any]] = {}
+    for provider in mcp_providers():
+        for capability in provider.get("capabilities", []):
+            index[str(capability)] = provider
+    return index
+
+
+def host_speaks_mcp(profile: dict[str, Any]) -> bool:
+    """A host routes typed tools only if it declares the client AND the spelling."""
+    template = profile.get("mcp", {}).get("tool_namespace_template")
+    return bool(template) and "mcp-client" in profile.get("provides", [])
+
+
+def mcp_tool_namespace(profile: dict[str, Any], server: str) -> str | None:
+    """Spell a server's tool namespace the way the active host expects."""
+    template = profile.get("mcp", {}).get("tool_namespace_template")
+    if not template or not server:
+        return None
+    return str(template).replace("{server}", str(server))
+
+
+def agent_tool_surface(definition: dict[str, Any], profile: dict[str, Any]) -> list[str]:
+    """Compose an agent's tool allowlist from built-ins plus typed tool routes.
+
+    An unknown capability is a hard error rather than a silent omission: a
+    definition that names a capability no provider serves would otherwise render
+    an agent that quietly cannot do its job.
+    """
+    tools = [str(item) for item in definition.get("tools", []) if str(item).strip()]
+    declared = [str(item) for item in definition.get("mcp_capabilities", []) if str(item).strip()]
+    if not declared:
+        return tools
+    index = mcp_capability_index()
+    unknown = [item for item in declared if item not in index]
+    if unknown:
+        known = ", ".join(sorted(index)) or "none"
+        raise ValueError(
+            f"Agent {definition.get('name')!r} declares MCP capabilities with no provider: "
+            f"{', '.join(sorted(unknown))}; declared capabilities: {known}"
+        )
+    if not host_speaks_mcp(profile):
+        # The host cannot bind typed tools at all. The agent still renders and
+        # still works through the row's declared fallback route.
+        return tools
+    for capability in declared:
+        namespace = mcp_tool_namespace(profile, index[capability].get("server", ""))
+        if namespace and namespace not in tools:
+            tools.append(namespace)
+    return tools
+
+
+def _mcp_config_declares(path: Path, entry: dict[str, Any], server: str) -> bool:
+    """Read one MCP client configuration and report whether it declares a server."""
+    server_key = str(entry.get("server_key", ""))
+    fmt = str(entry.get("format", "json"))
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except OSError:
+        return False
+    if fmt == "json":
+        try:
+            document = json.loads(text)
+        except json.JSONDecodeError:
+            return False
+        servers = document.get(server_key) if isinstance(document, dict) else None
+        return isinstance(servers, dict) and server in servers
+    if fmt == "toml-table":
+        try:
+            import tomllib
+
+            document = tomllib.loads(text)
+        except (ImportError, ValueError):
+            # No parser, or a config this host wrote that we cannot parse. Fall
+            # back to the table header, which is the only shape that declares a
+            # server. Never guess from a bare mention of the name.
+            return re.search(rf"^\s*\[{re.escape(server_key)}\.{re.escape(server)}\]", text, re.MULTILINE) is not None
+        servers = document.get(server_key)
+        return isinstance(servers, dict) and server in servers
+    return False
+
+
+def probe_mcp_server(root: Path, profile: dict[str, Any], server: str) -> dict[str, Any]:
+    """Read-only detection: is this server declared where the host would read it?
+
+    Reports the scope it was found in, because scope decides whether a spawned
+    agent can see it at all. A server declared only at project scope is present
+    for the resident session and absent for every agent it spawns, which is the
+    failure this probe exists to make visible instead of surprising.
+    """
+    if not host_speaks_mcp(profile):
+        return {
+            "server": server,
+            "found": False,
+            "status": "UNAVAILABLE_OPTIONAL",
+            "reason": f"host {profile.get('id')!r} declares no MCP client surface",
+            "scope": None,
+            "subagent_visible": False,
+            "searched": [],
+        }
+    searched: list[str] = []
+    for entry in profile.get("mcp", {}).get("config_paths", []):
+        raw = str(entry.get("path", ""))
+        if not raw:
+            continue
+        path = expand_host_path(raw) if raw.startswith("~") else (root / raw)
+        searched.append(str(path))
+        if not path.is_file():
+            continue
+        if _mcp_config_declares(path, entry, server):
+            visible = bool(entry.get("subagent_visible"))
+            return {
+                "server": server,
+                "found": True,
+                "status": "AVAILABLE_UNVERIFIED",
+                "reason": "declared in an MCP client configuration the host reads",
+                "scope": entry.get("scope"),
+                "subagent_visible": visible,
+                "config_path": str(path),
+                "searched": searched,
+                "note": None if visible else (
+                    "Declared at a scope a spawned agent does not inherit. The resident session "
+                    "can use it; delegated work must take the declared fallback route."
+                ),
+            }
+    return {
+        "server": server,
+        "found": False,
+        "status": "UNAVAILABLE_OPTIONAL",
+        "reason": "not declared in any MCP client configuration the host reads",
+        "scope": None,
+        "subagent_visible": False,
+        "searched": searched,
+    }
+
+
+def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, Any]]:
+    """Probe every declared server and emit one capability contract per capability.
+
+    Contracts conform to forge.capability-contract/v2. Qualification never rises
+    above UNQUALIFIED here: detection is not evidence of fitness, and route
+    policy forbids inferring qualification from installation.
+    """
+    contracts: list[dict[str, Any]] = []
+    for provider in mcp_providers():
+        server = str(provider.get("server", ""))
+        probe = probe_mcp_server(root, profile, server)
+        missing = [item for item in provider.get("requires_host_provides", []) if item not in profile.get("provides", [])]
+        if missing:
+            status = "UNAVAILABLE_OPTIONAL"
+        elif probe["found"]:
+            status = "AVAILABLE_UNVERIFIED"
+        else:
+            status = "UNAVAILABLE_OPTIONAL"
+        namespace = mcp_tool_namespace(profile, server)
+        for capability in provider.get("capabilities", []):
+            contracts.append(
+                {
+                    "capability": capability,
+                    "provider": provider.get("id"),
+                    "kind": "mcp",
+                    "status": status,
+                    "health": "HEALTHY" if probe["found"] else "UNAVAILABLE",
+                    "lane": provider.get("lane"),
+                    "locality": provider.get("locality", "local"),
+                    "executable_surfaces": [namespace] if namespace else [],
+                    "permissions": provider.get("permissions", {}),
+                    "integrity": {"verified": False, "method": "none", "note": "MCP servers are user-installed; Forge does not vouch for them."},
+                    "provenance": {"declared_by": "dependencies/mcp-registry.json", "detected_by": f"{provider.get('probe')}:{server}", "config_path": probe.get("config_path")},
+                    "qualification": {"state": "UNQUALIFIED", "task_classes": []},
+                    "cost": {"monetary": 0, "note": "Local server; cost is host context plus latency."},
+                    "context_cost": {"measured": False, "note": "Measure on the active host; never copy another runtime's estimate."},
+                    "fallbacks": provider.get("fallbacks", []),
+                    "probe": f"{provider.get('probe')}:{server}",
+                    "acceptance_suites": provider.get("acceptance_suites", []),
+                    "invalidation_triggers": provider.get("invalidation_triggers", []),
+                    "subagent_visible": probe["subagent_visible"],
+                    "detection_note": probe.get("note") or probe.get("reason"),
+                }
+            )
+    return contracts
+
+
 def render_agent(definition: dict[str, Any], profile: dict[str, Any]) -> str:
     """Render a neutral agent definition into the active host's agent format."""
     name = str(definition.get("name", "")).strip()
@@ -120,22 +325,268 @@ def render_agent(definition: dict[str, Any], profile: dict[str, Any]) -> str:
     instructions = render_tokens(str(definition.get("instructions", "")).strip(), profile)
     if not name:
         raise ValueError("Agent definition is missing a name")
+    tools = agent_tool_surface(definition, profile)
     fmt = profile.get("project_surface", {}).get("agent_format", "markdown-frontmatter")
     if fmt == "toml":
-        return (
+        rendered = (
             f'name = "{toml_escape(name)}"\n'
             f'description = "{toml_escape(description)}"\n'
-            f'developer_instructions = "{toml_escape(instructions)}"\n'
         )
+        if tools:
+            rendered += "tools = [" + ", ".join(f'"{toml_escape(item)}"' for item in tools) + "]\n"
+        return rendered + f'developer_instructions = "{toml_escape(instructions)}"\n'
     if fmt == "markdown-frontmatter":
+        # Omitting the key entirely inherits every tool the host offers. Emit it
+        # only when the definition restricts the surface, so the seven agents
+        # that declare nothing keep their existing unrestricted rendering.
+        tools_line = f"tools: {', '.join(tools)}\n" if tools else ""
         return (
             "---\n"
             f"name: {name}\n"
             f"description: {description}\n"
+            f"{tools_line}"
             "---\n\n"
             f"{instructions}\n"
         )
     raise ValueError(f"Unsupported agent format: {fmt!r}")
+
+
+def project_mcp_path(canon_root: Path) -> Path:
+    return canon_root / ".forge" / "mcp.json"
+
+
+def project_mcp(canon_root: Path) -> dict[str, Any]:
+    path = project_mcp_path(canon_root)
+    if not path.is_file():
+        return {"schema": "forge.project-mcp/v1", "servers": []}
+    return load_json(path)
+
+
+def resolve_project_servers(canon_root: Path) -> list[dict[str, Any]]:
+    """Resolve the project's declared servers against the shipped catalog.
+
+    A catalog id inherits its routing fields and must not restate them, so the
+    two files can never disagree. Anything else must declare them itself, so a
+    project may adopt a server Forge has never heard of without becoming
+    unroutable.
+    """
+    catalog = {str(item.get("id")): item for item in mcp_providers()}
+    inherited = ("server", "capabilities", "lane", "isolation_mode", "fallbacks")
+    resolved: list[dict[str, Any]] = []
+    for entry in project_mcp(canon_root).get("servers", []):
+        entry_id = str(entry.get("id", ""))
+        if not entry_id:
+            raise ValueError("Project MCP entry has no id")
+        row = catalog.get(entry_id)
+        if row is not None:
+            restated = [field for field in inherited if field in entry]
+            if restated:
+                raise ValueError(
+                    f"Project MCP entry {entry_id!r} restates catalog-owned field(s): "
+                    f"{', '.join(sorted(restated))}. Remove them; the catalog is the single truth."
+                )
+            merged = {field: row.get(field) for field in inherited}
+            source = "catalog"
+        else:
+            missing = [field for field in inherited if not entry.get(field)]
+            if missing:
+                raise ValueError(
+                    f"Project MCP entry {entry_id!r} is not in the catalog and must declare "
+                    f"{', '.join(sorted(missing))} so routing can resolve it."
+                )
+            merged = {field: entry.get(field) for field in inherited}
+            source = "project"
+        resolved.append(
+            {
+                "id": entry_id,
+                "enabled": bool(entry.get("enabled", True)),
+                "transport": entry.get("transport", {}),
+                "scope": str(entry.get("scope", "project")),
+                "source": source,
+                **merged,
+            }
+        )
+    return resolved
+
+
+def render_project_mcp(root: Path, profile: dict[str, Any], canon_root: Path) -> tuple[Path, bytes] | None:
+    """Render the project's MCP surface, preserving servers Forge does not own.
+
+    Ownership is the entry list in .forge/mcp.json and nothing else, so a server
+    a person added to this file by hand survives every render. Forge learned
+    that lesson from watching an installer overwrite a user-authored config.
+    """
+    surface = profile.get("mcp", {}).get("project_surface")
+    if not surface:
+        return None
+    servers = resolve_project_servers(canon_root)
+    # A user-scoped-only route is published to the machine, not to the project.
+    managed = {
+        str(item["server"]): item
+        for item in servers
+        if str(item.get("scope", "project")) in {"project", "both"}
+    }
+    target = root / str(surface.get("path"))
+    server_key = str(surface.get("server_key", "mcpServers"))
+    if not managed and not target.is_file():
+        # A project that declares no routes gets no empty artifact.
+        return None
+
+    document: dict[str, Any] = {}
+    if target.is_file():
+        try:
+            existing = load_json(target)
+            if isinstance(existing, dict):
+                document = existing
+        except ValueError:
+            document = {}
+    current = document.get(server_key)
+    entries = dict(current) if isinstance(current, dict) else {}
+
+    for name in list(entries):
+        if name in managed and not managed[name]["enabled"]:
+            del entries[name]
+    for name, item in managed.items():
+        if not item["enabled"]:
+            continue
+        transport = item.get("transport") or {}
+        rendered = {"command": transport.get("command", "")}
+        if transport.get("args"):
+            rendered["args"] = list(transport["args"])
+        if transport.get("env"):
+            rendered["env"] = dict(transport["env"])
+        entries[name] = rendered
+
+    document[server_key] = dict(sorted(entries.items()))
+    body = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    return target, body.encode("utf-8")
+
+
+def _mcp_transport_entry(item: dict[str, Any]) -> dict[str, Any]:
+    transport = item.get("transport") or {}
+    rendered: dict[str, Any] = {"command": transport.get("command", "")}
+    if transport.get("args"):
+        rendered["args"] = list(transport["args"])
+    if transport.get("env"):
+        rendered["env"] = dict(transport["env"])
+    return rendered
+
+
+def sync_user_mcp(root: Path, profile: dict[str, Any], apply: bool) -> dict[str, Any]:
+    """Publish user-scoped routes so agents this session spawns can see them.
+
+    This writes outside the project, to a file every other project on the machine
+    also reads, so it is an external write in the consent ledger's sense: planned
+    by default, applied only on request, recorded when it happens, and surgical —
+    it edits its own server entries and copies every other key through untouched.
+    A server entry that no longer matches what Forge renders is treated as
+    somebody else's and is reported rather than reclaimed.
+    """
+    surface = profile.get("mcp", {}).get("user_surface")
+    wanted = {
+        str(item["server"]): item
+        for item in resolve_project_servers(root)
+        if item["enabled"] and str(item.get("scope", "project")) in {"user", "both"}
+    }
+    if not surface:
+        return {
+            "schema": "forge.mcp-user-sync/v1", "mode": "unsupported", "applied": False,
+            "reason": f"host {profile.get('id')!r} declares no user-scope MCP surface",
+            "wanted": sorted(wanted), "planned": [], "target": None,
+        }
+    target = expand_host_path(str(surface.get("path")))
+    server_key = str(surface.get("server_key", "mcpServers"))
+    if not surface.get("writable"):
+        return {
+            "schema": "forge.mcp-user-sync/v1", "mode": "report-only", "applied": False,
+            "reason": surface.get("note") or "this host's user surface is not machine-writable by Forge",
+            "target": str(target), "wanted": sorted(wanted),
+            "planned": [
+                {"action": "declare-by-hand", "server": name, "entry": _mcp_transport_entry(item)}
+                for name, item in sorted(wanted.items())
+            ],
+        }
+
+    document: dict[str, Any] = {}
+    if target.is_file():
+        try:
+            loaded = load_json(target)
+            if isinstance(loaded, dict):
+                document = loaded
+        except ValueError:
+            return {
+                "schema": "forge.mcp-user-sync/v1", "mode": "blocked", "applied": False,
+                "reason": f"{target} is not readable JSON; refusing to rewrite a config we cannot parse",
+                "target": str(target), "wanted": sorted(wanted), "planned": [],
+            }
+    current = document.get(server_key)
+    entries = dict(current) if isinstance(current, dict) else {}
+
+    declared_servers = {str(item["server"]) for item in resolve_project_servers(root)}
+    planned: list[dict[str, Any]] = []
+    for name, item in sorted(wanted.items()):
+        rendered = _mcp_transport_entry(item)
+        if name not in entries:
+            planned.append({"action": "add", "server": name, "entry": rendered})
+        elif entries[name] != rendered:
+            planned.append({"action": "update", "server": name, "entry": rendered, "existing": entries[name]})
+    for name in sorted(entries):
+        if name in wanted or name not in declared_servers:
+            continue
+        # This project declared the server but no longer wants it at user scope.
+        # Only reclaim an entry that still matches what Forge would render.
+        item = next((i for i in resolve_project_servers(root) if str(i["server"]) == name), None)
+        if item is not None and entries[name] == _mcp_transport_entry(item):
+            planned.append({"action": "remove", "server": name})
+        else:
+            planned.append({"action": "retain-modified", "server": name, "reason": "entry differs from what Forge renders"})
+
+    if not apply:
+        return {
+            "schema": "forge.mcp-user-sync/v1", "mode": "dry-run", "applied": False,
+            "target": str(target), "wanted": sorted(wanted), "planned": planned,
+            "consent_required": bool(planned),
+        }
+
+    for change in planned:
+        if change["action"] in {"add", "update"}:
+            entries[change["server"]] = change["entry"]
+        elif change["action"] == "remove":
+            entries.pop(change["server"], None)
+    document[server_key] = entries
+    backup = None
+    if target.is_file():
+        backup = target.with_suffix(target.suffix + ".forge-backup")
+        backup.write_bytes(target.read_bytes())
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    record_consent(
+        root,
+        "mcp.user-scope-write",
+        f"Wrote {len([c for c in planned if c['action'] in {'add', 'update', 'remove'}])} server entr(ies) to {target}",
+        [change["server"] for change in planned],
+    )
+    return {
+        "schema": "forge.mcp-user-sync/v1", "mode": "apply", "applied": True,
+        "target": str(target), "backup": str(backup) if backup else None,
+        "wanted": sorted(wanted), "planned": planned,
+    }
+
+
+def record_consent(root: Path, scope: str, detail: str, subjects: list[str]) -> None:
+    """Append a scoped consent entry. An external write that leaves no record
+    is indistinguishable from one nobody agreed to."""
+    path = root / ".forge" / "capabilities" / "consent-ledger.json"
+    if not path.is_file():
+        return
+    try:
+        ledger = load_json(path)
+    except ValueError:
+        return
+    ledger.setdefault("entries", []).append(
+        {"scope": scope, "detail": detail, "subjects": subjects, "granted_at": utc_now()}
+    )
+    path.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
 
 
 def agent_definitions(canon_root: Path) -> list[dict[str, Any]]:
@@ -170,6 +621,12 @@ def rendered_surfaces(
     for definition in agent_definitions(canon):
         target = agent_dir / f"{definition['name']}{extension}"
         outputs.append((target, render_agent(definition, profile).encode("utf-8")))
+
+    # The project's typed tool routes are a host surface like any other, so they
+    # install, verify and re-render on a host swap through this same path.
+    mcp_surface = render_project_mcp(root, profile, canon)
+    if mcp_surface is not None:
+        outputs.append(mcp_surface)
     return outputs
 
 
@@ -937,7 +1394,7 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
             summary = "GSD planning state exists, but its smart-entry runtime could not be read safely."
             actions = [
                 forge_action("doctor", "Repair or inspect GSD", "forge-doctor", True, str(gsd.get("error", "GSD state unavailable")), profile),
-                forge_action("gsd-health", "Inspect GSD planning health", "gsd-health", False, "Use only if the GSD skill surface is available.", profile),
+                forge_action("planning-health", "Inspect planning health", "gsd-health", False, "Use only if the GSD skill surface is available.", profile),
             ]
     elif sources:
         source_arg = str(Path(sources[0]).relative_to(root))
@@ -959,7 +1416,7 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
         summary = "Forge bootstrap is complete and no existing GSD project, design corpus, or Unreal source was found."
         actions = [
             forge_action("forge-init", "Start Forge project inception", "forge-init", True, "Begins the design interview and creates canonical GSD project memory.", profile),
-            forge_action("gsd-new-project", "Start with GSD project discovery", "gsd-new-project", False, "Use when Forge-specific design inception is not needed.", profile),
+            forge_action("project-discovery", "Start with plain project discovery", "gsd-new-project", False, "Use when Forge-specific design inception is not needed.", profile),
         ]
 
     recommended = next((action["id"] for action in actions if action["recommended"]), actions[0]["id"] if actions else None)
@@ -1709,6 +2166,130 @@ def emit(data: dict[str, Any], output: str | None) -> None:
         target.write_text(rendered + "\n", encoding="utf-8")
 
 
+def mcp_amend(
+    root: Path,
+    profile: dict[str, Any],
+    action: str,
+    server_id: str,
+    apply: bool,
+    command: str | None = None,
+    args: list[str] | None = None,
+    scope: str = "project",
+) -> dict[str, Any]:
+    """Add, remove, enable or disable one of this project's typed tool routes.
+
+    Amending is a first-class operation rather than a file edit, so the project
+    surface is always re-rendered from the declaration and the two cannot drift.
+    """
+    path = project_mcp_path(root)
+    if not path.is_file():
+        raise ValueError(f"{path} does not exist; run the Forge overlay install first")
+    document = load_json(path)
+    servers = list(document.get("servers", []))
+    index = next((i for i, item in enumerate(servers) if str(item.get("id")) == server_id), None)
+    catalog = {str(item.get("id")): item for item in mcp_providers()}
+
+    if action == "add":
+        if index is not None:
+            raise ValueError(f"{server_id!r} is already declared; use enable or remove")
+        if server_id not in catalog and not command:
+            raise ValueError(f"{server_id!r} is not in the catalog, so --command is required")
+        if not command:
+            raise ValueError("--command is required to declare how the server starts")
+        entry: dict[str, Any] = {"id": server_id, "enabled": True, "transport": {"command": command}}
+        if args:
+            entry["transport"]["args"] = list(args)
+        if scope != "project":
+            entry["scope"] = scope
+        servers.append(entry)
+    elif action == "remove":
+        if index is None:
+            raise ValueError(f"{server_id!r} is not declared")
+        servers.pop(index)
+    elif action in {"enable", "disable"}:
+        if index is None:
+            raise ValueError(f"{server_id!r} is not declared")
+        servers[index] = {**servers[index], "enabled": action == "enable"}
+    else:
+        raise ValueError(f"Unknown amend action {action!r}")
+
+    document["servers"] = servers
+    # Resolve before writing: a declaration that cannot route must not land.
+    staged = dict(document)
+    if apply:
+        path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        resolve_project_servers(root)
+        rendered = render_project_mcp(root, profile, root)
+        if rendered is not None:
+            target, body = rendered
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # Bytes, not text: the overlay compares rendered surfaces byte for
+            # byte, and text mode would rewrite newlines on some platforms and
+            # report every freshly written surface as a local variant.
+            target.write_bytes(body)
+    return {
+        "schema": "forge.mcp-amend/v1",
+        "action": action,
+        "id": server_id,
+        "mode": "apply" if apply else "dry-run",
+        "declared": [item.get("id") for item in staged["servers"]],
+        "target": str(path),
+    }
+
+
+def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
+    """Report every typed tool route: what it serves, its lane, and whether it is bound.
+
+    Read-only. This is the resolution `forge-execute-phase` and `forge-route-work`
+    consult before acquiring a lease, so the lane a plan takes is derived from the
+    registry rather than chosen by whoever is reading the plan.
+    """
+    contracts = mcp_capability_contracts(root, profile)
+    declared = resolve_project_servers(root)
+    declared_ids = {item["id"] for item in declared}
+    surface = profile.get("mcp", {}).get("project_surface")
+    routes = []
+    for item in declared:
+        server = str(item.get("server", ""))
+        probe = probe_mcp_server(root, profile, server)
+        routes.append(
+            {
+                "provider": item["id"],
+                "server": server,
+                "source": item["source"],
+                "enabled": item["enabled"],
+                "scope": item.get("scope", "project"),
+                "capabilities": item.get("capabilities", []),
+                "lane": item.get("lane"),
+                "isolation_mode": item.get("isolation_mode"),
+                "tool_namespace": mcp_tool_namespace(profile, server),
+                "declared_in_project": True,
+                "rendered_to_host": bool(surface) and item["enabled"],
+                "session_visible": bool(surface) and item["enabled"] and probe["found"],
+                "subagent_visible": probe["subagent_visible"],
+                "found": probe["found"],
+                "scope": probe["scope"],
+                "fallbacks": item.get("fallbacks", []),
+                "note": probe.get("note") or probe.get("reason"),
+            }
+        )
+    return {
+        "schema": "forge.mcp-status/v1",
+        "project": str(root),
+        "host": profile.get("id"),
+        "host_speaks_mcp": host_speaks_mcp(profile),
+        "project_surface": (surface or {}).get("path") if surface else None,
+        "project_surface_note": profile.get("mcp", {}).get("project_surface_note"),
+        "routes": routes,
+        "available_uncommitted": [
+            {"provider": row.get("id"), "server": row.get("server"), "capabilities": row.get("capabilities", [])}
+            for row in mcp_providers()
+            if row.get("id") not in declared_ids
+        ],
+        "contracts": contracts,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1744,6 +2325,31 @@ def build_parser() -> argparse.ArgumentParser:
     route.add_argument("--host")
     route.add_argument("--request", required=True)
     route.add_argument("--output")
+    mcp_status_parser = sub.add_parser("mcp-status", help="Report this project's typed tool routes")
+    mcp_status_parser.add_argument("--project", required=True)
+    mcp_status_parser.add_argument("--host")
+    mcp_status_parser.add_argument("--output")
+    mcp = sub.add_parser("mcp", help="Declare or amend the typed tool routes this project uses")
+    mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
+    for action in ("add", "remove", "enable", "disable"):
+        amend = mcp_sub.add_parser(action)
+        amend.add_argument("--project", required=True)
+        amend.add_argument("--host")
+        amend.add_argument("--id", required=True)
+        amend.add_argument("--apply", action="store_true")
+        amend.add_argument("--output")
+        if action == "add":
+            amend.add_argument("--command", dest="server_command", help="Executable that starts the server")
+            amend.add_argument("--arg", action="append", dest="args", help="Repeatable argument")
+            amend.add_argument(
+                "--scope", choices=["project", "user", "both"], default="project",
+                help="project: this game's session sees it. user/both: agents it spawns see it too, via a consented machine-wide write.",
+            )
+    sync_user = mcp_sub.add_parser("sync-user", help="Publish user-scoped routes so spawned agents can see them")
+    sync_user.add_argument("--project", required=True)
+    sync_user.add_argument("--host")
+    sync_user.add_argument("--apply", action="store_true")
+    sync_user.add_argument("--output")
     validate = sub.add_parser("validate")
     validate.add_argument("--kind", required=True, choices=sorted(SCHEMA_FILES))
     validate.add_argument("--input", required=True)
@@ -1771,6 +2377,25 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "bootstrap-check":
             root, _ = project_root(args.project)
             result = bootstrap_verdict(root, active_profile(root, args.host))
+        elif args.command == "mcp-status":
+            root, _ = project_root(args.project)
+            result = mcp_status(root, active_profile(root, args.host))
+        elif args.command == "mcp":
+            root, _ = project_root(args.project)
+            profile = active_profile(root, args.host)
+            if args.mcp_command == "sync-user":
+                result = sync_user_mcp(root, profile, apply=bool(args.apply))
+            else:
+                result = mcp_amend(
+                    root,
+                    profile,
+                    args.mcp_command,
+                    args.id,
+                    apply=bool(args.apply),
+                    command=getattr(args, "server_command", None),
+                    args=getattr(args, "args", None),
+                    scope=getattr(args, "scope", "project"),
+                )
         elif args.command == "gsd-sync":
             root, _ = project_root(args.project)
             result = sync_gsd_runtime(root, active_profile(root, args.host), apply=bool(args.apply))

@@ -15,7 +15,7 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 ## CORE — GSD
 
-1. Relay GSD's UAT session. GSD's predicate is the authority for test pass/fail: it requires positive passing evidence and refuses a vacuous pass. Do not weaken or duplicate it.
+1. Relay GSD's UAT session. It owns the test pass/fail predicate — do not weaken, duplicate, or re-derive it. Forge adds requirements on top of its verdict; it never substitutes for it.
 
 ## POST — Forge
 
@@ -25,4 +25,4 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 ## Note
 
-This is the clearest case where GSD's behaviour is insufficient rather than wrong. Its gate stays authoritative; Forge adds a requirement on top.
+Forge holds exactly one verification authority at a time. The relayed gate stays authoritative for pass/fail; Forge adds in-engine evidence as an additional requirement and never as a competing verdict. Two authorities is the failure mode this boundary exists to prevent.

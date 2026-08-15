@@ -13,13 +13,13 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 1. Read `.forge/directives.md` and the GDD decision ledger. Load the phase entry from the roadmap.
 2. Identify which departments this phase touches (gameplay, visual, audio, narrative, QA) so questions can be scoped.
-3. Check `.forge/capabilities/detected.json`. Do not raise options that depend on unqualified routes.
+3. Read `.forge/capabilities/registry.json` and run `python <forge-plugin-root>/scripts/forge.py mcp-status --project <project-root>`. Do not raise options that depend on an unqualified provider or an unbound typed tool route.
 
 ## CORE — GSD
 
 1. Relay GSD's discussion. Reframe each question in game terms before presenting it: pillars affected, player-facing outcome, art/gameplay interface at stake, which lane owns the work.
 2. Ask one high-value question at a time. Never batch.
-3. Pass answers back down verbatim. GSD writes CONTEXT.md.
+3. Pass answers back down verbatim. The relayed workflow owns the context artifact it writes; do not author or edit it from here.
 
 ## POST — Forge
 

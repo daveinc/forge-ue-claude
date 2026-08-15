@@ -44,7 +44,7 @@ PRE and POST are Forge's. CORE is untouched upstream. If a game concern cannot b
 
 ## Entry points versus internal steps
 
-GSD's workflows chain — by command name and by file reference — and several load nested step files. Measured against GSD 1.9.1: **91 workflow files plus 25 nested steps; Forge enters 39 of them; 19 more are reached as internal steps.**
+GSD's workflows chain — by command name and by file reference — and several load nested step files. Measured against GSD 1.10.0: **91 workflow files plus 62 nested step and mode files; Forge enters 45 of them; the rest are reached as internal steps.**
 
 Examples of internal chaining Forge must never interfere with:
 

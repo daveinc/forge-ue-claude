@@ -72,7 +72,7 @@ After reviewing that output, explicitly approve and apply it:
 .\install.ps1 -Mode GSD -Apply
 ```
 
-Forge currently defaults to stable `@opengsd/gsd-core@1.9.1` — the version it is tested against — and installs the integration for the selected host globally. Use `-GsdVersion X.Y.Z` only when you intentionally want a different audited release. GSD installation is independent of Forge plugin installation, so either can be repaired or updated without silently changing the other.
+Forge currently defaults to stable `@opengsd/gsd-core@1.10.0` — the version it is tested against — and installs the integration for the selected host globally. Use `-GsdVersion X.Y.Z` only when you intentionally want a different audited release. GSD installation is independent of Forge plugin installation, so either can be repaired or updated without silently changing the other.
 
 Start a **new session** after installation. Hosts load newly installed plugin skills and tools into new sessions, not running ones.
 

@@ -40,7 +40,7 @@ Create the durable project control plane before design or Unreal project-shell w
 
     A `phase-contract` failure usually means overlay installation preserved an existing instruction file and wrote a `.forge-proposed` sibling. Stop for an explicit merge decision, or re-render with `forge.py host set --host <id> --project . --apply`. Bootstrap cannot pass while the active instruction file lacks the contract, because that file is what constrains the next session.
 
-    This gate is Forge's own. GSD owns phase state and has no equivalent check, so nothing downstream will catch these.
+    This gate is Forge's own and covers Forge's own control plane. Nothing downstream is responsible for it, so a failure here must block rather than defer.
 13. **STOP.** Require a fresh project session and present `forge-next`. Forge Next will inspect existing docs, Unreal/code, and GSD state before deciding whether inception, ingestion, onboarding, or phase recovery is correct.
 
 Use `forge-doctor` for read-only environment classification, `forge-research` for newly discovered sources, and `forge-capability-admin` for consent/qualification after bootstrap.

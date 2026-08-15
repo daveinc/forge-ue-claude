@@ -19,4 +19,4 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 ## POST — Forge
 
-1. Any ambiguity touching an art/gameplay interface is high severity regardless of GSD's score, because it blocks parallel DAGs.
+1. Any ambiguity touching an art/gameplay interface is high severity in Forge's own grading, whatever severity the relayed workflow returned, because it blocks parallel DAGs.
