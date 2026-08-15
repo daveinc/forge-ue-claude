@@ -42,6 +42,27 @@ POST   Forge   acceptance registry, evidence contract, in-engine verification,
 
 PRE and POST are Forge's. CORE is untouched upstream. If a game concern cannot be expressed in PRE or POST — because it must be *held across* GSD's steps, like the Unreal write-lock — acquire it in PRE and release it in POST, and say so in the skill.
 
+## Entry points versus internal steps
+
+GSD's workflows chain — by command name and by file reference — and several load nested step files. Measured against GSD 1.9.1: **91 workflow files plus 25 nested steps; Forge enters 39 of them; 19 more are reached as internal steps.**
+
+Examples of internal chaining Forge must never interfere with:
+
+| Internal step | Reached from | Via |
+|---|---|---|
+| `execute-plan.md` → `node-repair.md` | `execute-phase.md` | file |
+| `code-review-fix.md`, `verify-phase.md` | `code-review.md` | file |
+| `diagnose-issues.md` | `verify-work.md` | file |
+| `graduation.md`, `transition.md` | `new-milestone.md`, `extract-learnings.md` | cmd/file |
+| `execute-phase/steps/*` — drift, isolation, worktree, post-merge, regression gates | `execute-phase.md` | nested |
+| `discuss-phase/modes/*` — advisor, analyze, power, batch, chain | `discuss-phase.md` | nested |
+
+**These are not Forge's business and must not be registered, translated, or suppressed.** A contained subagent reads GSD's files directly, so the whole chain executes as upstream intended. The verb registry governs only two things: which Forge verbs exist, and how GSD's *terminal* action list from `smart-entry` is presented. It has no reach inside a running workflow.
+
+A `drop` disposition therefore does **not** disable a GSD workflow. It only means "Forge does not offer this as a command you type." The workflow still runs whenever GSD's own chain reaches it.
+
+One consequence to respect: `execute-phase` has its own worktree and isolation gates. Forge's `forge-execute-phase` acquires the Unreal write-lock and lane leases in PRE, so do not also let the contained agent negotiate worktrees for the same lane — Forge holds the lease, GSD manages isolation within it.
+
 ## Never do these
 
 - **Never show a `gsd-` name to the user.** If one appears, the verb registry has a gap. Fix the registry, do not hand-edit the string.

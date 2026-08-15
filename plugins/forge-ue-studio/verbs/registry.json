@@ -476,6 +476,30 @@
       "gsd": "gsd-review-backlog",
       "disposition": "drop",
       "reason": "Planned: forge-capture."
+    },
+    {
+      "forge": "forge-phase",
+      "gsd": "gsd-insert-phase",
+      "gsd_workflow": "insert-phase.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-phase --insert; owns decimal phase-ID arithmetic.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-phase",
+      "gsd": "gsd-remove-phase",
+      "gsd_workflow": "remove-phase.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-phase --remove; renumbers dependent phases.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-phase",
+      "gsd": "gsd-edit-phase",
+      "gsd_workflow": "edit-phase.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-phase --edit.",
+      "disposition": "front"
     }
   ]
 }

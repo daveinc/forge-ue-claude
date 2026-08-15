@@ -916,6 +916,20 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
                         profile,
                     )
                 )
+            if not actions and suppressed:
+                # Suppression must never strand the user. If every action GSD
+                # offered is outside Forge's surface, fall back to a Forge verb
+                # rather than returning nothing.
+                actions = [
+                    forge_action(
+                        "progress",
+                        "Review project progress",
+                        "forge-progress",
+                        True,
+                        "Every action GSD offered is outside Forge's surface; see suppressed_actions.",
+                        profile,
+                    )
+                ]
             if actions and not any(action["recommended"] for action in actions):
                 actions[0]["recommended"] = True
         else:

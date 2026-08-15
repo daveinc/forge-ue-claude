@@ -764,6 +764,31 @@ class ForgeInstallerTests(unittest.TestCase):
                 self.assertTrue(item["reason"])
             self.assertNotIn("UNMAPPED", json.dumps(result))
 
+    def test_suppression_never_strands_the_user_with_no_action(self):
+        with workspace_tempdir() as temp:
+            project = temp / "AllSuppressed"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+            self.complete_bootstrap(project)
+            (project / ".planning").mkdir(exist_ok=True)
+            gsd = {
+                "ok": True,
+                "error": "",
+                "snapshot": {
+                    "situation": "idle",
+                    "actions": [
+                        {"id": "a", "label": "Quick", "command": "gsd-quick", "recommended": True},
+                        {"id": "b", "label": "Capture", "command": "gsd-capture", "recommended": False},
+                    ],
+                },
+            }
+            result = forge.forge_next(str(project), gsd)
+            self.assertEqual(len(result["suppressed_actions"]), 2)
+            # A fallback Forge verb, never an empty list.
+            self.assertTrue(result["actions"])
+            self.assertIsNotNone(result["recommended"])
+            self.assertEqual(result["actions"][0]["command"], "/forge-progress")
+
     def test_every_command_smart_entry_can_emit_is_classified(self):
         # Anything smart-entry can recommend must be fronted or explicitly
         # dropped; an unclassified command would leak as UNMAPPED at runtime.
