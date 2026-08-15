@@ -4,9 +4,11 @@ How every Forge verb that fronts a GSD workflow behaves. Read this once; the ind
 
 ## The rule
 
-**Forge owns the vocabulary. GSD owns `.planning`. GSD is invoked in place, never edited and never copied.**
+**Forge owns what Forge emits. GSD owns `.planning`. GSD is invoked in place, never edited and never copied.**
 
 That last clause is the point. Copying GSD's workflow prose into Forge would freeze it at the version copied, and GSD ships roughly a minor release a week. Forge reads the workflow that is on disk right now, so upstream fixes arrive without a merge.
+
+The first clause is narrower than it looks. A verb Forge routes is spelled as a Forge verb because it is the GSD workflow plus the game-specific PRE and POST below; the user remains free to call GSD directly, and Forge neither hides nor disables it.
 
 ## Three delegation modes
 
@@ -16,7 +18,7 @@ Declared per verb in `verbs/registry.json`.
 
 Spawn a subagent. Instruct it to read and follow the stock GSD workflow at `<gsd-core>/workflows/<file>`, calling `gsd_run` verbs as that workflow directs. Require a **structured result**, not prose.
 
-The subagent's transcript never reaches the user. This is what makes containment work: GSD's own `gsd-…` command strings exist only inside the agent, so there is nothing to filter and nothing can leak.
+The subagent's transcript stays inside the subagent. That is what makes containment work: the workflow's own command strings never become the action Forge routes, so a routed action always carries Forge's PRE and POST.
 
 Ask the subagent for an action **identifier** (`execute-phase`), never a command string (`/gsd-execute-phase`). Forge renders the command itself.
 
@@ -24,7 +26,7 @@ Ask the subagent for an action **identifier** (`execute-phase`), never a command
 
 Some workflows must reach the user — `discuss-phase` above all. Containment would swallow the questions.
 
-Relay instead: surface each question, reframe it in game-dev terms, pass the answer back down. Forge controls presentation at every turn, so vocabulary stays Forge's. This is more plumbing and it is where Forge adds the most value, because GSD's generic prompts are the least suited to a game project.
+Relay instead: surface each question, reframe it in game-dev terms, pass the answer back down. Forge controls presentation at every turn. This is more plumbing and it is where Forge adds the most value, because GSD's generic prompts are the least suited to a game project.
 
 ### `native`
 

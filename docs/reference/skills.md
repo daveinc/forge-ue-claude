@@ -2,7 +2,9 @@
 
 Invoke a Forge workflow by naming its skill in your prompt. You can also give Forge an outcome in ordinary language; the explicit skill name is useful when you want predictable entry into a particular workflow.
 
-**Every command is a `forge-` command.** GSD is never addressed directly — you will not type a `gsd-` verb, and Forge will never show you one. Spell a skill the way your host expects: `/forge-next` in Claude Code, `$forge-next` in Codex. Forge Next returns commands already spelled for the assigned host.
+Spell a skill the way your host expects: `/forge-next` in Claude Code, `$forge-next` in Codex. Forge Next returns commands already spelled for the assigned host.
+
+**Forge verbs do not replace GSD verbs.** GSD is installed alongside Forge and stays directly usable. A Forge verb exists where the game side needs work the bare GSD command does not do — lane leases, the acceptance registry, canonical packet IDs, in-engine evidence — so Forge routes to its own verb and you get those gates. For anything outside game production, calling GSD directly is correct and supported; the [commands Forge does not route](#commands-forge-does-not-route) are listed below with their reasons.
 
 ## Lifecycle
 
@@ -78,6 +80,25 @@ forge-discuss-phase  ->  forge-plan-phase  ->  forge-plan-convergence
 ```
 
 `forge-visual-production` runs alongside playable development once the shared art/gameplay interfaces exist. `forge-gameplay-gauntlet` begins after there is a playable loop or a stable in-engine presentation target.
+
+## Commands Forge does not route
+
+These are working GSD commands. Forge does not front them, because they are not game production — so no Forge verb would add anything, and routing them through one would only put a wrapper in your way. Run them directly. `forge-next` lists any that GSD recommends under `suppressed_actions`, with the spelling for your host.
+
+| GSD command | Why Forge does not route it |
+|---|---|
+| `gsd-quick`, `gsd-fast` | Trivial-task shortcuts; Forge routes production work through packets. |
+| `gsd-capture`, `gsd-review-backlog` | Idea capture and backlog triage. A Forge verb is planned. |
+| `gsd-explore`, `gsd-sketch`, `gsd-spike` | Exploration. `forge-explore` is planned; `--sketch` will be greybox rather than HTML mockups. |
+| `gsd-workspace`, `gsd-workstreams` | GSD-general isolation. Forge uses lanes and worktrees instead. |
+| `gsd-graphify`, `gsd-mempalace-capture`, `gsd-mempalace-recall` | Optional knowledge and memory tooling, outside the lifecycle. |
+| `gsd-config`, `gsd-settings`, `gsd-surface`, `gsd-update` | Forge configures and installs itself. |
+| `gsd-stats`, `gsd-profile-user`, `gsd-help`, `gsd-manager`, `gsd-inbox` | Not production concerns; Forge Next is the entry point and Forge documents its own surface. |
+| `gsd-autonomous` | Forge requires human gates at phase boundaries. |
+| `gsd-thread`, `gsd-import`, `gsd-cleanup` | Superseded by `forge-handoff`, `forge-ingest-docs`, and milestone archival. |
+| `gsd-eval-review`, `gsd-ai-integration-phase`, `gsd-ultraplan-phase` | LLM-application work and cloud planning, not game production. |
+
+`plugins/forge-ue-studio/verbs/registry.json` is the authority; every GSD command is either fronted there or dropped with its reason, and a command in neither state is a registry gap that `forge-next` reports as `UNMAPPED`.
 
 ## Example prompts
 

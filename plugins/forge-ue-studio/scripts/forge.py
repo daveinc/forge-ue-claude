@@ -1308,7 +1308,13 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
                 raw = str(item["command"]).strip()
                 untranslated_name = gsd_command_name(raw)
                 if untranslated_name in dropped:
-                    suppressed.append({"gsd_command": raw, "reason": dropped[untranslated_name]})
+                    suppressed.append(
+                        {
+                            "gsd_command": raw,
+                            "reason": dropped[untranslated_name],
+                            "run_directly": host_command(profile, untranslated_name),
+                        }
+                    )
                     continue
                 actions.append(
                     forge_action(
@@ -1327,7 +1333,7 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
                         "Review project progress",
                         "forge-progress",
                         True,
-                        "Every action GSD offered is outside Forge's surface; see suppressed_actions.",
+                        "Forge fronts none of the actions GSD offered; see suppressed_actions to run them directly.",
                         profile,
                     )
                 ]

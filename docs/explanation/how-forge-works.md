@@ -39,11 +39,13 @@ Concurrent code and text writers are isolated in clean-base Git worktrees; Unrea
 
 ## Forge and GSD
 
-Forge owns the vocabulary and every game-specific decision. GSD is the phase engine underneath — invoked in place, never edited and never copied, so upstream fixes arrive without a merge.
+They are two tools, both installed, that do different jobs. GSD is the phase engine and a complete workflow toolset on its own. Forge is the game-development layer on top of it, and it is invoked in place — never edited, never copied — so upstream GSD fixes arrive without a merge.
 
-Each delegating verb has the same shape: Forge applies its own preconditions (capability qualification, Unreal write-lock, canonical packet IDs, game-dev framing), hands the mechanical work to the stock GSD workflow, then applies its own gates (acceptance registry, in-engine evidence, asset-interface checks). `.planning` stays GSD's to write.
+Forge takes charge where game work needs something GSD has no reason to do. Each delegating verb has the same shape: Forge applies its own preconditions (capability qualification, the Unreal write-lock, canonical packet IDs, game-dev framing), hands the mechanical work to the stock GSD workflow, then applies its own gates (acceptance registry, in-engine evidence, asset-interface checks). `.planning` stays GSD's to write.
 
-`verbs/registry.json` records, for every GSD command, either the Forge verb that fronts it or an explicit reason it is out of scope. An out-of-scope action is suppressed from routing with its reason recorded, never shown as something you cannot run.
+That is why a routed action is a Forge verb rather than the GSD command underneath it: the Forge verb is the GSD workflow *plus* the game-specific work around it, and dispatching the bare command in its place silently drops the second half. It is a statement about what Forge emits, not a restriction on you.
+
+**GSD stays directly usable.** Both surfaces are installed, and running `gsd-quick`, `gsd-spike`, or any other GSD command yourself is supported and often correct — the project instruction file Forge renders points at GSD's own verbs for small fixes and debugging. `verbs/registry.json` records, for every GSD command, either the Forge verb that fronts it or an explicit reason Forge does not route it. A command Forge does not route is not unavailable: `forge-next` reports it with its reason and the spelling that runs it.
 
 See [the delegation contract](../../plugins/forge-ue-studio/references/delegation-contract.md) and [the independence map](../gsd-independence-map.md).
 

@@ -742,6 +742,9 @@ class ForgeInstallerTests(unittest.TestCase):
                 self.assertTrue(item["reason"])
             self.assertNotIn("UNMAPPED", json.dumps(result))
 
+            spellings = {item["run_directly"] for item in result["suppressed_actions"]}
+            self.assertEqual(spellings, {"/gsd-capture", "/gsd-quick"})
+
     def test_suppression_never_strands_the_user_with_no_action(self):
         with workspace_tempdir() as temp:
             project = temp / "AllSuppressed"
@@ -1304,7 +1307,8 @@ class ResultContractTests(unittest.TestCase):
 
 
 class ActionSurfaceTests(unittest.TestCase):
-    """Forge owns the whole user-facing vocabulary, ids included."""
+    """A routed action is a Forge verb, ids included. What Forge does not route
+    stays available as the GSD command it is."""
 
     def test_no_routed_action_id_carries_a_gsd_prefix(self):
         """The command is translated at dispatch, but the id is displayed too."""

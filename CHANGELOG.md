@@ -12,6 +12,12 @@
 - Fix `mcp-status` routes overwriting the declared scope with the probe's. Both are reported: `scope` is what the project declared (`project`/`user`/`both`), `found_in_scope` is where the probe found the server. Consumers reading `scope` were reading the probe result.
 - Fix `mcp amend` writing an unroutable declaration to disk and only then failing to resolve it, which left `.forge/mcp.json` in a state the next command refused. The amendment now resolves before anything is written.
 
+### Forge fronts GSD; it does not replace it
+
+- Correct a claim that was never true of the product: the docs said "GSD is never addressed directly — you will not type a `gsd-` verb". Both surfaces are installed and GSD stays directly usable. The instruction file Forge renders has always pointed at `gsd-quick` and `gsd-debug` for small fixes, so the code and the documentation disagreed.
+- Reframe the rule to what it actually is: a Forge verb exists where the game side needs work the bare GSD command does not do — lane leases, the acceptance registry, canonical packet IDs, in-engine evidence — so a **routed** action is a Forge verb. That is a statement about what Forge emits, not a restriction on the user.
+- Stop treating a `drop` as something the user cannot run. `forge-next` now reports each suppressed action with `run_directly`, the command spelled for the assigned host, and `forge-next` presents them as available in GSD. Added a reference table of the 29 commands Forge does not route, with reasons.
+
 ### Documentation
 
 - Rebuild `README.md` as a landing page — what Forge is, how it works, a quickstart, and an index — instead of a 500-line manual. Everything it used to carry now lives in `docs/`, organised as tutorials, how-to guides, reference, and explanation, with `docs/README.md` as the index.

@@ -21,7 +21,7 @@ Use GSD as the sole phase-state authority. Forge Next is a launcher, not another
 5. Read the `runtime` block. It names the assigned host and whether its rendered surfaces are current. Commands in `actions` are already spelled for that host — present them verbatim.
 6. If the situation is `host-surfaces-stale`, the project's generated surfaces do not match the assigned runtime. Route to `forge-runtime` and stop; do not perform production work against stale instructions or agents.
 7. Surface any `warnings` verbatim alongside the summary, then continue. They are advisory and never change the routed action. `execution_coverage` carries the per-phase detail behind a warning about plans without matching summaries. A partially executed phase is normal mid-execution; treat it as a question for the user, not an error.
-8. Read `suppressed_actions` before presenting. It records the GSD commands the verb registry marks `drop`, with their reasons. Never present a suppressed command, and never treat the record as a failure. When every offered action was suppressed the detector routes to a Forge verb instead, so the action list is never empty.
+8. Read `suppressed_actions` before presenting. It records the GSD commands the verb registry marks `drop` — commands Forge does not route, each with its reason and the spelling that runs it directly. Present them below the Forge actions as available in GSD, never as a routed Forge action and never as a failure. When every offered action was suppressed, the detector still routes to a Forge verb, so the action list is never empty.
 9. If the detector fails, run `forge-doctor`; do not guess the active phase.
 
 ## Present and dispatch
@@ -31,6 +31,7 @@ Use GSD as the sole phase-state authority. Forge Next is a launcher, not another
 3. Display the chosen command before dispatch.
 4. Dispatch exactly one existing Forge or GSD skill. Then stop. The chosen skill owns subsequent work and its own context boundary.
 5. Never perform the routed work inside Forge Next and never chain a second command.
+6. If the user asks for a GSD command directly, run it. Forge routes game production; it does not gate the user's access to GSD. Say what the Forge route would have added before running the bare command in its place.
 
 ## Forge Init integration
 

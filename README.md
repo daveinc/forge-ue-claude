@@ -75,11 +75,15 @@ Full index: **[docs/README.md](docs/README.md)**
 - [How Forge works](docs/explanation/how-forge-works.md) — the studio model and the capability ladder.
 - [Dependency and route policy](docs/dependency-policy.md) · [GSD independence map](docs/gsd-independence-map.md) · [The counterplan](docs/COUNTERPLAN.md)
 
-## Every command is a `forge-` command
+## Forge verbs, GSD verbs
 
-GSD is never addressed directly — you will not type a `gsd-` verb, and Forge will never show you one. Spell a skill the way your host expects: `/forge-next` in Claude Code, `$forge-next` in Codex.
+Both are installed and both are yours. GSD is a complete toolset in its own right — run any `gsd-` command whenever you want it.
 
-The ones you will use daily:
+What Forge adds is the game side: when it **routes** an action it emits its own verb, because the Forge verb carries the work the bare GSD command has no reason to do — lane leases and the Unreal write-lock, the acceptance registry, canonical packet IDs, asset-interface checks, in-engine evidence. Take the Forge route for game production and you get those gates; call GSD directly and you get GSD, which is often exactly right for a quick fix, a spike, or anything outside production.
+
+Commands Forge does not route are listed with their reason and a spelling you can run, not hidden. Spell a skill the way your host expects: `/forge-next` in Claude Code, `$forge-next` in Codex.
+
+The Forge verbs you will use daily:
 
 | Skill | Use it when |
 |---|---|

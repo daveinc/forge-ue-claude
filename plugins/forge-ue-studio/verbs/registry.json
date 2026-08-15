@@ -3,10 +3,10 @@
   "policy": {
     "surface": "forge",
     "unmapped_action": "fail",
-    "note": "Forge owns the entire user-facing vocabulary. GSD is never addressed directly and is never edited or copied \u2014 it is invoked in place so upstream fixes arrive for free. This registry is the single boundary where GSD's structured command emissions become Forge verbs.",
+    "note": "Forge owns the vocabulary Forge emits, not the user's. GSD stays installed, complete, and directly usable; this registry only decides what Forge itself routes. GSD is invoked in place and never edited or copied, so upstream fixes arrive for free.",
     "dispositions": {
-      "front": "A Forge verb fronts this GSD command.",
-      "drop": "Deliberately outside Forge's surface. Suppressed from routed actions with a recorded reason, never shown as an unmapped leak."
+      "front": "A Forge verb fronts this GSD command, because the Forge verb carries game-specific work the bare command would skip. Forge routes to the Forge verb.",
+      "drop": "Outside Forge's production surface, and still a working GSD command. Forge does not route it; it names it with its reason so the user can run it directly."
     },
     "via": {
       "command": "GSD installs a skill of this name; smart-entry can emit it, so translation matters.",
@@ -14,7 +14,7 @@
     }
   },
   "delegation_modes": {
-    "contain": "Forge spawns a subagent that reads and follows the stock GSD workflow on disk and returns a structured result. The transcript never reaches the user, so GSD's own command strings cannot leak.",
+    "contain": "Forge spawns a subagent that reads and follows the stock GSD workflow on disk and returns a structured result. The transcript stays inside the subagent, so a routed action is always a Forge verb carrying Forge's gates.",
     "relay": "The workflow is interactive and cannot be black-boxed. Forge relays each question in game-dev framing and passes answers back down, translating any action identifier it surfaces.",
     "native": "Forge owns the behaviour outright. No GSD workflow is involved."
   },
@@ -353,7 +353,7 @@
       "forge": null,
       "gsd": "gsd-quick",
       "disposition": "drop",
-      "reason": "Trivial-task shortcut; Forge routes all work through packets."
+      "reason": "Trivial-task shortcut; Forge routes production work through packets. Run it directly for a small fix."
     },
     {
       "forge": null,
@@ -419,7 +419,7 @@
       "forge": null,
       "gsd": "gsd-manager",
       "disposition": "drop",
-      "reason": "Forge Next is the single entry point."
+      "reason": "Forge Next is Forge's entry point; use gsd-manager directly for multi-phase GSD work."
     },
     {
       "forge": null,
