@@ -73,10 +73,10 @@ New-Item -ItemType Directory -Path "D:\Unreal Projects\MyGame"
 The pre-project overlay installs `.forge`, project `AGENTS.md`, and project-local agents before a `.uproject` exists. Open a **fresh Codex task in that directory** and enter:
 
 ```text
-Use $forge-bootstrap --resume. Delegate the applicable read-only installation investigations, persist the report, and stop at the next fresh-task handoff.
+Use $forge-next to inspect this directory and take me to the correct next Forge or GSD action.
 ```
 
-When bootstrap completes, it will tell you to open another fresh project task and run `$forge-init`. Forge Init uses `$gsd-new-project` for canonical project memory, creates the game-specific design/visual/production contracts, then stops at `$gsd-discuss-phase 1`. It does not execute the first packet in the inception task.
+`$forge-next` is the normal front door. It routes an incomplete installation to `$forge-bootstrap --resume`; after bootstrap it scans for existing design documents, Unreal/code, and GSD `.planning` state. It routes a true greenfield project to `$forge-init`, existing docs to `$gsd-ingest-docs`, existing code to `$gsd-onboard`, or an active project to the exact action returned by GSD smart-entry. Each routed workflow keeps its own stop boundary.
 
 Forge should:
 
@@ -112,8 +112,9 @@ Invoke a Forge workflow by naming its skill in your prompt. You can give Forge a
 
 | Skill | Use it when |
 |---|---|
+| `$forge-next` | Entering or resuming any Forge project; detecting adoption, bootstrap, existing docs/code, and the authoritative GSD next action. |
 | `$forge-bootstrap` | Installing/resuming the project-local Forge control plane and delegated installation checks. |
-| `$forge-init` | Starting a new game or adopting an existing Unreal project. |
+| `$forge-init` | Starting greenfield game inception; on an existing/partial project it first defers to Forge Next. |
 | `$forge-doctor` | Surveying Codex, Unreal, VCS, MCP, DCC, local-model, build, and platform availability without changing anything. |
 | `$forge-capability-admin` | Registering, consenting to, testing, activating, or invalidating an optional tool or model route. |
 | `$forge-research` | Teaching Forge about a new MCP, API, CLI, model, documentation set, or project corpus. |
@@ -159,21 +160,14 @@ Use $forge-gameplay-gauntlet to compare the current combat loop against our appr
 ### Normal production sequence
 
 ```text
-$forge-bootstrap --resume
-    -> STOP / fresh task
-$forge-init (uses $gsd-new-project when needed)
-    -> STOP / fresh task
-$gsd-discuss-phase N
-    -> STOP / fresh task
-$gsd-plan-phase N (+ $forge-plan-convergence)
-    -> STOP / fresh task
-$gsd-execute-phase N (fresh agents; $forge-route-work inside execution)
-    -> STOP / fresh task
-$gsd-verify-work N (+ $forge-quality-gate)
-    -> user chooses next phase
+$forge-next
+    -> dispatch exactly one of: bootstrap / ingest / onboard / init / GSD action
+    -> routed workflow reaches its persisted STOP boundary
+fresh task -> $forge-next
+    -> GSD smart-entry supplies the current discuss / plan / execute / verify / recovery action
 ```
 
-Every stop is persisted in `.forge/state/lifecycle.json` and GSD's `.planning` artifacts, so a new task resumes from files rather than inherited chat. `$forge-visual-production` runs alongside playable development once the shared art/gameplay interfaces exist. `$forge-gameplay-gauntlet` begins after there is a playable loop or stable in-engine presentation target.
+GSD's `.planning` artifacts are the sole phase authority. Forge Next reads them through GSD smart-entry and adds only Forge adoption/capability routing, so a new task resumes from files rather than inherited chat. The old `.forge/state/lifecycle.json` is compatibility history and must not drive work. `$forge-visual-production` runs alongside playable development once the shared art/gameplay interfaces exist. `$forge-gameplay-gauntlet` begins after there is a playable loop or stable in-engine presentation target.
 
 ## Repository layout
 
@@ -184,7 +178,7 @@ plugins/forge-ue-studio/               installable Codex plugin
   dependencies/                        capability and route declarations
   schemas/                             contracts for state and work packets
   assets/project-template/             reversible project overlay
-  scripts/forge.py                     survey/install/verify CLI
+  scripts/forge.py                     survey/next/install/verify CLI
 install.ps1                            Windows entry point
 scripts/validate_repo.py               repository validation
 tests/                                 standard-library tests
@@ -264,7 +258,7 @@ Forge applies a reversible project-local overlay:
   research/         approved sources and capability research
   reviews/          plan and result review state
   state/            work orders, install state, and lane leases
-                    lifecycle boundary and canonical packet registry
+                    bootstrap evidence and canonical packet registry
   visual/           visual-production registry
   config.json       project Forge policy
   directives.md     persistent operating rules
@@ -284,21 +278,20 @@ Forge does not replace your GDD, source tree, Content directory, `.uproject`, or
 | `Install` | Only with `-Apply` | Preview or apply the project-local Forge overlay. |
 | `Verify` | No | Check that the accepted overlay still matches Forge's template and rules. |
 | `Profile` | Only with `-Apply` | Refresh detected capabilities without granting qualification. |
+| `Next` | No | Combine Forge readiness with authoritative GSD smart-entry and return valid next actions. |
 | `Route` | No project mutation | Select a provider for a schema-valid route request using recorded qualification evidence. |
-| `Lifecycle` | Only with `-Apply` | Preview or persist a guarded Forge/GSD stage transition after required artifacts exist. |
+| `Lifecycle` | No | Read deprecated compatibility status only; transitions are rejected. |
 | `Validate` | No | Check a Forge JSON contract against its required top-level fields. |
 
 For `Install` and `Profile`, omitting `-Apply` is always the preview path.
 
-Inspect or advance the persisted boundary:
+Inspect the state-aware next action:
 
 ```powershell
-.\install.ps1 -Mode Lifecycle -ProjectPath "D:\Unreal Projects\MyGame"
-.\install.ps1 -Mode Lifecycle -ProjectPath "D:\Unreal Projects\MyGame" -LifecycleEvent plan-complete -Phase 1
-.\install.ps1 -Mode Lifecycle -ProjectPath "D:\Unreal Projects\MyGame" -LifecycleEvent plan-complete -Phase 1 -Apply
+.\install.ps1 -Mode Next -ProjectPath "D:\Unreal Projects\MyGame"
 ```
 
-Completion events fail closed when their GSD artifacts are missing. A successful manual completion event writes one `next_command` and requires a fresh task.
+The command is read-only. It returns a `forge.smart-entry/v1` snapshot and ordered actions; `$forge-next` presents and dispatches exactly one of them.
 
 ## Capability and tool behavior
 
@@ -348,7 +341,7 @@ Pass an existing directory or a full `.uproject` path. Pre-project directories a
 
 ### Forge tries to continue after a stop point
 
-Inspect `.forge/state/lifecycle.json`. If `requires_fresh_task` is `true`, do not continue in that task. Open a fresh project task and run the exact `next_command`. `$gsd-resume-work` remains the recovery entry point for an interrupted stage; it does not bypass Forge's next-stage boundary.
+Stop the current task. Open a fresh project task and run `$forge-next`. It reads GSD smart-entry state and routes paused, blocked, failed-verification, planning, execution, and verification situations without trusting prior chat or the deprecated Forge lifecycle mirror.
 
 ### A detected model, MCP, Blender, or Unreal route is not used
 

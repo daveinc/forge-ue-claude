@@ -1,6 +1,6 @@
 # RunnerRoyale lifecycle drift — 2026-08-15
 
-Status: root cause accepted; repair in progress  
+Status: root cause accepted; smart-entry repair implemented
 Severity: high  
 Affected surface: Forge bootstrap, Forge Init, phase handoff, worker dispatch, packet identity
 
@@ -41,12 +41,12 @@ The conversation transcript was not available as a versioned artifact, so the wo
 
 ## Root cause
 
-This was not primarily a naming mistake. Forge documented GSD compatibility but implemented a parallel, mostly prose lifecycle around it.
+This was not primarily a naming mistake. Forge documented GSD compatibility but lacked a Forge smart-entry command that could combine project adoption state with GSD's authoritative phase state.
 
 Three defects combined:
 
 1. **Bootstrap deadlock:** the overlay required a `.uproject`, while Forge Init was responsible for reaching the project-shell packet.
-2. **Missing lifecycle bridge:** Forge Init did not enter and exit through GSD's persisted project/phase commands and did not fail closed at context boundaries.
+2. **Missing smart entry:** Forge Init did not inspect GSD smart-entry or route existing documents/code before beginning inception, and there was no stable Forge resume command for fresh tasks.
 3. **Missing identity invariant:** later plans could replace canonical packet IDs without an explicit alias/derivation record.
 
 The absence of project-local agents explains why the expected studio delegation surface was also unavailable. The installation-agent wave table was descriptive, not executable orchestration.
@@ -63,16 +63,22 @@ The repair must satisfy all of the following:
 
 1. Install the Forge overlay into an existing pre-project directory before a `.uproject` exists.
 2. Make GSD's `.planning` lifecycle the only phase engine; Forge skills enrich phase artifacts but do not replace discuss, plan, execute, or verify.
-3. Persist a machine-readable Forge boundary with the exact next command and require a fresh task at manual boundaries.
+3. Add `$forge-next` as the machine-readable, read-only entry/resume router. It must combine Forge readiness with GSD smart-entry, dispatch exactly one command, and stop; GSD `.planning` remains the sole phase authority.
 4. Never auto-chain Forge Init into packet execution in manual mode.
 5. Keep Forge workflow step IDs and project packet IDs in separate namespaces.
 6. Register canonical packet IDs once; aliases and derived packets must preserve provenance and cannot silently replace them.
 7. Compile installation investigation into explicit bounded jobs and dispatch available typed agents when authorized; record any inline fallback as degraded execution.
-8. Add regression coverage for pre-project installation, lifecycle transitions, missing artifacts, canonical-ID conflicts, and route requests for unregistered packets.
+8. Add regression coverage for pre-project installation, smart-entry adoption/bootstrap/document/GSD routing, deprecated lifecycle mutation, canonical-ID conflicts, and route requests for unregistered packets.
+
+## Implemented correction
+
+- `$forge-next` now detects missing adoption, incomplete bootstrap, existing design documents, existing Unreal/code, greenfield readiness, and active GSD state.
+- `$forge-init` runs the detector first and dispatches its recommended action unless the project is truly greenfield-ready.
+- GSD `smart-entry --json` supplies phase, recovery, and completion actions. Forge normalizes command spelling but does not replace the decision.
+- `.forge/state/lifecycle.json` remains on disk for compatibility but is explicitly non-authoritative; mutation through the legacy lifecycle command is rejected.
 
 ## Untested before repair
 
 - Fresh-task Forge/GSD coexistence after the new boundary is installed.
 - Whether all Codex hosts expose typed project-local agents immediately or require a restart.
 - Full Unreal project-shell creation from the pre-project state.
-

@@ -1,8 +1,9 @@
 # Forge project directives
 
 - Keep GSD as the phase engine unless an extension-gap test proves a minimal fork necessary.
-- Treat GSD as the only phase state machine. Forge Init ends by handing off to `$gsd-discuss-phase 1`; each manual discuss, plan, execute and verify stage ends with a persisted lifecycle transition and a fresh-task stop.
-- Read `.forge/state/lifecycle.json` before work. When `requires_fresh_task` is true, present `next_command` and stop without running it in the current task.
+- Treat GSD as the only phase state machine. Obtain phase status and next actions from GSD smart-entry through `$forge-next`; never hardcode the next phase or plan number.
+- Use `$forge-next` after every fresh-task boundary, interruption, or uncertain handoff. It dispatches exactly one Forge/GSD action and stops.
+- Treat `.forge/state/lifecycle.json` as deprecated compatibility history, not an authority or mutation target.
 - Keep Forge Init step identifiers, GSD phase/plan identifiers and project work-packet identifiers in separate namespaces.
 - Register canonical project packet IDs in `.forge/state/packet-registry.json` before routing. Never replace a canonical ID; aliases require an explicit mapping and derived packets require provenance.
 - Do not mutate Unreal packages without the project write lane and a VCS-safe rollback route.

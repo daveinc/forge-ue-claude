@@ -63,6 +63,22 @@ class ForgeInstallerTests(unittest.TestCase):
         (project / "ExampleGame.uproject").write_text(json.dumps(data), encoding="utf-8")
         return project
 
+    def complete_bootstrap(self, project: Path) -> None:
+        report = {
+            "schema": "forge.bootstrap-report/v1",
+            "verdict": "PASS",
+            "jobs": [],
+            "delegation": {"mode": "test-fixture"},
+            "verified": [],
+            "assumed": [],
+            "unavailable": [],
+            "blocking": [],
+            "human_actions": [],
+            "evidence": [],
+            "next_action": "$forge-next",
+        }
+        (project / ".forge" / "state" / "bootstrap-report.json").write_text(json.dumps(report), encoding="utf-8")
+
     def test_survey_separates_detection_from_verification(self):
         with workspace_tempdir() as temp:
             project = self.make_project(temp)
@@ -211,58 +227,95 @@ class ForgeInstallerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unregistered work_order"):
                 forge.route_work(str(project), str(request_path))
 
-    def test_lifecycle_enforces_gsd_artifacts_and_fresh_task_handoffs(self):
+    def test_legacy_lifecycle_is_status_only_and_gsd_is_authoritative(self):
         with workspace_tempdir() as temp:
             project = temp / "LifecycleGame"
             project.mkdir()
             forge.install_overlay(str(project), apply=True)
 
-            initial = forge.lifecycle_state(str(project))["state"]
+            result = forge.lifecycle_state(str(project))
+            initial = result["state"]
+            self.assertTrue(result["deprecated"])
+            self.assertIn("GSD", result["authority"])
             self.assertTrue(initial["requires_fresh_task"])
             self.assertEqual(initial["next_command"], "$forge-bootstrap --resume")
+            with self.assertRaisesRegex(ValueError, "transitions are deprecated"):
+                forge.lifecycle_state(str(project), "bootstrap-start", apply=False)
 
-            forge.lifecycle_state(str(project), "bootstrap-start", apply=True)
-            with self.assertRaisesRegex(ValueError, "bootstrap is incomplete"):
-                forge.lifecycle_state(str(project), "bootstrap-complete", apply=True)
-            packet_registry = json.loads((project / ".forge" / "state" / "packet-registry.json").read_text(encoding="utf-8"))
-            report = {
-                "schema": "forge.bootstrap-report/v1",
-                "verdict": "PASS",
-                "jobs": [{"work_order": item["id"], "status": "NOT_APPLICABLE", "result": "unit-test fixture"} for item in packet_registry["packets"]],
-                "delegation": {"mode": "test-fixture"},
-                "verified": [],
-                "assumed": [],
-                "unavailable": [],
-                "blocking": [],
-                "human_actions": [],
-                "evidence": [],
-                "next_action": "$forge-init",
+    def test_forge_next_routes_adoption_bootstrap_and_greenfield(self):
+        with workspace_tempdir() as temp:
+            project = temp / "Greenfield"
+            project.mkdir()
+            gsd = {"ok": True, "error": "", "snapshot": {"situation": "no-project", "actions": []}}
+            self.assertEqual(forge.forge_next(str(project), gsd)["recommended"], "bootstrap")
+
+            forge.install_overlay(str(project), apply=True)
+            self.assertEqual(forge.forge_next(str(project), gsd)["recommended"], "bootstrap-resume")
+
+            self.complete_bootstrap(project)
+            result = forge.forge_next(str(project), gsd)
+            self.assertEqual(result["situation"], "greenfield-ready")
+            self.assertEqual(result["actions"][0]["command"], "$forge-init")
+            self.assertEqual(result["authority"]["phase_state"], "gsd")
+
+    def test_forge_next_routes_existing_docs_to_gsd_ingest(self):
+        with workspace_tempdir() as temp:
+            project = temp / "ExistingDesign"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+            self.complete_bootstrap(project)
+            design = project / "Docs" / "Design"
+            design.mkdir(parents=True)
+            (design / "Foundation-Plan.md").write_text("# Existing plan\n", encoding="utf-8")
+            gsd = {"ok": True, "error": "", "snapshot": {"situation": "no-project", "actions": []}}
+            result = forge.forge_next(str(project), gsd)
+            self.assertEqual(result["situation"], "existing-design-unplanned")
+            self.assertEqual(result["actions"][0]["command"], '$gsd-ingest-docs "Docs\\Design"')
+
+    def test_forge_next_routes_existing_unreal_project_to_gsd_onboard(self):
+        with workspace_tempdir() as temp:
+            project = self.make_project(temp)
+            forge.install_overlay(str(project), apply=True)
+            self.complete_bootstrap(project)
+            gsd = {"ok": True, "error": "", "snapshot": {"situation": "no-project", "actions": []}}
+            result = forge.forge_next(str(project), gsd)
+            self.assertEqual(result["situation"], "existing-project-unplanned")
+            self.assertEqual(result["actions"][0]["command"], "$gsd-onboard")
+
+    def test_forge_next_preserves_gsd_smart_entry_as_phase_authority(self):
+        with workspace_tempdir() as temp:
+            project = temp / "PlannedGame"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+            self.complete_bootstrap(project)
+            (project / ".planning").mkdir()
+            gsd = {
+                "ok": True,
+                "error": "",
+                "snapshot": {
+                    "situation": "executing",
+                    "summary": "Phase 2 of 5 - executing",
+                    "actions": [
+                        {"id": "progress-next", "label": "Advance", "command": "/gsd:progress --next", "recommended": True},
+                        {"id": "execute-phase", "label": "Continue", "command": "$gsd-execute-phase", "recommended": False},
+                    ],
+                },
             }
-            (project / ".forge" / "state" / "bootstrap-report.json").write_text(json.dumps(report), encoding="utf-8")
-            completed_bootstrap = forge.lifecycle_state(str(project), "bootstrap-complete", apply=True)["state"]
-            self.assertEqual(completed_bootstrap["next_command"], "$forge-init")
-            self.assertTrue(completed_bootstrap["requires_fresh_task"])
+            result = forge.forge_next(str(project), gsd)
+            self.assertEqual(result["situation"], "gsd-executing")
+            self.assertEqual(result["recommended"], "progress-next")
+            self.assertEqual(result["actions"][0]["command"], "$gsd-progress --next")
+            self.assertEqual(result["gsd_snapshot"]["situation"], "executing")
 
-            forge.lifecycle_state(str(project), "init-start", apply=True)
-            with self.assertRaisesRegex(ValueError, "project initialization is incomplete"):
-                forge.lifecycle_state(str(project), "init-complete", apply=True)
-            planning = project / ".planning"
-            planning.mkdir()
-            for name in ("PROJECT.md", "ROADMAP.md", "STATE.md"):
-                (planning / name).write_text(f"# {name}\n", encoding="utf-8")
-            initialized = forge.lifecycle_state(str(project), "init-complete", apply=True)["state"]
-            self.assertEqual(initialized["stage"], "discuss")
-            self.assertEqual(initialized["next_command"], "$gsd-discuss-phase 1")
-            self.assertTrue(initialized["requires_fresh_task"])
-
-            forge.lifecycle_state(str(project), "discuss-start", phase=1, apply=True)
-            phase = planning / "phases" / "01-foundation"
-            phase.mkdir(parents=True)
-            with self.assertRaisesRegex(ValueError, "no CONTEXT.md"):
-                forge.lifecycle_state(str(project), "discuss-complete", phase=1, apply=True)
-            (phase / "01-CONTEXT.md").write_text("# Context\n", encoding="utf-8")
-            planned = forge.lifecycle_state(str(project), "discuss-complete", phase=1, apply=True)["state"]
-            self.assertEqual(planned["next_command"], "$gsd-plan-phase 1")
+    def test_forge_next_does_not_route_to_missing_gsd(self):
+        with workspace_tempdir() as temp:
+            project = temp / "MissingGsd"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+            self.complete_bootstrap(project)
+            result = forge.forge_next(str(project), {"ok": False, "error": "runtime missing", "snapshot": None})
+            self.assertEqual(result["situation"], "gsd-unavailable")
+            self.assertEqual(result["actions"][0]["command"], "$forge-doctor")
 
     def test_packet_registry_has_unique_canonical_ids(self):
         registry_path = ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state" / "packet-registry.json"

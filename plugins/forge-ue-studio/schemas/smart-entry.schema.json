@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.smart-entry/v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "project",
+    "situation",
+    "summary",
+    "recommended",
+    "actions",
+    "signals",
+    "authority",
+    "dispatch_contract"
+  ],
+  "properties": {
+    "schema": {"const": "forge.smart-entry/v1"},
+    "project": {"type": "string"},
+    "situation": {"type": "string"},
+    "summary": {"type": "string"},
+    "recommended": {"type": ["string", "null"]},
+    "actions": {"type": "array"},
+    "signals": {"type": "object"},
+    "authority": {"type": "object"},
+    "gsd_snapshot": {"type": ["object", "null"]},
+    "gsd_error": {"type": "string"},
+    "dispatch_contract": {"const": "choose exactly one action, dispatch it, then stop"}
+  }
+}

@@ -1,28 +1,21 @@
 # GSD lifecycle bridge
 
-Forge uses GSD's phase files and stop points directly. In manual mode, each row is a separate fresh Codex task.
+GSD owns project and phase state. Forge reads GSD's state through `$forge-next`; it does not mirror or advance the phase machine.
 
-| Task | Entry command | Forge lifecycle start | Required durable result | Forge lifecycle complete | Stop handoff |
-|---:|---|---|---|---|---|
-| 1 | `$forge-init` | `init-start` | `.planning/PROJECT.md`, `ROADMAP.md`, `STATE.md`; Forge GDD/DAG/registries | `init-complete` | `$gsd-discuss-phase 1` |
-| 2 | `$gsd-discuss-phase N` | `discuss-start -Phase N` | phase `CONTEXT.md` plus GSD checkpoint/state update | `discuss-complete -Phase N` | `$gsd-plan-phase N` |
-| 3 | `$gsd-plan-phase N` | `plan-start -Phase N` | verified phase `PLAN.md`, `STATE.md`, `ROADMAP.md` | `plan-complete -Phase N` | `$gsd-execute-phase N` |
-| 4 | `$gsd-execute-phase N` | `execute-start -Phase N` | per-plan `SUMMARY.md`, commits and evidence from fresh executors | `execute-complete -Phase N` | `$gsd-verify-work N` |
-| 5 | `$gsd-verify-work N` | `verify-start -Phase N` | completed phase `UAT.md` | `verify-complete -Phase N` | `$gsd-progress` and user decision |
+| Situation | Authoritative durable state | Resume entry |
+|---|---|---|
+| Forge not adopted | project files and Forge detector | `$forge-next` routes to `$forge-bootstrap` |
+| Forge bootstrap incomplete | `.forge/state/bootstrap-report.json` and capability evidence | `$forge-next` routes to `$forge-bootstrap --resume` |
+| Existing docs without GSD state | source planning/design docs | `$forge-next` routes to `$gsd-ingest-docs` |
+| Existing Unreal/code without GSD state | `.uproject`, `Source/`, repository evidence | `$forge-next` routes to `$gsd-onboard` |
+| GSD project active or interrupted | `.planning/STATE.md`, roadmap, phase artifacts, GSD smart-entry snapshot | `$forge-next` dispatches the exact GSD action |
+| Greenfield bootstrap complete | Forge readiness with no existing project corpus | `$forge-next` routes to `$forge-init` |
 
-The lifecycle command is:
-
-```powershell
-.\install.ps1 -Mode Lifecycle -ProjectPath <project> -LifecycleEvent <event> -Phase <N> -Apply
-```
-
-`-Phase` is omitted for bootstrap/init events. Preview without `-Apply` before each mutation when operating manually.
+The legacy `install.ps1 -Mode Lifecycle` surface is status-only compatibility. Never use it to advance a Forge or GSD phase.
 
 ## Stop contract
 
-When a complete event succeeds, `.forge/state/lifecycle.json` sets `requires_fresh_task: true` and records one exact `next_command`. The current task must return that command and stop. It must not call the next skill, dispatch its workers, or make more project changes.
-
-GSD may maintain its own incremental checkpoints inside a task. Forge's boundary does not replace them. `$gsd-pause-work` remains the mid-stage emergency handoff and `$gsd-resume-work` remains the general session recovery command.
+GSD commands own their stop points and incremental checkpoints. At every explicit fresh-task boundary, persist the active command's artifacts, stop, and use `$forge-next` in the new task. `$gsd-pause-work` remains the mid-stage emergency handoff; Forge Next then detects the paused state through GSD smart-entry.
 
 ## Execution delegation
 

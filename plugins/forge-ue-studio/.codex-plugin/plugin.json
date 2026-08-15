@@ -1,6 +1,6 @@
 {
   "name": "forge-ue-studio",
-  "version": "0.1.0+codex.20260815115045",
+  "version": "0.1.0+codex.20260815122027",
   "description": "Codex-resident, capability-routed, GSD-compatible Unreal production orchestration.",
   "author": {
     "name": "Dave"
@@ -25,6 +25,7 @@
       "Write"
     ],
     "defaultPrompt": [
+      "Use Forge Next to inspect this project and route the correct next action.",
       "Turn my game idea into a Forge production plan.",
       "Survey and qualify this project's capability routes.",
       "Converge, route, and verify the next production phase."

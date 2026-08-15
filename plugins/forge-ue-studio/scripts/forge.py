@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only Forge survey plus a reversible, no-download project overlay installer."""
+"""Forge survey, state-aware routing, and reversible project overlay installer."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ SCHEMA_FILES = {
     "research-record": "research-record.schema.json",
     "review-cycle": "review-cycle.schema.json",
     "route-request": "route-request.schema.json",
+    "smart-entry": "smart-entry.schema.json",
     "work-packet": "work-packet.schema.json",
 }
 
@@ -90,6 +91,202 @@ def command_probe(command: list[str], timeout: int = 8) -> dict[str, Any]:
         "exit_code": completed.returncode,
         "output": output,
         "error": actionable_error,
+    }
+
+
+def gsd_runtime(root: Path) -> tuple[str | None, str | None]:
+    """Return the executable and runtime script for the installed GSD engine."""
+    runtime_candidates = [
+        root / "gsd-core" / "bin" / "gsd-tools.cjs",
+        root / ".codex" / "gsd-core" / "bin" / "gsd-tools.cjs",
+        Path.home() / ".codex" / "gsd-core" / "bin" / "gsd-tools.cjs",
+    ]
+    node = executable("node", "node.exe")
+    if node:
+        for candidate in runtime_candidates:
+            if candidate.is_file():
+                return node, str(candidate.resolve())
+    cli = executable("gsd-tools", "gsd-tools.cmd", "gsd-tools.exe")
+    return (cli, None) if cli else (None, None)
+
+
+def gsd_smart_entry(root: Path) -> dict[str, Any]:
+    """Read GSD's authoritative project state without mutating the project."""
+    runner, script = gsd_runtime(root)
+    if not runner:
+        return {"ok": False, "error": "GSD runtime was not found", "snapshot": None}
+    command = [runner, script, "smart-entry", "--json"] if script else [runner, "smart-entry", "--json"]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=root,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=15,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "error": str(exc), "snapshot": None, "command": command}
+    if completed.returncode != 0:
+        error = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+        return {"ok": False, "error": error, "snapshot": None, "command": command}
+    try:
+        snapshot = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        return {"ok": False, "error": f"GSD smart-entry returned invalid JSON: {exc}", "snapshot": None, "command": command}
+    if not isinstance(snapshot, dict) or not isinstance(snapshot.get("actions"), list):
+        return {"ok": False, "error": "GSD smart-entry returned no actions", "snapshot": None, "command": command}
+    return {"ok": True, "error": "", "snapshot": snapshot, "command": command}
+
+
+def normalize_gsd_command(command: str) -> str:
+    """Translate legacy slash command spelling into installed Codex skill spelling."""
+    match = re.match(r"^/gsd:([a-z0-9-]+)(.*)$", command.strip())
+    return f"$gsd-{match.group(1)}{match.group(2)}" if match else command.strip()
+
+
+def forge_action(action_id: str, label: str, command: str, recommended: bool = False, reason: str = "") -> dict[str, Any]:
+    return {
+        "id": action_id,
+        "label": label,
+        "command": normalize_gsd_command(command),
+        "recommended": recommended,
+        "reason": reason,
+    }
+
+
+def design_sources(root: Path) -> list[str]:
+    candidates = [root / "Docs" / "Design", root / "docs" / "design", root / "Design"]
+    found: list[str] = []
+    seen: set[str] = set()
+    for directory in candidates:
+        resolved = str(directory.resolve())
+        key = resolved.casefold()
+        if key not in seen and directory.is_dir() and any(path.is_file() for path in directory.rglob("*.md")):
+            found.append(resolved)
+            seen.add(key)
+    return found
+
+
+def bootstrap_is_complete(root: Path) -> bool:
+    report_path = root / ".forge" / "state" / "bootstrap-report.json"
+    detected_path = root / ".forge" / "capabilities" / "detected.json"
+    if not report_path.is_file() or not detected_path.is_file():
+        return False
+    try:
+        report = load_json(report_path)
+    except ValueError:
+        return False
+    return report.get("verdict") in {"PASS", "DEGRADED_ACCEPTED"} and not report.get("blocking")
+
+
+def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Combine Forge adoption readiness with GSD's authoritative smart-entry snapshot."""
+    root, uproject = project_root(project_value)
+    overlay = (root / ".forge" / "config.json").is_file() and (root / ".forge" / "directives.md").is_file()
+    bootstrap_complete = bootstrap_is_complete(root)
+    planning = root / ".planning"
+    has_planning = planning.is_dir()
+    sources = design_sources(root)
+    has_code = bool(uproject or (root / "Source").is_dir())
+    gsd = gsd_result if gsd_result is not None else gsd_smart_entry(root)
+    snapshot = gsd.get("snapshot") if isinstance(gsd, dict) else None
+
+    signals = {
+        "forge_overlay": overlay,
+        "forge_bootstrap_complete": bootstrap_complete,
+        "has_planning": has_planning,
+        "has_uproject": bool(uproject),
+        "has_source": (root / "Source").is_dir(),
+        "design_sources": sources,
+        "gsd_available": bool(isinstance(gsd, dict) and gsd.get("ok")),
+    }
+
+    if not overlay:
+        situation = "forge-not-adopted"
+        summary = "Forge is not adopted in this directory; install the project overlay before resuming work."
+        actions = [
+            forge_action("bootstrap", "Adopt this project with Forge", "$forge-bootstrap", True, "Creates the reversible project-local control plane, then stops for a fresh task."),
+            forge_action("doctor", "Inspect the environment", "$forge-doctor", False, "Read-only capability and dependency diagnosis."),
+        ]
+    elif not bootstrap_complete:
+        situation = "forge-bootstrap-incomplete"
+        summary = "Forge is present, but bootstrap evidence is incomplete; resume bootstrap before project work."
+        actions = [
+            forge_action("bootstrap-resume", "Resume Forge bootstrap", "$forge-bootstrap --resume", True, "Completes capability inventory, delegated checks, verification, and the persisted report."),
+            forge_action("doctor", "Inspect the environment", "$forge-doctor", False, "Read-only diagnosis before resuming bootstrap."),
+        ]
+    elif not isinstance(gsd, dict) or not gsd.get("ok"):
+        situation = "gsd-unavailable"
+        summary = "Forge bootstrap was previously accepted, but GSD smart-entry is not currently available."
+        actions = [
+            forge_action("doctor", "Repair or inspect GSD", "$forge-doctor", True, str(gsd.get("error", "GSD state unavailable")) if isinstance(gsd, dict) else "Invalid GSD result"),
+            forge_action("bootstrap-resume", "Re-evaluate Forge bootstrap", "$forge-bootstrap --resume", False, "Refresh stale dependency evidence after GSD changes."),
+        ]
+    elif has_planning:
+        if isinstance(snapshot, dict) and snapshot.get("actions"):
+            situation = f"gsd-{snapshot.get('situation', 'unknown')}"
+            summary = str(snapshot.get("summary") or "GSD project state detected.")
+            actions = []
+            for index, item in enumerate(snapshot["actions"]):
+                if not isinstance(item, dict) or not item.get("command"):
+                    continue
+                actions.append(
+                    forge_action(
+                        str(item.get("id") or f"gsd-action-{index + 1}"),
+                        str(item.get("label") or item["command"]),
+                        str(item["command"]),
+                        bool(item.get("recommended")),
+                        "Authoritative route from GSD smart-entry.",
+                    )
+                )
+            if actions and not any(action["recommended"] for action in actions):
+                actions[0]["recommended"] = True
+        else:
+            situation = "gsd-unavailable"
+            summary = "GSD planning state exists, but its smart-entry runtime could not be read safely."
+            actions = [
+                forge_action("doctor", "Repair or inspect GSD", "$forge-doctor", True, str(gsd.get("error", "GSD state unavailable"))),
+                forge_action("gsd-health", "Inspect GSD planning health", "$gsd-health", False, "Use only if the GSD skill surface is available."),
+            ]
+    elif sources:
+        source_arg = str(Path(sources[0]).relative_to(root))
+        situation = "existing-design-unplanned"
+        summary = "Existing design documents were found, but GSD project memory has not been created."
+        actions = [
+            forge_action("ingest-docs", "Ingest existing design documents", f'$gsd-ingest-docs "{source_arg}"', True, "Preserves existing decisions and detects conflicts before planning."),
+            forge_action("onboard", "Onboard the existing project", "$gsd-onboard", False, "Use when codebase mapping should precede document ingestion."),
+        ]
+    elif has_code:
+        situation = "existing-project-unplanned"
+        summary = "An existing Unreal/code project was found without GSD project memory."
+        actions = [
+            forge_action("onboard", "Onboard the existing project", "$gsd-onboard", True, "Maps the codebase and establishes GSD planning state."),
+            forge_action("ingest-docs", "Ingest project documents", "$gsd-ingest-docs", False, "Use when authoritative planning documents exist outside the standard design folders."),
+        ]
+    else:
+        situation = "greenfield-ready"
+        summary = "Forge bootstrap is complete and no existing GSD project, design corpus, or Unreal source was found."
+        actions = [
+            forge_action("forge-init", "Start Forge project inception", "$forge-init", True, "Begins the design interview and creates canonical GSD project memory."),
+            forge_action("gsd-new-project", "Start with GSD project discovery", "$gsd-new-project", False, "Use when Forge-specific design inception is not needed."),
+        ]
+
+    recommended = next((action["id"] for action in actions if action["recommended"]), actions[0]["id"] if actions else None)
+    return {
+        "schema": "forge.smart-entry/v1",
+        "project": str(root),
+        "situation": situation,
+        "summary": summary,
+        "recommended": recommended,
+        "actions": actions,
+        "signals": signals,
+        "authority": {"phase_state": "gsd", "forge_scope": "adoption-capability-routing"},
+        "gsd_snapshot": snapshot,
+        "gsd_error": "" if gsd.get("ok") else str(gsd.get("error", "")),
+        "dispatch_contract": "choose exactly one action, dispatch it, then stop",
     }
 
 
@@ -529,9 +726,9 @@ def install_overlay(project_value: str, apply: bool) -> dict[str, Any]:
         "optional_changes_applied": [],
         "next": [
             "Stop and open a fresh Codex task in the project so AGENTS.md, project agents, and state are loaded.",
-            "Run $forge-bootstrap --resume to delegate installation investigation and persist its report.",
+            "Run $forge-next; it will detect the incomplete bootstrap and route to $forge-bootstrap --resume.",
             "Review .forge/capabilities/detected.json; detection does not qualify optional providers.",
-            "After bootstrap's next fresh-task handoff, run $forge-init for GSD-backed project inception.",
+            "After every fresh-task boundary, run $forge-next to recover from persisted Forge and GSD state.",
         ],
     }
 
@@ -634,7 +831,14 @@ def lifecycle_state(project_value: str, event: str = "status", phase: int | None
         raise ValueError("Forge lifecycle state is missing; apply the project overlay first")
     state = load_json(path)
     if event == "status":
-        return {"mode": "read-only", "path": str(path), "state": state}
+        return {
+            "mode": "read-only",
+            "path": str(path),
+            "state": state,
+            "deprecated": True,
+            "authority": "GSD .planning state via $forge-next",
+        }
+    raise ValueError("Forge lifecycle transitions are deprecated; use $forge-next and let GSD own phase state")
     if event not in LIFECYCLE_EVENTS:
         raise ValueError(f"Unknown lifecycle event: {event}")
 
@@ -834,7 +1038,7 @@ def emit(data: dict[str, Any], output: str | None) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("survey", "install", "verify", "profile"):
+    for name in ("survey", "install", "verify", "profile", "next"):
         command = sub.add_parser(name)
         command.add_argument("--project", required=True)
         command.add_argument("--output")
@@ -852,7 +1056,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--output")
     lifecycle = sub.add_parser("lifecycle")
     lifecycle.add_argument("--project", required=True)
-    lifecycle.add_argument("--event", default="status", choices=["status", *sorted(LIFECYCLE_EVENTS)])
+    lifecycle.add_argument("--event", default="status", choices=["status"])
     lifecycle.add_argument("--phase", type=int)
     lifecycle.add_argument("--apply", action="store_true")
     lifecycle.add_argument("--output")
@@ -870,6 +1074,8 @@ def main(argv: list[str] | None = None) -> int:
             result = verify_overlay(args.project)
         elif args.command == "profile":
             result = write_profile(args.project, apply=bool(args.apply))
+        elif args.command == "next":
+            result = forge_next(args.project)
         elif args.command == "route":
             result = route_work(args.project, args.request)
         elif args.command == "lifecycle":

@@ -9,7 +9,7 @@ Use Codex as the resident occupant and supervisor. Select optional local/remote 
 
 ## Dispatch workflow
 
-1. Load the approved GDD decision IDs, GSD phase/plan state, `.forge/state/lifecycle.json`, canonical packet registry, dependency DAG, current revision, capability/qualification/activation registries, lane leases, budgets, and acceptance registry. Routing is permitted only while the GSD lifecycle is in the matching active execution stage (or an explicitly read-only bootstrap job).
+1. Load the approved GDD decision IDs, authoritative GSD `.planning` phase/plan state, canonical packet registry, dependency DAG, current revision, capability/qualification/activation registries, lane leases, budgets, and acceptance registry. Routing is permitted only when GSD reports the matching active execution stage (or for an explicitly read-only bootstrap job). Ignore `.forge/state/lifecycle.json` as deprecated compatibility history.
 2. Finish or unblock in-flight work before opening avoidable new work.
 3. Find ready work with satisfied hard prerequisites and disjoint write sets.
 4. Keep design, gameplay, visual, audio, research, and QA lanes concurrent once their contracts exist.

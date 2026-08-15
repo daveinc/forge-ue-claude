@@ -87,7 +87,7 @@ Forge uses each Codex surface for the job it actually fits:
 
 Codex officially loads skills progressively and supports project-scoped custom agents. Forge uses those native mechanisms instead of emulating a second agent runtime inside prompts.
 
-GSD is not merely a compatible artifact format. It is the only phase state machine. Forge installs its project overlay before a `.uproject` exists, bootstraps capabilities in a fresh task, uses GSD to create `.planning` project memory, and then stops between discuss, plan, execute and verify tasks. Each boundary is mirrored in `.forge/state/lifecycle.json` with one exact next command; Forge skills cannot auto-chain across a manual boundary.
+GSD is not merely a compatible artifact format. It is the only phase state machine. Forge installs its project overlay before a `.uproject` exists, bootstraps capabilities in a fresh task, and uses `$forge-next` to combine Forge readiness with GSD smart-entry. GSD's `.planning` artifacts remain authoritative at every discuss, plan, execute, verify, pause, failure, and completion boundary; Forge does not mirror the phase pointer or auto-chain across a manual boundary.
 
 Forge workflow controls, GSD phase/plan IDs and project production packets occupy separate namespaces. Canonical project packet IDs are registered once and remain immutable. A later plan may add a provenance-bearing child or an explicit alias, but it may not silently replace `P0` with `W1` and describe that packet as a Forge step.
 
@@ -131,6 +131,7 @@ forge-ue-studio/
   .codex-plugin/plugin.json
   skills/
     forge-bootstrap/SKILL.md
+    forge-next/SKILL.md
     forge-init/SKILL.md
     forge-doctor/SKILL.md
     forge-discuss-game/SKILL.md

@@ -1,6 +1,6 @@
 ---
 name: forge-init
-description: Start or adopt an Unreal game project through a structured design interview, compact GDD, visual direction, capability-aware planning, and parallel playable/visual work DAGs. Use when a user presents a new game idea, wants Forge added to an existing project, or asks to begin full game production.
+description: Start a greenfield Unreal game through a structured design interview, compact GDD, visual direction, capability-aware planning, and parallel playable/visual work DAGs, while safely routing existing or partial projects to their persisted next action. Use when a user presents a new game idea, asks to begin full game production, or invokes Forge Init in a directory whose state must be detected before inception.
 ---
 
 # Forge Init
@@ -9,10 +9,11 @@ Turn an idea into approved, schedulable studio work, then hand control to GSD's 
 
 ## Entry gate
 
-1. Read the project `AGENTS.md`, `.forge/state/lifecycle.json`, `.forge/state/packet-registry.json`, `.forge/directives.md`, and `.planning/STATE.md` if present.
-2. If the Forge overlay or completed bootstrap is absent, route to `$forge-bootstrap` and stop.
-3. The lifecycle must name `$forge-init` as `next_command`. Apply `init-start`; do not edit lifecycle JSON by hand.
-4. If `.planning/PROJECT.md` is absent, run `$gsd-new-project` without `--auto` as the canonical project/requirements/roadmap initialization workflow. Preserve all of its questions, agent dispatch, approvals, commits and state files. Forge artifacts link to GSD decisions; they do not create a competing phase engine. Even when the user later chooses autonomous execution, Forge's persisted fresh-task boundaries remain mandatory.
+1. Run the bundled `scripts/forge.py next --project <root>` detector before interpreting or changing project state.
+2. If its recommended action is not `$forge-init`, dispatch that one action and **STOP**. This includes Forge adoption/bootstrap, GSD document ingestion, existing-code onboarding, recovery, remediation, and resuming a partially completed GSD phase.
+3. Continue below only when the detector reports `greenfield-ready` and recommends `$forge-init`. Do not recursively invoke Forge Init.
+4. Read the project `AGENTS.md`, `.forge/state/packet-registry.json`, `.forge/directives.md`, and current `.planning` artifacts. Treat `.planning` and GSD's smart-entry snapshot as the only phase authority; `.forge/state/lifecycle.json` is deprecated compatibility history.
+5. Run `$gsd-new-project` without `--auto` as the canonical project/requirements/roadmap initialization workflow. Preserve all of its questions, agent dispatch, approvals, commits, state files, and stop points. Forge artifacts link to GSD decisions; they do not create a competing phase engine.
 
 ## Workflow
 
@@ -25,8 +26,8 @@ Turn an idea into approved, schedulable studio work, then hand control to GSD's 
 7. Obtain human approval for the primary visual direction. Create replacement-safe asset interfaces for scale, skeleton, sockets, collision, material slots, animation events, and budgets.
 8. Compile concurrent playable, visual, narrative, audio, research and QA workstreams. Synchronize them only through explicit requirements, accepted decisions and asset interfaces. Register each canonical packet ID once in `.forge/state/packet-registry.json`; later plans must reuse it. An alias requires an explicit alias record, and a genuinely new packet requires `derived_from` provenance.
 9. Run `$forge-plan-convergence` on the inception/roadmap artifacts. Do **not** dispatch a walking-skeleton packet from Forge Init.
-10. Apply lifecycle event `init-complete`. This must verify `.planning/PROJECT.md`, `.planning/ROADMAP.md`, and `.planning/STATE.md` and persist `$gsd-discuss-phase 1` as the next command.
-11. **STOP.** Require a fresh project task and present only the persisted next command. Do not invoke phase discussion, planning, routing, implementation or verification in the Forge Init task.
+10. Run `scripts/forge.py next --project <root>` again after inception artifacts are persisted. It must obtain the next phase action from GSD smart-entry rather than hardcoding a phase number or command.
+11. **STOP.** Require a fresh project task and present `$forge-next` as the stable resume entry plus the detected recommended action for transparency. Do not invoke phase discussion, planning, routing, implementation or verification in the Forge Init task.
 
 Read [project-inception.md](references/project-inception.md) when conducting the interview or compiling the two DAGs.
 Read [gsd-lifecycle.md](references/gsd-lifecycle.md) before completing inception or describing the next step.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Forge Next"
+  short_description: "Detect Forge and GSD state, then route one next action"
+  default_prompt: "Use $forge-next to inspect this project and route me to the correct next Forge or GSD action."

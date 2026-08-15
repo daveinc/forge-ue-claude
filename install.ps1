@@ -1,15 +1,15 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Route', 'Lifecycle', 'Validate')]
+    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'Route', 'Lifecycle', 'Validate')]
     [string]$Mode = 'Plugin',
     [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$GsdVersion = '1.8.0',
     [string]$ProjectPath,
     [string]$RequestPath,
-    [ValidateSet('attempt-result', 'bootstrap-report', 'capability-contract', 'lane-lease', 'lifecycle-state', 'learning-record', 'packet-registry', 'provider-evaluation', 'research-record', 'review-cycle', 'route-request', 'work-packet')]
+    [ValidateSet('attempt-result', 'bootstrap-report', 'capability-contract', 'lane-lease', 'lifecycle-state', 'learning-record', 'packet-registry', 'provider-evaluation', 'research-record', 'review-cycle', 'route-request', 'smart-entry', 'work-packet')]
     [string]$ContractKind,
     [string]$InputPath,
-    [ValidateSet('status', 'bootstrap-start', 'bootstrap-complete', 'init-start', 'init-complete', 'discuss-start', 'discuss-complete', 'plan-start', 'plan-complete', 'execute-start', 'execute-complete', 'verify-start', 'verify-complete', 'next-phase', 'project-complete')]
+    [ValidateSet('status')]
     [string]$LifecycleEvent = 'status',
     [int]$Phase,
     [switch]$Apply,
@@ -120,7 +120,7 @@ if ($Mode -eq 'GSD') {
 }
 
 if ($Mode -ne 'Validate' -and -not $ProjectPath) {
-    throw '-ProjectPath is required for Survey, Install, Verify, Profile, Route, and Lifecycle modes.'
+    throw '-ProjectPath is required for Survey, Install, Verify, Profile, Next, Route, and Lifecycle modes.'
 }
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {

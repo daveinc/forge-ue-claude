@@ -16,9 +16,10 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 ## Forge phase contract
 
 - GSD is the only phase engine. Forge enriches GSD artifacts and routes bounded work; it does not replace the discuss → plan → execute → verify sequence.
-- Read `.forge/state/lifecycle.json`, `.planning/STATE.md`, and the active GSD phase artifacts before production work.
-- When `requires_fresh_task` is true, show `next_command` and stop. Do not run that command, edit files, or dispatch the next stage in the current task.
-- Run Forge lifecycle transitions through `install.ps1 -Mode Lifecycle`; do not edit lifecycle state by hand.
+- Use `$forge-next` as the normal Forge entry and resume command. It combines Forge readiness with GSD `smart-entry` and dispatches exactly one action.
+- Read `.planning/STATE.md` and the active GSD phase artifacts before production work. GSD's `.planning` tree is authoritative.
+- Treat `.forge/state/lifecycle.json` as deprecated compatibility history only. Never use or edit it as a phase router.
+- Honor every GSD stop/handoff boundary. Start a fresh task and run `$forge-next`; do not auto-chain the next stage in the task that completed the prior stage.
 - Keep Forge workflow steps (`FI-*`) distinct from canonical project packet IDs. Register packet IDs once in `.forge/state/packet-registry.json`.
 - Never rename or replace a canonical packet ID. A new alias needs an explicit `alias → canonical` record; a genuinely new packet needs `derived_from` provenance.
 - Route execution only for registered work orders. Use typed GSD/Forge agents when the active runtime exposes them and the user authorized delegation; record inline fallback as degraded execution.
