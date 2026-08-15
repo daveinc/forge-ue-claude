@@ -3,7 +3,11 @@
   "policy": {
     "surface": "forge",
     "unmapped_action": "fail",
-    "note": "Forge owns the entire user-facing vocabulary. GSD is never addressed directly and is never edited or copied — it is invoked in place so upstream fixes arrive for free. This registry is the single boundary where GSD's structured command emissions become Forge verbs."
+    "note": "Forge owns the entire user-facing vocabulary. GSD is never addressed directly and is never edited or copied \u2014 it is invoked in place so upstream fixes arrive for free. This registry is the single boundary where GSD's structured command emissions become Forge verbs.",
+    "dispositions": {
+      "front": "A Forge verb fronts this GSD command.",
+      "drop": "Deliberately outside Forge's surface. Suppressed from routed actions with a recorded reason, never shown as an unmapped leak."
+    }
   },
   "delegation_modes": {
     "contain": "Forge spawns a subagent that reads and follows the stock GSD workflow on disk and returns a structured result. The transcript never reaches the user, so GSD's own command strings cannot leak.",
@@ -16,210 +20,462 @@
       "gsd": "gsd-next",
       "gsd_workflow": "smart-entry.md",
       "delegation": "native",
-      "adaptation": "Forge reads gsd_run smart-entry directly and adds adoption, runtime, and capability routing."
+      "adaptation": "Forge reads gsd_run smart-entry directly and adds adoption, runtime, and capability routing.",
+      "disposition": "front"
     },
     {
       "forge": "forge-init",
       "gsd": "gsd-new-project",
       "gsd_workflow": "new-project.md",
       "delegation": "relay",
-      "adaptation": "Game inception interview and GDD decision ledger precede GSD project memory creation."
+      "adaptation": "Game inception interview and GDD decision ledger precede GSD project memory creation.",
+      "disposition": "front"
     },
     {
       "forge": "forge-discuss-phase",
       "gsd": "gsd-discuss-phase",
       "gsd_workflow": "discuss-phase.md",
       "delegation": "relay",
-      "adaptation": "Questions are reframed around gameplay pillars, art/gameplay interfaces, and lane ownership."
+      "adaptation": "Questions are reframed around gameplay pillars, art/gameplay interfaces, and lane ownership.",
+      "disposition": "front"
     },
     {
       "forge": "forge-plan-phase",
       "gsd": "gsd-plan-phase",
       "gsd_workflow": "plan-phase.md",
       "delegation": "contain",
-      "adaptation": "Plans must declare asset interfaces, required lanes, and mutation risk for routing."
+      "adaptation": "Plans must declare asset interfaces, required lanes, and mutation risk for routing.",
+      "disposition": "front"
     },
     {
       "forge": "forge-execute-phase",
       "gsd": "gsd-execute-phase",
       "gsd_workflow": "execute-phase.md",
       "delegation": "contain",
-      "adaptation": "Acquires the Unreal project write-lock and lane leases before dispatch; releases them after."
+      "adaptation": "Acquires the Unreal project write-lock and lane leases before dispatch; releases them after.",
+      "disposition": "front"
     },
     {
       "forge": "forge-verify-work",
       "gsd": "gsd-verify-work",
       "gsd_workflow": "verify-work.md",
       "delegation": "relay",
-      "adaptation": "Requires in-engine evidence (PIE, frame capture) in addition to GSD's UAT predicate."
+      "adaptation": "Requires in-engine evidence (PIE, frame capture) in addition to GSD's UAT predicate.",
+      "disposition": "front"
     },
     {
       "forge": "forge-progress",
       "gsd": "gsd-progress",
       "gsd_workflow": "progress.md",
       "delegation": "contain",
-      "adaptation": "Adds execution-coverage and capability-staleness reporting."
+      "adaptation": "Adds execution-coverage and capability-staleness reporting.",
+      "disposition": "front"
     },
     {
       "forge": "forge-phase",
       "gsd": "gsd-phase",
       "gsd_workflow": "add-phase.md",
       "delegation": "contain",
-      "adaptation": "Canonical packet IDs must be preserved across phase CRUD."
+      "adaptation": "Canonical packet IDs must be preserved across phase CRUD.",
+      "disposition": "front"
     },
     {
       "forge": "forge-milestone",
       "gsd": "gsd-complete-milestone",
       "gsd_workflow": "complete-milestone.md",
       "delegation": "contain",
-      "adaptation": "Folds new/complete/audit/summary into one verb-based skill."
+      "adaptation": "Folds new/complete/audit/summary into one verb-based skill.",
+      "disposition": "front"
     },
     {
       "forge": "forge-onboard",
       "gsd": "gsd-onboard",
       "gsd_workflow": "onboard.md",
       "delegation": "contain",
-      "adaptation": "Maps Content/, Blueprints, and C++ modules, not only source."
+      "adaptation": "Maps Content/, Blueprints, and C++ modules, not only source.",
+      "disposition": "front"
     },
     {
       "forge": "forge-ingest-docs",
       "gsd": "gsd-ingest-docs",
       "gsd_workflow": "ingest-docs.md",
       "delegation": "contain",
-      "adaptation": "Design documents feed the GDD decision ledger."
+      "adaptation": "Design documents feed the GDD decision ledger.",
+      "disposition": "front"
     },
     {
       "forge": "forge-review",
       "gsd": "gsd-review",
       "gsd_workflow": "review.md",
       "delegation": "contain",
-      "adaptation": "Verb-based: plan, code, security, and audit modes fan out to the matching GSD workflow, then grade against Forge's acceptance registry."
+      "adaptation": "Verb-based: plan, code, security, and audit modes fan out to the matching GSD workflow, then grade against Forge's acceptance registry.",
+      "disposition": "front"
     },
     {
       "forge": "forge-review",
       "gsd": "gsd-code-review",
       "gsd_workflow": "code-review.md",
       "delegation": "contain",
-      "adaptation": "Reached through forge-review --code."
+      "adaptation": "Reached through forge-review --code.",
+      "disposition": "front"
     },
     {
       "forge": "forge-review",
       "gsd": "gsd-secure-phase",
       "gsd_workflow": "secure-phase.md",
       "delegation": "contain",
-      "adaptation": "Reached through forge-review --security."
+      "adaptation": "Reached through forge-review --security.",
+      "disposition": "front"
     },
     {
       "forge": "forge-review",
       "gsd": "gsd-audit-uat",
       "gsd_workflow": "audit-uat.md",
       "delegation": "contain",
-      "adaptation": "Reached through forge-review --audit."
+      "adaptation": "Reached through forge-review --audit.",
+      "disposition": "front"
     },
     {
       "forge": "forge-plan-convergence",
       "gsd": "gsd-plan-review-convergence",
       "gsd_workflow": "plan-review-convergence.md",
       "delegation": "native",
-      "adaptation": "Forge already owns bounded convergence cycles."
+      "adaptation": "Forge already owns bounded convergence cycles.",
+      "disposition": "front"
     },
     {
       "forge": "forge-quality-gate",
       "gsd": "gsd-validate-phase",
       "gsd_workflow": "validate-phase.md",
       "delegation": "contain",
-      "adaptation": "Nyquist validation feeds Forge acceptance suites."
+      "adaptation": "Nyquist validation feeds Forge acceptance suites.",
+      "disposition": "front"
     },
     {
       "forge": "forge-quality-gate",
       "gsd": "gsd-add-tests",
       "gsd_workflow": "add-tests.md",
       "delegation": "contain",
-      "adaptation": "Reached through forge-quality-gate --tests."
+      "adaptation": "Reached through forge-quality-gate --tests.",
+      "disposition": "front"
     },
     {
       "forge": "forge-retrospective",
       "gsd": "gsd-forensics",
       "gsd_workflow": "forensics.md",
       "delegation": "native",
-      "adaptation": "Forge owns read-only forensics and learning promotion."
+      "adaptation": "Forge owns read-only forensics and learning promotion.",
+      "disposition": "front"
     },
     {
       "forge": "forge-retrospective",
       "gsd": "gsd-extract-learnings",
       "gsd_workflow": "extract-learnings.md",
       "delegation": "contain",
-      "adaptation": "Reached through forge-retrospective --promote."
+      "adaptation": "Reached through forge-retrospective --promote.",
+      "disposition": "front"
     },
     {
       "forge": "forge-debug",
       "gsd": "gsd-debug",
       "gsd_workflow": "debug.md",
       "delegation": "relay",
-      "adaptation": "Adds Unreal crash logs, PIE traces, and editor-closed reproduction."
+      "adaptation": "Adds Unreal crash logs, PIE traces, and editor-closed reproduction.",
+      "disposition": "front"
     },
     {
       "forge": "forge-handoff",
       "gsd": "gsd-pause-work",
       "gsd_workflow": "pause-work.md",
       "delegation": "contain",
-      "adaptation": "Persists lane leases and editor state alongside context."
+      "adaptation": "Persists lane leases and editor state alongside context.",
+      "disposition": "front"
     },
     {
       "forge": "forge-handoff",
       "gsd": "gsd-resume-work",
       "gsd_workflow": "resume-project.md",
       "delegation": "contain",
-      "adaptation": "Reached through forge-handoff --resume."
+      "adaptation": "Reached through forge-handoff --resume.",
+      "disposition": "front"
     },
     {
       "forge": "forge-doctor",
       "gsd": "gsd-health",
       "gsd_workflow": "health.md",
       "delegation": "native",
-      "adaptation": "Planning-directory health folds into the Forge environment survey."
+      "adaptation": "Planning-directory health folds into the Forge environment survey.",
+      "disposition": "front"
     },
     {
       "forge": "forge-map-codebase",
       "gsd": "gsd-map-codebase",
       "gsd_workflow": "map-codebase.md",
       "delegation": "contain",
-      "adaptation": "Unreal-aware codebase mapping."
+      "adaptation": "Unreal-aware codebase mapping.",
+      "disposition": "front"
     },
     {
       "forge": "forge-docs-update",
       "gsd": "gsd-docs-update",
       "gsd_workflow": "docs-update.md",
       "delegation": "contain",
-      "adaptation": "None beyond vocabulary."
+      "adaptation": "None beyond vocabulary.",
+      "disposition": "front"
     },
     {
       "forge": "forge-spec-phase",
       "gsd": "gsd-spec-phase",
       "gsd_workflow": "spec-phase.md",
       "delegation": "relay",
-      "adaptation": "Ambiguity scoring against the GDD decision ledger."
+      "adaptation": "Ambiguity scoring against the GDD decision ledger.",
+      "disposition": "front"
     },
     {
       "forge": "forge-ship",
       "gsd": "gsd-ship",
       "gsd_workflow": "ship.md",
       "delegation": "relay",
-      "adaptation": "Shipping a game means cook, package, and build verification, not only a PR."
+      "adaptation": "Shipping a game means cook, package, and build verification, not only a PR.",
+      "disposition": "front"
     },
     {
       "forge": "forge-ship",
       "gsd": "gsd-pr-branch",
       "gsd_workflow": "pr-branch.md",
       "delegation": "contain",
-      "adaptation": "Reached through forge-ship --pr."
+      "adaptation": "Reached through forge-ship --pr.",
+      "disposition": "front"
     },
     {
       "forge": "forge-undo",
       "gsd": "gsd-undo",
       "gsd_workflow": "undo.md",
       "delegation": "contain",
-      "adaptation": "Must respect the binary-asset lock before reverting Unreal content."
+      "adaptation": "Must respect the binary-asset lock before reverting Unreal content.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-milestone",
+      "gsd": "gsd-new-milestone",
+      "gsd_workflow": "new-milestone.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-milestone --new.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-milestone",
+      "gsd": "gsd-audit-milestone",
+      "gsd_workflow": "audit-milestone.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-milestone --audit.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-milestone",
+      "gsd": "gsd-milestone-summary",
+      "gsd_workflow": "milestone-summary.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-milestone --summary.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-review",
+      "gsd": "gsd-audit-fix",
+      "gsd_workflow": "audit-fix.md",
+      "delegation": "contain",
+      "adaptation": "Reached through forge-review --audit --fix.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-visual-production",
+      "gsd": "gsd-ui-phase",
+      "gsd_workflow": "ui-phase.md",
+      "delegation": "native",
+      "adaptation": "Forge's visual production covers design contracts for games.",
+      "disposition": "front"
+    },
+    {
+      "forge": "forge-visual-production",
+      "gsd": "gsd-ui-review",
+      "gsd_workflow": "ui-review.md",
+      "delegation": "native",
+      "adaptation": "Forge grades visual work against art direction and asset interfaces.",
+      "disposition": "front"
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-capture",
+      "disposition": "drop",
+      "reason": "Idea capture is not part of Forge's production surface."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-quick",
+      "disposition": "drop",
+      "reason": "Trivial-task shortcut; Forge routes all work through packets."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-fast",
+      "disposition": "drop",
+      "reason": "Same as gsd-quick."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-help",
+      "disposition": "drop",
+      "reason": "Forge documents its own surface."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-workspace",
+      "disposition": "drop",
+      "reason": "Workspaces are GSD-general; Forge uses lanes and worktrees."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-workstreams",
+      "disposition": "drop",
+      "reason": "Workstreams are GSD-general; Forge uses lanes and worktrees."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-autonomous",
+      "disposition": "drop",
+      "reason": "Forge requires human gates at phase boundaries."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-config",
+      "disposition": "drop",
+      "reason": "Folded into Forge configuration."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-settings",
+      "disposition": "drop",
+      "reason": "Folded into Forge configuration."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-stats",
+      "disposition": "drop",
+      "reason": "Not a production concern."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-update",
+      "disposition": "drop",
+      "reason": "Forge manages its own installation."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-surface",
+      "disposition": "drop",
+      "reason": "Forge controls which skills it exposes."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-manager",
+      "disposition": "drop",
+      "reason": "Forge Next is the single entry point."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-thread",
+      "disposition": "drop",
+      "reason": "Superseded by forge-handoff."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-inbox",
+      "disposition": "drop",
+      "reason": "GitHub triage is outside Forge's scope."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-import",
+      "disposition": "drop",
+      "reason": "Superseded by forge-ingest-docs."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-cleanup",
+      "disposition": "drop",
+      "reason": "Archival is handled at milestone boundaries."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-graphify",
+      "disposition": "drop",
+      "reason": "Optional knowledge tooling, not lifecycle."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-mempalace-capture",
+      "disposition": "drop",
+      "reason": "Optional memory tooling, not lifecycle."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-mempalace-recall",
+      "disposition": "drop",
+      "reason": "Optional memory tooling, not lifecycle."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-profile-user",
+      "disposition": "drop",
+      "reason": "Not a production concern."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-ultraplan-phase",
+      "disposition": "drop",
+      "reason": "Cloud planning is outside Forge's routing model."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-eval-review",
+      "disposition": "drop",
+      "reason": "LLM-application evaluation, not game production."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-ai-integration-phase",
+      "disposition": "drop",
+      "reason": "LLM-application design, not game production."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-explore",
+      "disposition": "drop",
+      "reason": "Planned: forge-explore."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-sketch",
+      "disposition": "drop",
+      "reason": "Planned: forge-explore --sketch (greybox, not HTML mockups)."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-spike",
+      "disposition": "drop",
+      "reason": "Planned: forge-explore --spike."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-mvp-phase",
+      "disposition": "drop",
+      "reason": "Planned: forge-mvp-phase (playable vertical slice)."
+    },
+    {
+      "forge": null,
+      "gsd": "gsd-review-backlog",
+      "disposition": "drop",
+      "reason": "Planned: forge-capture."
     }
   ]
 }

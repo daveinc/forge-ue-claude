@@ -72,7 +72,7 @@ After reviewing that output, explicitly approve and apply it:
 .\install.ps1 -Mode GSD -Apply
 ```
 
-Forge currently defaults to stable `@opengsd/gsd-core@1.8.0` and installs the integration for the selected host globally. Use `-GsdVersion X.Y.Z` only when you intentionally want a different audited release. GSD installation is independent of Forge plugin installation, so either can be repaired or updated without silently changing the other.
+Forge currently defaults to stable `@opengsd/gsd-core@1.9.1` — the version it is tested against — and installs the integration for the selected host globally. Use `-GsdVersion X.Y.Z` only when you intentionally want a different audited release. GSD installation is independent of Forge plugin installation, so either can be repaired or updated without silently changing the other.
 
 Start a **new session** after installation. Hosts load newly installed plugin skills and tools into new sessions, not running ones.
 
@@ -89,10 +89,10 @@ New-Item -ItemType Directory -Path "D:\Unreal Projects\MyGame"
 The pre-project overlay installs `.forge` canon plus the project instruction file and project-local agents rendered for your assigned host, before a `.uproject` exists. Open a **fresh session in that directory** and enter:
 
 ```text
-Use forge-next to inspect this directory and take me to the correct next Forge or GSD action.
+Use forge-next to inspect this directory and take me to the correct next action.
 ```
 
-`forge-next` is the normal front door. It routes an incomplete installation to `forge-bootstrap --resume`; after bootstrap it scans for existing design documents, Unreal/code, and GSD `.planning` state. It routes a true greenfield project to `forge-init`, existing docs to `gsd-ingest-docs`, existing code to `gsd-onboard`, or an active project to the exact action returned by GSD smart-entry. Each routed workflow keeps its own stop boundary.
+`forge-next` is the normal front door. It routes an incomplete installation to `forge-bootstrap --resume`; after bootstrap it scans for existing design documents, Unreal/code, and `.planning` state. It routes a true greenfield project to `forge-init`, existing docs to `forge-ingest-docs`, existing code to `forge-onboard`, or an active project to the current phase verb. Each routed workflow keeps its own stop boundary.
 
 Forge should:
 
@@ -126,23 +126,65 @@ When the project-shell phase creates the `.uproject`, rerun Survey/Profile to ex
 
 Invoke a Forge workflow by naming its skill in your prompt. You can give Forge an outcome in ordinary language; the explicit skill name is useful when you want predictable entry into a particular workflow.
 
+**Every command is a `forge-` command.** GSD is never addressed directly — you will not type a `gsd-` verb, and Forge will never show you one. Spell a skill the way your host expects: `/forge-next` in Claude Code, `$forge-next` in Codex. Forge Next returns commands already spelled for the assigned host.
+
+### Lifecycle
+
 | Skill | Use it when |
 |---|---|
-| `forge-next` | Entering or resuming any Forge project; detecting adoption, bootstrap, existing docs/code, and the authoritative GSD next action. |
-| `forge-bootstrap` | Installing/resuming the project-local Forge control plane and delegated installation checks. |
+| `forge-next` | Entering or resuming any Forge project. The normal front door: detects adoption, bootstrap, existing docs/code, and the authoritative next action. |
 | `forge-init` | Starting greenfield game inception; on an existing/partial project it first defers to Forge Next. |
-| `forge-doctor` | Surveying runtime hosts, Unreal, VCS, MCP, DCC, local-model, build, and platform availability without changing anything. |
+| `forge-spec-phase` | A phase goal is vague or contested and needs ambiguity scoring before discussion. |
+| `forge-discuss-phase` | Settling gameplay and art decisions for a phase before a plan exists. |
+| `forge-plan-phase` | Turning a discussed phase into plans that declare asset interfaces, lanes, and mutation risk. |
+| `forge-execute-phase` | Running approved plans under the Unreal write-lock and lane leases. |
+| `forge-verify-work` | Validating completed work through UAT plus in-engine evidence. |
+| `forge-progress` | Checking phase state, execution coverage, and the next action. |
+| `forge-phase` | Adding, inserting, removing, or editing phases in the roadmap. |
+| `forge-milestone` | Starting, completing, auditing, or summarising a milestone. |
+| `forge-ship` | Cooking, packaging, verifying, and opening a PR for a verified milestone. |
+
+### Quality and review
+
+| Skill | Use it when |
+|---|---|
+| `forge-review` | Reviewing a plan, code, security mitigations, or outstanding UAT — graded against your acceptance registry. Modes: default, `--code`, `--security`, `--audit`. |
+| `forge-plan-convergence` | Challenging a non-trivial phase plan through bounded convergence cycles before execution. |
+| `forge-quality-gate` | Defining acceptance tests or independently reviewing a work result. |
+| `forge-gameplay-gauntlet` | Improving a playable loop through bounded variants, harsh critique, blind comparison, and a human feel gate. |
+
+### Production
+
+| Skill | Use it when |
+|---|---|
+| `forge-visual-production` | Concept boards, character/world direction, asset breakdowns, meshes, rigs, animation, materials, or Unreal art integration. |
+| `forge-route-work` | Compiling and dispatching bounded work packets across available studio lanes. |
 | `forge-capability-admin` | Registering, consenting to, testing, activating, or invalidating an optional tool or model route. |
 | `forge-research` | Teaching Forge about a new MCP, API, CLI, model, documentation set, or project corpus. |
-| `forge-plan-convergence` | Challenging a non-trivial phase plan before execution. |
-| `forge-route-work` | Compiling and dispatching bounded work packets across available studio lanes. |
-| `forge-quality-gate` | Defining acceptance tests or independently reviewing a work result. |
-| `forge-visual-production` | Producing concept boards, character/world direction, asset breakdowns, meshes, rigs, animation, materials, or Unreal art integration. |
-| `forge-gameplay-gauntlet` | Improving a playable loop through bounded variants, harsh critique, blind comparison, and a human feel gate. |
-| `forge-retrospective` | Investigating a failed/interrupted workflow or promoting a repeatedly successful recipe. |
-| `forge-runtime` | Inspecting, assigning, or swapping the resident AI runtime host without losing project state. |
 
-Invoke a skill using your host's spelling: `/forge-next` in Claude Code, `$forge-next` in Codex. Forge Next returns commands already spelled for the assigned host.
+### Setup, context, and recovery
+
+| Skill | Use it when |
+|---|---|
+| `forge-bootstrap` | Installing or resuming the project-local Forge control plane and delegated installation checks. |
+| `forge-doctor` | Surveying runtime hosts, Unreal, VCS, MCP, DCC, local-model, build, and platform availability without changing anything. |
+| `forge-runtime` | Inspecting, assigning, or swapping the resident AI runtime host without losing project state. |
+| `forge-onboard` | Adopting an existing Unreal project that has no planning state. |
+| `forge-ingest-docs` | A project has design documents but no project memory. |
+| `forge-map-codebase` | Analysing an unfamiliar or inherited Unreal codebase. |
+| `forge-docs-update` | Refreshing documentation after implementation lands. |
+| `forge-debug` | Crashes, PIE failures, broken gameplay, or asset problems. |
+| `forge-handoff` | Pausing before a context reset, or resuming interrupted work. |
+| `forge-retrospective` | Investigating a failed workflow or promoting a repeatedly successful recipe. |
+| `forge-undo` | Rolling back a phase or plan when execution went wrong. |
+
+### How Forge and GSD divide the work
+
+Forge owns the vocabulary and every game-specific decision. GSD is the phase engine underneath — **invoked in place, never edited and never copied**, so its upstream fixes reach you without a merge.
+
+Each delegating verb has the same shape: Forge applies its own preconditions (capability qualification, Unreal write-lock, canonical packet IDs, game-dev framing), hands the mechanical work to the stock GSD workflow, then applies its own gates (acceptance registry, in-engine evidence, asset-interface checks). `.planning` stays GSD's to write; Forge writes only `.forge`.
+
+`verbs/registry.json` records, for every GSD command, either the Forge verb that fronts it or an explicit reason it is out of scope. An out-of-scope action is suppressed from routing with its reason recorded, never shown as something you cannot run. See [the delegation contract](plugins/forge-ue-studio/references/delegation-contract.md) and [the independence map](docs/gsd-independence-map.md).
 
 ### Example prompts
 
@@ -180,13 +222,24 @@ Use forge-gameplay-gauntlet to compare the current combat loop against our appro
 
 ```text
 forge-next
-    -> dispatch exactly one of: bootstrap / ingest / onboard / init / GSD action
+    -> dispatch exactly one of: forge-bootstrap / forge-ingest-docs /
+       forge-onboard / forge-init / the current phase verb
     -> routed workflow reaches its persisted STOP boundary
-fresh task -> forge-next
-    -> GSD smart-entry supplies the current discuss / plan / execute / verify / recovery action
+fresh session -> forge-next
+    -> the current discuss / plan / execute / verify / recovery action,
+       already spelled as a forge- verb for the assigned host
 ```
 
-GSD's `.planning` artifacts are the sole phase authority. Forge Next reads them through GSD smart-entry and adds only Forge adoption/capability routing, so a new task resumes from files rather than inherited chat. The old `.forge/state/lifecycle.json` is compatibility history and must not drive work. `forge-visual-production` runs alongside playable development once the shared art/gameplay interfaces exist. `forge-gameplay-gauntlet` begins after there is a playable loop or stable in-engine presentation target.
+A full phase then runs:
+
+```text
+forge-spec-phase   (optional, when the goal is contested)
+forge-discuss-phase  ->  forge-plan-phase  ->  forge-plan-convergence
+                     ->  forge-execute-phase  ->  forge-review
+                     ->  forge-verify-work  ->  forge-progress
+```
+
+`.planning` remains the sole phase authority, written by GSD. Forge Next reads it through smart-entry and adds adoption, runtime, and capability routing, so a new session resumes from files rather than inherited chat. The old `.forge/state/lifecycle.json` is compatibility history and must not drive work. `forge-visual-production` runs alongside playable development once the shared art/gameplay interfaces exist. `forge-gameplay-gauntlet` begins after there is a playable loop or stable in-engine presentation target.
 
 ## Repository layout
 
@@ -197,7 +250,9 @@ plugins/forge-ue-studio/               installable plugin
   .claude-plugin/plugin.json           Claude Code manifest
   .codex-plugin/plugin.json            Codex manifest
   hosts/registry.json                  runtime host profiles and prerequisite contract
-  skills/                              progressive studio workflows
+  verbs/registry.json                  GSD command -> Forge verb map, with delegation modes
+  references/delegation-contract.md    the PRE / CORE / POST shape every delegating verb follows
+  skills/                              progressive studio workflows (30)
   dependencies/                        capability and route declarations
   schemas/                             contracts for state and work packets
   assets/project-template/             reversible, host-neutral project overlay
@@ -208,6 +263,7 @@ install.ps1                            Windows entry point
 scripts/validate_repo.py               repository validation
 tests/                                 standard-library tests
 docs/host-runtimes.md                  runtime contract, swapping, adding a host
+docs/gsd-independence-map.md           what GSD does, what Forge fronts, what it costs
 ```
 
 ## Manual plugin installation
@@ -422,7 +478,9 @@ The target already contains a different file. Forge preserves it and writes the 
 
 ## Dependency policy
 
-Core: a supported runtime host, this plugin, Python 3.10+, and upstream GSD. Forge provides a separately approved, stable-version-pinned GSD installer because GSD is required for the full phase workflow. Unreal is required only for Unreal execution. A working VCS route is required before durable production writes.
+Core: a supported runtime host, this plugin, Python 3.10+, and upstream GSD. Forge provides a separately approved, stable-version-pinned GSD installer because GSD is the phase engine. Unreal is required only for Unreal execution. A working VCS route is required before durable production writes.
+
+GSD is a **runtime** dependency, not a vendored one. Forge never edits `~/.claude/gsd-core` and never copies its workflows, so upstream fixes arrive by upgrading GSD rather than by merging a fork. The cost of that choice is that a GSD release can rename a workflow; `python scripts/validate_repo.py` checks every workflow the verb registry references against the installed GSD and fails on drift (it skips the check when GSD is absent).
 
 Everything else is capability-based: native Unreal MCP, Unreal Python/Editor Scripting plugins, VibeUE, Blender and its gateway, local model runtimes and provider-neutral adapters, image/audio/video providers, BuildGraph/Horde, DDC, and platform SDKs. The resident host remains the fallback when an offload provider is absent. See [dependency policy](docs/dependency-policy.md).
 
@@ -435,4 +493,4 @@ python scripts/validate_repo.py
 python -m unittest discover -s tests -v
 ```
 
-Verified by the included tests: manifest/skill/schema structure, host registry and prerequisite contract, host-surface rendering and byte-identical swap round-trip, cross-host qualification staleness, resident/offload policy, dependency references, survey behavior, dry-run safety, capability profiling, exact-scope route qualification, result-contract validation, applied overlay creation, and idempotent reapplication. Assumed until probed on a target workstation: actual Unreal/MCP/VibeUE/Blender/local-model capabilities and their performance rankings.
+Verified by the included tests: manifest/skill/schema structure, host registry and prerequisite contract, host-surface rendering and byte-identical swap round-trip, cross-host qualification staleness, verb translation (no `gsd-` name can reach the user) and suppression of out-of-scope actions, GSD runtime-key sync across host swaps, the bootstrap closure gate, resident/offload policy, dependency references, survey behavior, dry-run safety, capability profiling, exact-scope route qualification, result-contract validation, applied overlay creation, and idempotent reapplication. Assumed until probed on a target workstation: actual Unreal/MCP/VibeUE/Blender/local-model capabilities and their performance rankings.

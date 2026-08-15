@@ -253,10 +253,29 @@ def main() -> int:
     modes = set(verb_registry.get("delegation_modes", {}))
     skill_names = {path.parent.name for path in (PLUGIN / "skills").glob("*/SKILL.md")}
     seen_gsd = set()
+    dispositions = set(verb_registry.get("policy", {}).get("dispositions", {}))
     for entry in verbs:
         forge_verb, gsd_verb = entry.get("forge"), entry.get("gsd")
-        if not forge_verb or not gsd_verb:
-            fail(f"Verb entry incomplete: {entry}", failures)
+        disposition = entry.get("disposition")
+        if not gsd_verb:
+            fail(f"Verb entry has no GSD command: {entry}", failures)
+            continue
+        if disposition not in dispositions:
+            fail(f"Verb entry {gsd_verb!r} declares unknown disposition {disposition!r}", failures)
+        if gsd_verb in seen_gsd:
+            fail(f"GSD command {gsd_verb!r} is mapped more than once", failures)
+        seen_gsd.add(gsd_verb)
+
+        if disposition == "drop":
+            # A deliberate exclusion carries no Forge verb and must say why.
+            if forge_verb is not None:
+                fail(f"Dropped GSD command {gsd_verb!r} must not name a Forge verb", failures)
+            if not entry.get("reason"):
+                fail(f"Dropped GSD command {gsd_verb!r} must record a reason", failures)
+            continue
+
+        if not forge_verb:
+            fail(f"Fronted GSD command {gsd_verb!r} names no Forge verb", failures)
             continue
         if forge_verb not in skill_names:
             fail(f"Verb registry maps to {forge_verb!r} but no such skill exists", failures)
@@ -264,9 +283,30 @@ def main() -> int:
             fail(f"Verb {forge_verb!r} declares an unknown delegation mode {entry.get('delegation')!r}", failures)
         if not entry.get("gsd_workflow") or not entry.get("adaptation"):
             fail(f"Verb {forge_verb!r} missing gsd_workflow or adaptation", failures)
-        if gsd_verb in seen_gsd:
-            fail(f"GSD command {gsd_verb!r} is mapped more than once", failures)
-        seen_gsd.add(gsd_verb)
+
+    # Drift check: every gsd_workflow the registry names must exist in an
+    # installed GSD. Skipped when GSD is absent (CI), because the reference is a
+    # runtime dependency, not a repository one.
+    workflow_dirs = [
+        Path(str(host.get("gsd", {}).get("runtime_root", ""))).expanduser() / "workflows"
+        for host in hosts
+        if host.get("gsd", {}).get("runtime_root")
+    ]
+    workflow_root = next((path for path in workflow_dirs if path.is_dir()), None)
+    if workflow_root is None:
+        print("SKIP: GSD is not installed; gsd_workflow drift check not run")
+    else:
+        available = {path.name for path in workflow_root.iterdir()}
+        for entry in verbs:
+            if entry.get("disposition") != "front":
+                continue
+            workflow = entry.get("gsd_workflow")
+            if workflow and workflow not in available:
+                fail(
+                    f"Verb {entry.get('forge')!r} references GSD workflow {workflow!r}, "
+                    f"which is not present in {workflow_root}",
+                    failures,
+                )
 
     # Canon neutrality: no vendor name, host path, host instruction file, or host
     # skill prefix may appear anywhere in the shipped canon. Banned tokens come

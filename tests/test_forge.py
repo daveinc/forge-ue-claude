@@ -736,6 +736,46 @@ class ForgeInstallerTests(unittest.TestCase):
             for command in commands:
                 self.assertNotIn("gsd-", command)
 
+    def test_dropped_gsd_actions_are_suppressed_with_a_reason(self):
+        with workspace_tempdir() as temp:
+            project = temp / "Suppressed"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+            self.complete_bootstrap(project)
+            (project / ".planning").mkdir(exist_ok=True)
+            gsd = {
+                "ok": True,
+                "error": "",
+                "snapshot": {
+                    "situation": "executing",
+                    "actions": [
+                        {"id": "a", "label": "Continue", "command": "gsd-execute-phase", "recommended": True},
+                        {"id": "b", "label": "Capture", "command": "gsd-capture", "recommended": False},
+                        {"id": "c", "label": "Quick", "command": "/gsd:quick", "recommended": False},
+                    ],
+                },
+            }
+            result = forge.forge_next(str(project), gsd)
+            # Deliberate exclusions never appear as actions the user cannot run,
+            # and are never emitted as UNMAPPED leaks.
+            self.assertEqual([a["command"] for a in result["actions"]], ["/forge-execute-phase"])
+            self.assertEqual(len(result["suppressed_actions"]), 2)
+            for item in result["suppressed_actions"]:
+                self.assertTrue(item["reason"])
+            self.assertNotIn("UNMAPPED", json.dumps(result))
+
+    def test_every_command_smart_entry_can_emit_is_classified(self):
+        # Anything smart-entry can recommend must be fronted or explicitly
+        # dropped; an unclassified command would leak as UNMAPPED at runtime.
+        emittable = {
+            "gsd-capture", "gsd-code-review", "gsd-complete-milestone", "gsd-debug",
+            "gsd-discuss-phase", "gsd-execute-phase", "gsd-extract-learnings", "gsd-help",
+            "gsd-map-codebase", "gsd-new-milestone", "gsd-new-project", "gsd-plan-phase",
+            "gsd-progress", "gsd-quick", "gsd-resume-work", "gsd-ship", "gsd-verify-work",
+        }
+        classified = set(forge.gsd_to_forge_verbs()) | set(forge.dropped_gsd_verbs())
+        self.assertEqual(emittable - classified, set())
+
     def test_gsd_runtime_key_follows_the_assigned_host(self):
         with workspace_tempdir() as temp:
             project = temp / "RuntimeSync"

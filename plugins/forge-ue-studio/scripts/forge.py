@@ -550,13 +550,26 @@ def verb_registry() -> dict[str, Any]:
 
 
 def gsd_to_forge_verbs() -> dict[str, str]:
-    """Map every GSD command to the Forge verb that fronts it.
+    """Map every GSD command Forge fronts to its Forge verb.
 
     Forge owns the whole user-facing vocabulary; GSD is invoked in place and
     never addressed directly. This map is the single boundary where GSD's
     structured command emissions become Forge verbs.
     """
-    return {str(item["gsd"]): str(item["forge"]) for item in verb_registry().get("verbs", [])}
+    return {
+        str(item["gsd"]): str(item["forge"])
+        for item in verb_registry().get("verbs", [])
+        if item.get("disposition", "front") == "front"
+    }
+
+
+def dropped_gsd_verbs() -> dict[str, str]:
+    """GSD commands deliberately outside Forge's surface, with the reason."""
+    return {
+        str(item["gsd"]): str(item.get("reason", "outside Forge's surface"))
+        for item in verb_registry().get("verbs", [])
+        if item.get("disposition") == "drop"
+    }
 
 
 def translate_gsd_verb(name: str) -> str | None:
@@ -824,6 +837,9 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
         "host_surfaces_current": bool(surfaces_current),
     }
 
+    # GSD actions Forge deliberately does not front, recorded rather than shown.
+    suppressed: list[dict[str, str]] = []
+
     # Advisory only: never changes the routed action, never blocks. GSD owns the
     # phase gate; Forge just makes the partial-execution fact visible.
     coverage = execution_coverage(root)
@@ -877,14 +893,24 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
             situation = f"gsd-{snapshot.get('situation', 'unknown')}"
             summary = str(snapshot.get("summary") or "GSD project state detected.")
             actions = []
+            dropped = dropped_gsd_verbs()
             for index, item in enumerate(snapshot["actions"]):
                 if not isinstance(item, dict) or not item.get("command"):
+                    continue
+                raw = str(item["command"]).strip()
+                # Classify against the RAW GSD command, before translation.
+                bare = re.sub(r"^[$/]", "", raw).split()[0].replace("gsd:", "gsd-")
+                if bare in dropped:
+                    # Deliberately outside Forge's surface. Suppress rather than
+                    # show something the user cannot run — and record why, so
+                    # nothing is silently lost.
+                    suppressed.append({"gsd_command": raw, "reason": dropped[bare]})
                     continue
                 actions.append(
                     forge_action(
                         str(item.get("id") or f"gsd-action-{index + 1}"),
-                        str(item.get("label") or item["command"]),
-                        str(item["command"]),
+                        str(item.get("label") or raw),
+                        raw,
                         bool(item.get("recommended")),
                         "Authoritative route from GSD smart-entry.",
                         profile,
@@ -934,6 +960,7 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
         "authority": {"phase_state": "gsd", "forge_scope": "adoption-capability-routing"},
         "execution_coverage": coverage,
         "warnings": warnings,
+        "suppressed_actions": suppressed,
         "runtime": {
             "active_host": profile["id"],
             "display_name": profile.get("display_name"),
