@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'Route', 'Lifecycle', 'Validate', 'Host')]
+    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'Lifecycle', 'Validate', 'Host')]
     [string]$Mode = 'Plugin',
     # The resident AI runtime. Defaults to the registry's default_host.
     # Named -RuntimeHost because $Host is a reserved PowerShell automatic variable.
@@ -208,10 +208,13 @@ if ($Mode -eq 'Host') {
 }
 
 if ($Mode -ne 'Validate' -and -not $ProjectPath) {
-    throw '-ProjectPath is required for Survey, Install, Verify, Profile, Next, Route, and Lifecycle modes.'
+    throw '-ProjectPath is required for Survey, Install, Verify, Profile, Next, BootstrapCheck, Route, and Lifecycle modes.'
 }
 
-$arguments = @($forgeScript, $Mode.ToLowerInvariant())
+# PascalCase mode names map to the CLI's kebab-case verbs.
+$verbMap = @{ 'BootstrapCheck' = 'bootstrap-check' }
+$verb = if ($verbMap.ContainsKey($Mode)) { $verbMap[$Mode] } else { $Mode.ToLowerInvariant() }
+$arguments = @($forgeScript, $verb)
 if ($Mode -eq 'Validate') {
     if (-not $ContractKind -or -not $InputPath) {
         throw '-ContractKind and -InputPath are required for Validate mode.'
@@ -220,7 +223,7 @@ if ($Mode -eq 'Validate') {
 } else {
     $arguments += @('--project', $ProjectPath)
 }
-if ($Mode -in @('Survey', 'Install', 'Verify', 'Profile', 'Next', 'Route') -and $PSBoundParameters.ContainsKey('RuntimeHost')) {
+if ($Mode -in @('Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route') -and $PSBoundParameters.ContainsKey('RuntimeHost')) {
     $arguments += @('--host', $RuntimeHost)
 }
 if ($Mode -eq 'Route') {

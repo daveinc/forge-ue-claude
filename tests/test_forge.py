@@ -73,11 +73,21 @@ class ForgeInstallerTests(unittest.TestCase):
         (project / "ExampleGame.uproject").write_text(json.dumps(data), encoding="utf-8")
         return project
 
+    def canonical_jobs(self, project: Path) -> list[dict[str, str]]:
+        registry = json.loads(
+            (project / ".forge" / "state" / "packet-registry.json").read_text(encoding="utf-8")
+        )
+        return [
+            {"work_order": packet["id"], "result": "NOT_APPLICABLE"}
+            for packet in registry.get("packets", [])
+            if str(packet.get("id", "")).startswith("FI-")
+        ]
+
     def complete_bootstrap(self, project: Path) -> None:
         report = {
             "schema": "forge.bootstrap-report/v1",
             "verdict": "PASS",
-            "jobs": [],
+            "jobs": self.canonical_jobs(project),
             "delegation": {"mode": "test-fixture"},
             "verified": [],
             "assumed": [],
@@ -85,7 +95,7 @@ class ForgeInstallerTests(unittest.TestCase):
             "blocking": [],
             "human_actions": [],
             "evidence": [],
-            "next_action": "$forge-next",
+            "next_action": "forge-next",
         }
         (project / ".forge" / "state" / "bootstrap-report.json").write_text(json.dumps(report), encoding="utf-8")
 
@@ -289,7 +299,7 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertEqual(result["next_command_for_host"], "/forge-bootstrap --resume")
             self.assertEqual(result["host"], "claude")
             with self.assertRaisesRegex(ValueError, "transitions are deprecated"):
-                forge.lifecycle_state(str(project), "bootstrap-start", apply=False)
+                forge.lifecycle_state(str(project), "bootstrap-start")
 
     def test_forge_next_routes_adoption_bootstrap_and_greenfield(self):
         with workspace_tempdir() as temp:
@@ -568,6 +578,115 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertEqual(
                 validate_repo.neutrality_violations(benign, banned), [], f"false positive: {benign}"
             )
+
+    def test_bootstrap_gate_enforces_every_forge_specific_check(self):
+        # These checks are Forge's own domain. GSD owns phase state and has no
+        # equivalent, so nothing downstream catches them if this gate does not.
+        with workspace_tempdir() as temp:
+            project = temp / "BootstrapGate"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+
+            report_path = project / ".forge" / "state" / "bootstrap-report.json"
+            self.assertFalse(forge.bootstrap_verdict(project)["ok"])
+
+            self.complete_bootstrap(project)
+            verdict = forge.bootstrap_verdict(project)
+            self.assertTrue(verdict["ok"], verdict["blocking"])
+            self.assertEqual({c["id"] for c in verdict["checks"] if c["status"] == "FAIL"}, set())
+
+            def failing_ids(mutate):
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                mutate(report)
+                report_path.write_text(json.dumps(report), encoding="utf-8")
+                result = forge.bootstrap_verdict(project)
+                self.assertFalse(result["ok"])
+                ids = {c["id"] for c in result["checks"] if c["status"] == "FAIL"}
+                self.complete_bootstrap(project)
+                return ids
+
+            self.assertIn("report-schema", failing_ids(lambda r: r.pop("evidence")))
+            self.assertIn("report-verdict", failing_ids(lambda r: r.update(verdict="FAIL")))
+            self.assertIn("report-blocking", failing_ids(lambda r: r.update(blocking=["unresolved"])))
+            self.assertIn("installation-jobs", failing_ids(lambda r: r.update(jobs=r["jobs"][:-1])))
+
+            # A rendered instruction file that lost the phase contract must block,
+            # because it is what constrains the next session.
+            (project / "CLAUDE.md").write_text("# Project workflow\n", encoding="utf-8")
+            result = forge.bootstrap_verdict(project)
+            self.assertFalse(result["ok"])
+            self.assertIn("phase-contract", {c["id"] for c in result["checks"] if c["status"] == "FAIL"})
+
+    def test_forge_next_gates_on_the_full_bootstrap_verdict(self):
+        with workspace_tempdir() as temp:
+            project = temp / "GateWiring"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+            gsd = {"ok": True, "error": "", "snapshot": {"situation": "no-project", "actions": []}}
+
+            # A report that is closable but omits canonical jobs must not pass.
+            partial = {
+                "schema": "forge.bootstrap-report/v1",
+                "verdict": "PASS",
+                "jobs": [],
+                "delegation": {},
+                "verified": [],
+                "assumed": [],
+                "unavailable": [],
+                "blocking": [],
+                "human_actions": [],
+                "evidence": [],
+                "next_action": "forge-next",
+            }
+            (project / ".forge" / "state" / "bootstrap-report.json").write_text(
+                json.dumps(partial), encoding="utf-8"
+            )
+            self.assertEqual(forge.forge_next(str(project), gsd)["situation"], "forge-bootstrap-incomplete")
+
+            self.complete_bootstrap(project)
+            self.assertEqual(forge.forge_next(str(project), gsd)["situation"], "greenfield-ready")
+
+    def test_execution_coverage_reports_partial_phases_without_blocking(self):
+        with workspace_tempdir() as temp:
+            project = temp / "Coverage"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+            self.complete_bootstrap(project)
+            phase = project / ".planning" / "phases" / "02-vertical-slice"
+            phase.mkdir(parents=True)
+            for name in ("02-01-PLAN.md", "02-02-PLAN.md", "02-03-PLAN.md"):
+                (phase / name).write_text("# plan\n", encoding="utf-8")
+            (phase / "02-01-SUMMARY.md").write_text("# summary\n", encoding="utf-8")
+
+            coverage = forge.execution_coverage(project)
+            self.assertEqual(len(coverage), 1)
+            self.assertEqual(coverage[0]["state"], "partial")
+            self.assertEqual(coverage[0]["summaries"], 1)
+            self.assertEqual(coverage[0]["missing_summaries"], ["02-02-PLAN.md", "02-03-PLAN.md"])
+
+            gsd = {"ok": True, "error": "", "snapshot": {"situation": "executing", "actions": [
+                {"id": "continue", "label": "Continue", "command": "/gsd:progress", "recommended": True}
+            ]}}
+            result = forge.forge_next(str(project), gsd)
+            # Advisory only: the routed action is still GSD's, unchanged.
+            self.assertEqual(result["recommended"], "continue")
+            self.assertEqual(len(result["warnings"]), 1)
+            self.assertIn("partially executed", result["warnings"][0])
+
+            for name in ("02-02-SUMMARY.md", "02-03-SUMMARY.md"):
+                (phase / name).write_text("# summary\n", encoding="utf-8")
+            self.assertEqual(forge.execution_coverage(project)[0]["state"], "complete")
+            self.assertEqual(forge.forge_next(str(project), gsd)["warnings"], [])
+
+    def test_lifecycle_transitions_are_gone_not_merely_guarded(self):
+        self.assertFalse(hasattr(forge, "require_artifacts"))
+        self.assertFalse(hasattr(forge, "LIFECYCLE_EVENTS"))
+        with workspace_tempdir() as temp:
+            project = temp / "NoTransitions"
+            project.mkdir()
+            forge.install_overlay(str(project), apply=True)
+            with self.assertRaisesRegex(ValueError, "transitions are deprecated"):
+                forge.lifecycle_state(str(project), "execute-complete")
 
     def test_packet_registry_has_unique_canonical_ids(self):
         registry_path = ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state" / "packet-registry.json"

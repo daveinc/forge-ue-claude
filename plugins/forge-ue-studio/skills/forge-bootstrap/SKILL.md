@@ -19,8 +19,28 @@ Create the durable project control plane before design or Unreal project-shell w
 8. Never delegate package installation, consent, credentials, PATH/system changes, project descriptor mutation, or external writes. Surface each as a separate human approval/action. Optional capabilities may be absent; adapt the workflow instead of blocking unrelated production.
 9. Persist observations, evidence, failures, proposed capability contracts and unresolved human actions. A provider is not qualified merely because an investigator found it.
 10. Dispatch a fresh read-only verifier against the deterministic profile, job results and acceptance criteria. The verifier must not receive investigator reasoning beyond the returned artifacts.
-11. Write `.forge/state/bootstrap-report.json` against `forge.bootstrap-report/v1` with `verdict`, every canonical `FI-*` job (including evidence-backed `NOT_APPLICABLE` entries), `delegation`, `verified`, `assumed`, `unavailable`, `blocking`, `human_actions`, `evidence`, and `next_action`. If overlay installation preserved an existing project instruction file and wrote a `.forge-proposed` sibling, stop for an explicit merge decision; bootstrap cannot pass until the active instruction file contains the Forge phase contract.
-12. Verify that the detected profile and a closable bootstrap report exist. Set the report's `next_action` to `forge-next`; do not maintain a competing Forge phase pointer.
-13. **STOP.** Require a fresh project task and present `forge-next`. Forge Next will inspect existing docs, Unreal/code, and GSD state before deciding whether inception, ingestion, onboarding, or phase recovery is correct.
+11. Write `.forge/state/bootstrap-report.json` against `forge.bootstrap-report/v1` with `verdict`, every canonical `FI-*` job (including evidence-backed `NOT_APPLICABLE` entries), `delegation`, `verified`, `assumed`, `unavailable`, `blocking`, `human_actions`, `evidence`, and `next_action`. Set `next_action` to `forge-next`; do not maintain a competing Forge phase pointer.
+12. **Run the bootstrap gate and do not close on your own judgement:**
+
+    ```powershell
+    python <forge-plugin-root>/scripts/forge.py bootstrap-check --project <project-root>
+    ```
+
+    It exits non-zero and returns `ok: false` with a `blocking` list until every check passes. Treat each failure as work remaining, not as advice:
+
+    | Check | Fails when |
+    |---|---|
+    | `capability-profile` | `.forge/capabilities/detected.json` is missing — Survey/Profile never ran. |
+    | `bootstrap-report` | The report is missing or unparseable. |
+    | `report-schema` | A required `forge.bootstrap-report/v1` field is absent. |
+    | `report-verdict` | The verdict is not `PASS` or `DEGRADED_ACCEPTED`. |
+    | `report-blocking` | Blocking items remain unresolved. |
+    | `installation-jobs` | A canonical `FI-*` packet is unaccounted for — dispatch it or record an evidence-backed `NOT_APPLICABLE`. |
+    | `phase-contract` | The rendered instruction file is missing or lacks `## Forge phase contract`. |
+
+    A `phase-contract` failure usually means overlay installation preserved an existing instruction file and wrote a `.forge-proposed` sibling. Stop for an explicit merge decision, or re-render with `forge.py host set --host <id> --project . --apply`. Bootstrap cannot pass while the active instruction file lacks the contract, because that file is what constrains the next session.
+
+    This gate is Forge's own. GSD owns phase state and has no equivalent check, so nothing downstream will catch these.
+13. **STOP.** Require a fresh project session and present `forge-next`. Forge Next will inspect existing docs, Unreal/code, and GSD state before deciding whether inception, ingestion, onboarding, or phase recovery is correct.
 
 Use `forge-doctor` for read-only environment classification, `forge-research` for newly discovered sources, and `forge-capability-admin` for consent/qualification after bootstrap.

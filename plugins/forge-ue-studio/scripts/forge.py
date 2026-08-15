@@ -44,23 +44,6 @@ SCHEMA_FILES = {
 
 RESIDENT_PROVIDER = "resident"
 
-LIFECYCLE_EVENTS = {
-    "bootstrap-start",
-    "bootstrap-complete",
-    "init-start",
-    "init-complete",
-    "discuss-start",
-    "discuss-complete",
-    "plan-start",
-    "plan-complete",
-    "execute-start",
-    "execute-complete",
-    "verify-start",
-    "verify-complete",
-    "next-phase",
-    "project-complete",
-}
-
 
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
@@ -554,16 +537,168 @@ def design_sources(root: Path) -> list[str]:
     return found
 
 
-def bootstrap_is_complete(root: Path) -> bool:
-    report_path = root / ".forge" / "state" / "bootstrap-report.json"
+BOOTSTRAP_REPORT_FIELDS = {
+    "schema",
+    "verdict",
+    "jobs",
+    "delegation",
+    "verified",
+    "assumed",
+    "unavailable",
+    "blocking",
+    "human_actions",
+    "evidence",
+    "next_action",
+}
+
+BOOTSTRAP_CLOSABLE_VERDICTS = {"PASS", "DEGRADED_ACCEPTED"}
+
+
+def bootstrap_verdict(root: Path, profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Decide whether Forge bootstrap is genuinely closable.
+
+    This is Forge's own gate, not GSD's. GSD owns phase state and has no reason
+    to know about capability detection, installation jobs, or whether the
+    rendered instruction file carries the Forge phase contract — so nothing
+    downstream will catch these if Forge does not.
+    """
+    profile = profile or active_profile(root)
+    checks: list[dict[str, Any]] = []
+
+    def record(check_id: str, ok: bool, detail: str) -> bool:
+        checks.append({"id": check_id, "status": "PASS" if ok else "FAIL", "detail": detail})
+        return ok
+
     detected_path = root / ".forge" / "capabilities" / "detected.json"
-    if not report_path.is_file() or not detected_path.is_file():
-        return False
+    report_path = root / ".forge" / "state" / "bootstrap-report.json"
+
+    has_profile = record(
+        "capability-profile",
+        detected_path.is_file(),
+        str(detected_path) if detected_path.is_file() else "detected.json is missing; run capability detection",
+    )
+    if not report_path.is_file():
+        record("bootstrap-report", False, "bootstrap-report.json is missing")
+        return _bootstrap_result(root, profile, checks)
     try:
         report = load_json(report_path)
-    except ValueError:
+    except ValueError as exc:
+        record("bootstrap-report", False, str(exc))
+        return _bootstrap_result(root, profile, checks)
+    record("bootstrap-report", True, str(report_path))
+
+    missing_fields = sorted(BOOTSTRAP_REPORT_FIELDS - set(report))
+    record(
+        "report-schema",
+        not missing_fields,
+        "all required fields present" if not missing_fields else "missing: " + ", ".join(missing_fields),
+    )
+    verdict = report.get("verdict")
+    record(
+        "report-verdict",
+        verdict in BOOTSTRAP_CLOSABLE_VERDICTS,
+        f"verdict is {verdict!r}" + ("" if verdict in BOOTSTRAP_CLOSABLE_VERDICTS else "; not closable"),
+    )
+    blocking = report.get("blocking") or []
+    record(
+        "report-blocking",
+        not blocking,
+        "no blocking items" if not blocking else f"{len(blocking)} blocking item(s) remain",
+    )
+
+    # Every canonical installation packet must be accounted for, including the
+    # ones deliberately reported NOT_APPLICABLE with evidence.
+    registry_path = root / ".forge" / "state" / "packet-registry.json"
+    try:
+        packets = load_json(registry_path).get("packets", [])
+        expected_jobs = {str(item["id"]) for item in packets if str(item.get("id", "")).startswith("FI-")}
+    except (ValueError, KeyError):
+        expected_jobs = set()
+    reported_jobs = {str(item.get("work_order")) for item in report.get("jobs", []) if isinstance(item, dict)}
+    missing_jobs = sorted(expected_jobs - reported_jobs)
+    record(
+        "installation-jobs",
+        not missing_jobs,
+        f"{len(reported_jobs & expected_jobs)}/{len(expected_jobs)} canonical jobs reported"
+        + ("" if not missing_jobs else "; omitted: " + ", ".join(missing_jobs)),
+    )
+
+    # The rendered instruction file is what actually constrains the next session.
+    instruction_name = str(profile.get("project_surface", {}).get("instruction_file", "AGENTS.md"))
+    instruction_path = root / instruction_name
+    has_contract = (
+        instruction_path.is_file()
+        and "## Forge phase contract" in instruction_path.read_text(encoding="utf-8-sig", errors="replace")
+    )
+    record(
+        "phase-contract",
+        has_contract,
+        f"{instruction_name} carries the Forge phase contract"
+        if has_contract
+        else f"{instruction_name} is missing or lacks '## Forge phase contract'; review any "
+        f"{instruction_name}.forge-proposed file, or re-render with: "
+        f"forge.py host set --host {profile['id']} --project . --apply",
+    )
+    _ = has_profile
+    return _bootstrap_result(root, profile, checks)
+
+
+def _bootstrap_result(root: Path, profile: dict[str, Any], checks: list[dict[str, Any]]) -> dict[str, Any]:
+    failed = [item for item in checks if item["status"] == "FAIL"]
+    return {
+        "schema": "forge.bootstrap-check/v1",
+        "project": str(root),
+        "host": profile["id"],
+        "ok": not failed,
+        "checks": checks,
+        "blocking": [f"{item['id']}: {item['detail']}" for item in failed],
+        "next_action": (
+            f"{host_command(profile, 'forge-bootstrap')} --resume"
+            if failed
+            else f"{host_command(profile, 'forge-next')}"
+        ),
+    }
+
+
+def bootstrap_is_complete(root: Path) -> bool:
+    try:
+        return bool(bootstrap_verdict(root)["ok"])
+    except (OSError, ValueError):
         return False
-    return report.get("verdict") in {"PASS", "DEGRADED_ACCEPTED"} and not report.get("blocking")
+
+
+def execution_coverage(root: Path) -> list[dict[str, Any]]:
+    """Report GSD phase directories whose plans lack matching summaries.
+
+    GSD computes the same set (`incomplete` in its phase output) but keeps it
+    advisory and never blocks completion on it, so an interrupted phase can
+    reach 100% silently. Forge surfaces the fact rather than raising a competing
+    gate: GSD remains the phase authority, and a partially executed phase is a
+    normal mid-execution state, not necessarily an error.
+    """
+    phases = root / ".planning" / "phases"
+    if not phases.is_dir():
+        return []
+    coverage: list[dict[str, Any]] = []
+    for directory in sorted(path for path in phases.iterdir() if path.is_dir()):
+        plans = sorted(directory.glob("*-PLAN.md"))
+        if not plans:
+            continue
+        missing = [
+            path.name
+            for path in plans
+            if not path.with_name(path.name.replace("-PLAN.md", "-SUMMARY.md")).is_file()
+        ]
+        coverage.append(
+            {
+                "phase": directory.name,
+                "plans": len(plans),
+                "summaries": len(plans) - len(missing),
+                "missing_summaries": missing,
+                "state": "complete" if not missing else ("partial" if len(missing) < len(plans) else "unstarted"),
+            }
+        )
+    return coverage
 
 
 def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, host_override: str | None = None) -> dict[str, Any]:
@@ -597,6 +732,16 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
         "host_assigned": bool(runtime),
         "host_surfaces_current": bool(surfaces_current),
     }
+
+    # Advisory only: never changes the routed action, never blocks. GSD owns the
+    # phase gate; Forge just makes the partial-execution fact visible.
+    coverage = execution_coverage(root)
+    warnings = [
+        f"Phase {item['phase']} is partially executed: {item['summaries']}/{item['plans']} plans have summaries "
+        f"(missing: {', '.join(item['missing_summaries'])}). GSD does not block completion on this."
+        for item in coverage
+        if item["state"] == "partial"
+    ]
 
     if not overlay:
         situation = "forge-not-adopted"
@@ -696,6 +841,8 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
         "actions": actions,
         "signals": signals,
         "authority": {"phase_state": "gsd", "forge_scope": "adoption-capability-routing"},
+        "execution_coverage": coverage,
+        "warnings": warnings,
         "runtime": {
             "active_host": profile["id"],
             "display_name": profile.get("display_name"),
@@ -1240,165 +1387,39 @@ def phase_directory(root: Path, phase: int) -> Path | None:
     return matches[0] if matches else None
 
 
-def require_artifacts(root: Path, event: str, phase: int | None) -> list[str]:
-    if event == "bootstrap-complete":
-        required = [root / ".forge" / "capabilities" / "detected.json", root / ".forge" / "state" / "bootstrap-report.json"]
-        missing = [str(path) for path in required if not path.is_file()]
-        if missing:
-            raise ValueError("Forge bootstrap is incomplete; missing: " + ", ".join(missing))
-        report = load_json(required[1])
-        report_required = {"schema", "verdict", "jobs", "delegation", "verified", "assumed", "unavailable", "blocking", "human_actions", "evidence", "next_action"}
-        report_missing = sorted(report_required - set(report))
-        if report_missing:
-            raise ValueError("Forge bootstrap report is incomplete; missing: " + ", ".join(report_missing))
-        if report.get("verdict") not in {"PASS", "DEGRADED_ACCEPTED"}:
-            raise ValueError(f"Forge bootstrap report verdict is not closable: {report.get('verdict')!r}")
-        if report.get("blocking"):
-            raise ValueError("Forge bootstrap report still contains blocking items")
-        expected_jobs = {item["id"] for item in load_json(root / ".forge" / "state" / "packet-registry.json").get("packets", []) if str(item.get("id", "")).startswith("FI-")}
-        reported_jobs = {str(item.get("work_order")) for item in report.get("jobs", []) if isinstance(item, dict)}
-        missing_jobs = sorted(expected_jobs - reported_jobs)
-        if missing_jobs:
-            raise ValueError("Forge bootstrap report omits installation jobs: " + ", ".join(missing_jobs))
-        profile = active_profile(root)
-        instruction_name = str(profile.get("project_surface", {}).get("instruction_file", "AGENTS.md"))
-        instruction_path = root / instruction_name
-        if not instruction_path.is_file() or "## Forge phase contract" not in instruction_path.read_text(encoding="utf-8-sig"):
-            raise ValueError(
-                f"Forge bootstrap is incomplete; project {instruction_name} does not contain the Forge phase contract "
-                f"(review any {instruction_name}.forge-proposed file, or re-render with: forge.py host set --host {profile['id']} --project . --apply)"
-            )
-        required.append(instruction_path)
-        return [str(path) for path in required]
-    if event == "init-complete":
-        required = [root / ".planning" / name for name in ("PROJECT.md", "ROADMAP.md", "STATE.md")]
-        missing = [str(path) for path in required if not path.is_file()]
-        if missing:
-            raise ValueError("GSD project initialization is incomplete; missing: " + ", ".join(missing))
-        return [str(path) for path in required]
-    if phase is None:
-        return []
-    directory = phase_directory(root, phase)
-    if not directory:
-        raise ValueError(f"GSD phase directory for phase {phase} was not found")
-    if event == "discuss-complete":
-        matches = sorted(directory.glob("*-CONTEXT.md"))
-        if not matches:
-            raise ValueError(f"Phase {phase} has no CONTEXT.md; discussion cannot be closed")
-        return [str(path) for path in matches]
-    if event == "plan-complete":
-        matches = sorted(directory.glob("*-PLAN.md"))
-        if not matches:
-            raise ValueError(f"Phase {phase} has no PLAN.md; planning cannot be closed")
-        return [str(path) for path in matches]
-    if event == "execute-complete":
-        plans = sorted(directory.glob("*-PLAN.md"))
-        missing = [str(path.with_name(path.name.replace("-PLAN.md", "-SUMMARY.md"))) for path in plans if not path.with_name(path.name.replace("-PLAN.md", "-SUMMARY.md")).is_file()]
-        if not plans or missing:
-            detail = "no PLAN.md exists" if not plans else "missing summaries: " + ", ".join(missing)
-            raise ValueError(f"Phase {phase} execution cannot be closed; {detail}")
-        return [str(path.with_name(path.name.replace("-PLAN.md", "-SUMMARY.md"))) for path in plans]
-    if event == "verify-complete":
-        sessions = sorted(directory.glob("*-UAT.md"))
-        completed = [path for path in sessions if re.search(r"(?im)^status:\s*(complete|completed|passed)\s*$", path.read_text(encoding="utf-8-sig"))]
-        if not completed:
-            raise ValueError(f"Phase {phase} has no completed UAT.md; verification cannot be closed")
-        return [str(path) for path in completed]
-    return []
+def lifecycle_state(project_value: str, event: str = "status") -> dict[str, Any]:
+    """Read the deprecated Forge lifecycle mirror. Never a phase authority.
 
-
-def lifecycle_state(project_value: str, event: str = "status", phase: int | None = None, apply: bool = False) -> dict[str, Any]:
+    Retained only because projects adopted before GSD became the sole phase
+    engine still carry .forge/state/lifecycle.json with real history in it. The
+    payload states its own irrelevance in-band so anything reading it is told,
+    in the same response, where authority actually lives.
+    """
     root, _ = project_root(project_value)
     path = root / ".forge" / "state" / "lifecycle.json"
     if not path.is_file():
         raise ValueError("Forge lifecycle state is missing; apply the project overlay first")
     state = load_json(path)
-    if event == "status":
-        profile = active_profile(root)
-        # The stored command is host-neutral; spell it for the assigned runtime.
-        stored = str(state.get("next_command") or "")
-        head, _, tail = stored.partition(" ")
-        spelled = f"{host_command(profile, head)}{' ' + tail if tail else ''}" if head else ""
-        return {
-            "mode": "read-only",
-            "path": str(path),
-            "state": state,
-            "deprecated": True,
-            "host": profile["id"],
-            "next_command_for_host": spelled,
-            "authority": f"GSD .planning state via {host_command(profile, 'forge-next')}",
-        }
-    raise ValueError(
-        "Forge lifecycle transitions are deprecated; use "
-        f"{host_command(active_profile(root), 'forge-next')} and let GSD own phase state"
-    )
-
-    # UNREACHABLE. Retained as a record of the pre-GSD lifecycle transitions and
-    # their artifact requirements (see require_artifacts, which only this block
-    # calls). Command spellings here are bare skill names, so reviving it would
-    # not reintroduce a host-specific spelling. Delete both if the lifecycle
-    # engine is never coming back.
-    if event not in LIFECYCLE_EVENTS:
-        raise ValueError(f"Unknown lifecycle event: {event}")
-
-    current_stage = str(state.get("stage"))
-    current_status = str(state.get("status"))
-    current_phase = state.get("phase")
-    start_events = {
-        "bootstrap-start": ("bootstrap", "bootstrap"),
-        "init-start": ("bootstrap", "init"),
-        "discuss-start": ("discuss", "discuss"),
-        "plan-start": ("plan", "plan"),
-        "execute-start": ("execute", "execute"),
-        "verify-start": ("verify", "verify"),
-    }
-    complete_events = {
-        "bootstrap-complete": ("bootstrap", "bootstrap", None, "forge-init"),
-        "init-complete": ("init", "discuss", 1, "gsd-discuss-phase 1"),
-        "discuss-complete": ("discuss", "plan", current_phase, f"gsd-plan-phase {current_phase}"),
-        "plan-complete": ("plan", "execute", current_phase, f"gsd-execute-phase {current_phase}"),
-        "execute-complete": ("execute", "verify", current_phase, f"gsd-verify-work {current_phase}"),
-        "verify-complete": ("verify", "phase-complete", current_phase, "gsd-progress"),
+    profile = active_profile(root)
+    if event != "status":
+        raise ValueError(
+            "Forge lifecycle transitions are deprecated; use "
+            f"{host_command(profile, 'forge-next')} and let GSD own phase state"
+        )
+    # The stored command is host-neutral; spell it for the assigned runtime.
+    stored = str(state.get("next_command") or "")
+    head, _, tail = stored.partition(" ")
+    spelled = f"{host_command(profile, head)}{' ' + tail if tail else ''}" if head else ""
+    return {
+        "mode": "read-only",
+        "path": str(path),
+        "state": state,
+        "deprecated": True,
+        "host": profile["id"],
+        "next_command_for_host": spelled,
+        "authority": f"GSD .planning state via {host_command(profile, 'forge-next')}",
     }
 
-    evidence: list[str] = []
-    if event in start_events:
-        expected, destination = start_events[event]
-        if current_stage != expected or current_status not in {"READY", "AWAITING_FRESH_TASK"}:
-            raise ValueError(f"Cannot apply {event} from {current_stage}/{current_status}")
-        expected_command = {"bootstrap-start": "forge-bootstrap --resume", "init-start": "forge-init"}.get(event)
-        if expected_command and state.get("next_command") != expected_command:
-            raise ValueError(f"Cannot apply {event}; lifecycle next command is {state.get('next_command')!r}")
-        if event not in {"bootstrap-start", "init-start"} and phase != current_phase:
-            raise ValueError(f"Lifecycle is waiting for phase {current_phase}, not phase {phase}")
-        next_state = {"stage": destination, "status": "ACTIVE", "phase": current_phase, "requires_fresh_task": False, "next_command": None}
-    elif event in complete_events:
-        expected, destination, destination_phase, command = complete_events[event]
-        if current_stage != expected or current_status != "ACTIVE":
-            raise ValueError(f"Cannot apply {event} from {current_stage}/{current_status}")
-        if event not in {"bootstrap-complete", "init-complete"} and phase != current_phase:
-            raise ValueError(f"Lifecycle is active on phase {current_phase}, not phase {phase}")
-        evidence = require_artifacts(root, event, current_phase if event not in {"bootstrap-complete", "init-complete"} else None)
-        next_state = {"stage": destination, "status": "AWAITING_FRESH_TASK" if destination != "phase-complete" else "AWAITING_USER", "phase": destination_phase, "requires_fresh_task": destination != "phase-complete", "next_command": command}
-    elif event == "next-phase":
-        if current_stage != "phase-complete" or current_status != "AWAITING_USER":
-            raise ValueError(f"Cannot start a next phase from {current_stage}/{current_status}")
-        if phase is None or phase <= int(current_phase or 0):
-            raise ValueError("next-phase requires a phase number greater than the completed phase")
-        next_state = {"stage": "discuss", "status": "AWAITING_FRESH_TASK", "phase": phase, "requires_fresh_task": True, "next_command": f"gsd-discuss-phase {phase}"}
-    else:
-        if current_stage != "phase-complete" or current_status != "AWAITING_USER":
-            raise ValueError(f"Cannot complete the project from {current_stage}/{current_status}")
-        next_state = {"stage": "project-complete", "status": "COMPLETE", "phase": current_phase, "requires_fresh_task": False, "next_command": None}
-
-    updated = dict(state)
-    updated.update(next_state)
-    updated["generation"] = int(state.get("generation", 0)) + 1
-    updated["updated_at"] = utc_now()
-    updated.setdefault("history", []).append({"event": event, "phase": phase, "at": updated["updated_at"], "evidence": evidence})
-    if apply:
-        path.write_text(json.dumps(updated, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return {"mode": "apply" if apply else "dry-run", "path": str(path), "state": updated, "changed": bool(apply)}
 
 
 def schema_root() -> Path:
@@ -1555,7 +1576,7 @@ def emit(data: dict[str, Any], output: str | None) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("survey", "install", "verify", "profile", "next"):
+    for name in ("survey", "install", "verify", "profile", "next", "bootstrap-check"):
         command = sub.add_parser(name)
         command.add_argument("--project", required=True)
         command.add_argument("--host", help="Override the assigned runtime host for this invocation")
@@ -1589,8 +1610,6 @@ def build_parser() -> argparse.ArgumentParser:
     lifecycle = sub.add_parser("lifecycle")
     lifecycle.add_argument("--project", required=True)
     lifecycle.add_argument("--event", default="status", choices=["status"])
-    lifecycle.add_argument("--phase", type=int)
-    lifecycle.add_argument("--apply", action="store_true")
     lifecycle.add_argument("--output")
     return parser
 
@@ -1608,6 +1627,9 @@ def main(argv: list[str] | None = None) -> int:
             result = write_profile(args.project, apply=bool(args.apply), host_override=args.host)
         elif args.command == "next":
             result = forge_next(args.project, host_override=args.host)
+        elif args.command == "bootstrap-check":
+            root, _ = project_root(args.project)
+            result = bootstrap_verdict(root, active_profile(root, args.host))
         elif args.command == "host":
             if args.host_command == "list":
                 result = host_list()
@@ -1618,7 +1640,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "route":
             result = route_work(args.project, args.request, args.host)
         elif args.command == "lifecycle":
-            result = lifecycle_state(args.project, args.event, args.phase, apply=bool(args.apply))
+            result = lifecycle_state(args.project, args.event)
         else:
             result = validate_payload(args.kind, args.input)
         emit(result, args.output)

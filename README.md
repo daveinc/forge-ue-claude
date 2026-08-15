@@ -314,6 +314,7 @@ Forge does not replace your GDD, source tree, Content directory, `.uproject`, or
 | `Verify` | No | Check that the accepted overlay still matches Forge's template and rules. |
 | `Profile` | Only with `-Apply` | Refresh detected capabilities without granting qualification. |
 | `Next` | No | Combine Forge readiness with authoritative GSD smart-entry and return valid next actions. |
+| `BootstrapCheck` | No | Run Forge's own bootstrap closure gate. Exits non-zero until every check passes. |
 | `Route` | No project mutation | Select a provider for a schema-valid route request using recorded qualification evidence. |
 | `Lifecycle` | No | Read deprecated compatibility status only; transitions are rejected. |
 | `Validate` | No | Check a Forge JSON contract against its required top-level fields. |
