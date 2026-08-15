@@ -11,7 +11,7 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 ## PRE — Forge
 
-1. Check the binary-asset lock. Reverting Unreal content while another lane holds the project-exclusive lease corrupts the working copy.
+1. Check the binary-asset lock. Never revert Unreal content while another lane holds the project-exclusive lease.
 2. Identify dependent packets from the canonical registry before reverting.
 
 ## CORE — GSD

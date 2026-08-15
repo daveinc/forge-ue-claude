@@ -11,7 +11,7 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 ## PRE — Forge
 
-1. Confirm CONTEXT.md exists for the phase. Planning without settled discussion produces plans that churn.
+1. Confirm CONTEXT.md exists for the phase. Never plan a phase that has not been discussed.
 2. Load the canonical packet registry. Plans reference existing packet IDs; they never mint replacements.
 
 ## CORE — GSD
@@ -22,8 +22,5 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 1. Reject any plan that mutates Unreal content without declaring the project-exclusive lane.
 2. Register new asset interfaces so the visual DAG can proceed in parallel against them.
-3. Run `forge-plan-convergence` before execution on any non-trivial phase.
-
-## Note
-
-A plan that does not declare its lane cannot be routed safely and cannot be parallelised. Treat a missing declaration as an incomplete plan.
+3. Treat a plan that declares no lane as incomplete and return it.
+4. Run `forge-plan-convergence` before execution on any non-trivial phase.

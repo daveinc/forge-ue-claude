@@ -23,7 +23,7 @@ Build a machine-readable environment snapshot and clearly separate detection, ve
    python <forge-plugin-root>\scripts\forge.py mcp-status --project "<project>"
    ```
 
-   Report `session_visible` and `subagent_visible` separately for every route. A route the session can use but its spawned agents cannot is the normal result of project scope, not a fault: delegated work on that lane takes the declared fallback. Name the remedy without performing it — widening a route to user scope is `forge-capability-admin`'s consented external write, never Doctor's. Never report a route as available on the strength of the server being installed.
+   Report `session_visible` and `subagent_visible` separately for every route. A route visible to the session but not to its spawned agents is project scope working as declared, not a fault; delegated work on that lane takes the declared fallback. Name the remedy without performing it — widening a route to user scope belongs to `forge-capability-admin`. Never report a route as available on the strength of the server being installed.
 5. Treat executable or plugin detection as `AVAILABLE_UNVERIFIED` until a safe end-to-end probe passes.
 6. Probe each accepted route independently with known-good and known-bad controls. Never expose or persist credential values.
 7. Distinguish actual generation/operation surfaces from planning or prompt-only skills. A model advertising vision/audio/tools is an input/tool capability, not proof of image, video, mesh or animation generation.

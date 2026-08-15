@@ -22,7 +22,3 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 1. Require in-engine evidence in addition to a passing UAT: PIE session outcome, fixed-condition frame captures, or a recorded playthrough of the affected loop.
 2. A build that compiles and tests green is not a verified game phase. Feel and presentation are human gates and remain so.
 3. Record residual risk explicitly.
-
-## Note
-
-Forge holds exactly one verification authority at a time. The relayed gate stays authoritative for pass/fail; Forge adds in-engine evidence as an additional requirement and never as a competing verdict. Two authorities is the failure mode this boundary exists to prevent.

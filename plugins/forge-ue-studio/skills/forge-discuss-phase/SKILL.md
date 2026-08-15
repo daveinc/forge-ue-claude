@@ -25,7 +25,3 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 1. Record any decision that constrains an asset interface in the GDD ledger, not only in CONTEXT.md.
 2. List unresolved decisions explicitly. An unresolved art/gameplay interface blocks parallel DAGs and must be surfaced, not deferred silently.
-
-## Note
-
-Discussion is where Forge diverges most from generic planning. A web feature has no art/gameplay interface to negotiate; a game phase almost always does.

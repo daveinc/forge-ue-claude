@@ -19,4 +19,4 @@ Turn a source or tool into tested, context-efficient capability rather than pros
 8. Generate small domain cards, relationship graphs when useful, and retrieval keys. Compile minimal offload packets so local workers can process context-heavy sources without receiving whole manuals, the complete GDD or resident conversation.
 9. Record invalidation triggers and re-probe after version, schema, model, plugin, engine, hardware or path changes. Route installation and activation through `forge-capability-admin`.
 
-During installation, Research is available immediately after the core overlay. Optional integrations must pass through this same path.
+Every optional integration passes through this path.

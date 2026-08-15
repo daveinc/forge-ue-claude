@@ -21,7 +21,8 @@ Use GSD as the sole phase-state authority. Forge Next is a launcher, not another
 5. Read the `runtime` block. It names the assigned host and whether its rendered surfaces are current. Commands in `actions` are already spelled for that host — present them verbatim.
 6. If the situation is `host-surfaces-stale`, the project's generated surfaces do not match the assigned runtime. Route to `forge-runtime` and stop; do not perform production work against stale instructions or agents.
 7. Surface any `warnings` verbatim alongside the summary, then continue. They are advisory and never change the routed action. `execution_coverage` carries the per-phase detail behind a warning about plans without matching summaries. A partially executed phase is normal mid-execution; treat it as a question for the user, not an error.
-8. If the detector fails, run `forge-doctor`; do not guess the active phase.
+8. Read `suppressed_actions` before presenting. It records the GSD commands the verb registry marks `drop`, with their reasons. Never present a suppressed command, and never treat the record as a failure. When every offered action was suppressed the detector routes to a Forge verb instead, so the action list is never empty.
+9. If the detector fails, run `forge-doctor`; do not guess the active phase.
 
 ## Present and dispatch
 
@@ -39,5 +40,3 @@ When Forge Init invokes this detector at its entry gate:
 - Otherwise dispatch the recommended action and stop Forge Init.
 - Existing design documents route through `gsd-ingest-docs`; an existing Unreal/code project without planning routes through `gsd-onboard`; an existing `.planning` tree follows the exact GSD smart-entry action.
 - A missing or incomplete Forge control plane routes through `forge-bootstrap` or `forge-bootstrap --resume` before any design or production work.
-
-This makes re-running `forge-init` safe in a partially built project: it becomes a state scan and handoff, not a restart.

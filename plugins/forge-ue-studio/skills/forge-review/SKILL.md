@@ -5,7 +5,7 @@ description: Review game project work — plans, code, security, or outstanding 
 
 # Forge Review
 
-One review verb with four modes. Each fans out to the GSD workflow that does the reviewing, then grades the result against Forge's own standards — the acceptance registry, capability qualification evidence, and the lane contract — instead of a generic definition of quality.
+One review verb with four modes. Each fans out to the GSD workflow that reviews, then grades the result against the acceptance registry, capability qualification evidence, and the lane contract.
 
 Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow, and require a structured result. The subagent never talks to the user.
 
@@ -28,7 +28,7 @@ Modes compose. `--code --security` runs both and returns one merged verdict.
 2. Load `.forge/acceptance/registry.json`. **The registered acceptance suites are the grading rubric.** A review that passes generic criteria but fails a registered suite has not passed.
 3. Load `.forge/capabilities/qualifications.json`. Note which routes carry evidence and under which host.
 4. Choose the reviewer. The resident host reviews by default. A qualified optional worker may review only when independence or economy justifies it *and* its qualification covers the exact task class and complexity tier.
-5. Enforce reviewer independence: hand over requirements, the artifact or diff, acceptance criteria, and evidence. **Never pass builder reasoning.** A reviewer that has seen the builder's rationale is no longer independent.
+5. Enforce reviewer independence: hand over requirements, the artifact or diff, acceptance criteria, and evidence. **Never pass builder reasoning.**
 
 ## CORE — GSD
 
@@ -51,4 +51,4 @@ Modes compose. `--code --security` runs both and returns one merged verdict.
 - Review is bounded. Cycles have a limit; a stall escalates to a human rather than iterating.
 - Never auto-apply fixes from a review in the same pass that produced them. Findings are input to a plan, not a licence to edit.
 - Subjective art and game feel are human gates. A reviewer may report on them but never closes them.
-- For plan convergence specifically, prefer `forge-plan-convergence` — it owns the bounded source-grounded cycle. This skill's default mode is a single review pass, not a convergence loop.
+- For plan convergence, use `forge-plan-convergence`. This skill's default mode is a single review pass.

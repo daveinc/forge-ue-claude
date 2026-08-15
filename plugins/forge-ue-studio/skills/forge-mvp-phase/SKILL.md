@@ -11,9 +11,7 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 ## What a vertical slice means here
 
-A game phase is not done when a feature exists; it is done when a **loop is playable and feels like something**. Generic MVP framing optimises for shipping a software feature, which is a different finish line.
-
-So translate before relaying. The slice is the thinnest path that a player can actually run end to end: input → mechanic → feedback → outcome. Placeholder art is expected and acceptable. A slice with final art and no loop is not a slice.
+A phase is done when a **loop is playable and feels like something**, not when a feature exists. The slice is the thinnest path a player can run end to end: input → mechanic → feedback → outcome. Placeholder art is expected and acceptable. A slice with final art and no loop is not a slice.
 
 ## PRE — Forge
 
@@ -31,9 +29,9 @@ So translate before relaying. The slice is the thinnest path that a player can a
 
 1. Record the slice's acceptance criteria in `.forge/acceptance/` as a **feel** criterion plus a mechanical one. The mechanical half can be automated; the feel half is a human gate and stays one.
 2. Register the asset interfaces the slice depends on, marked as placeholder-satisfiable, so visual production can proceed in parallel against them.
-3. Hand off to `forge-plan-phase` without re-declaring the phase mode. The mode is carried in the roadmap the relayed workflow already wrote; asserting it a second time is how the two surfaces drift apart.
+3. Hand off to `forge-plan-phase` without re-declaring the phase mode. The relayed workflow already wrote it to the roadmap.
 
 ## Boundaries
 
-- Never let a slice grow to include work that does not serve the loop under test. That is the failure MVP mode exists to prevent.
+- Never let a slice grow to include work that does not serve the loop under test.
 - Never accept "the feature is implemented" as slice completion. Run it. `forge-gameplay-gauntlet` is the right follow-up once a loop exists.

@@ -11,7 +11,7 @@ Create the durable project control plane before design or Unreal project-shell w
 
 1. Resolve the intended project root. It may be an existing empty/pre-project directory or contain exactly one `.uproject`.
 2. If `.forge/config.json` or `.forge/directives.md` is absent, apply the bundled project overlay with `scripts/forge.py install --project <root> --apply`. This is a reversible project-file installation and must not install packages, models, plugins, MCPs, or change the machine.
-3. **STOP after first overlay installation.** Tell the user to open a fresh task in the project and run `forge-next`. Do not continue in the current task: the newly rendered project instruction file, project agents, state and skill surface must be loaded by a fresh host context.
+3. **STOP after first overlay installation.** Tell the user to open a fresh task in the project and run `forge-next`. Do not continue in the current task; a fresh host context must load the newly rendered instruction file, project agents, state, and skill surface.
 4. On `--resume`, read the project instruction file named by the active host profile (`CLAUDE.md`, `AGENTS.md`, or whatever `project_surface.instruction_file` declares), `.forge/directives.md`, install state, and the canonical packet registry. Treat any `.forge/state/lifecycle.json` as deprecated compatibility history.
 5. Run deterministic Survey and Profile first; write `.forge/capabilities/detected.json`. Detection never grants qualification.
 6. Compile only applicable installation jobs from [installation-waves.md](references/installation-waves.md). Record each job's canonical `FI-*` work order, objective, inputs, read/write scope, agent type, expected result and acceptance in `.forge/state/install-jobs.json` before dispatch.
@@ -38,9 +38,7 @@ Create the durable project control plane before design or Unreal project-shell w
     | `installation-jobs` | A canonical `FI-*` packet is unaccounted for — dispatch it or record an evidence-backed `NOT_APPLICABLE`. |
     | `phase-contract` | The rendered instruction file is missing or lacks `## Forge phase contract`. |
 
-    A `phase-contract` failure usually means overlay installation preserved an existing instruction file and wrote a `.forge-proposed` sibling. Stop for an explicit merge decision, or re-render with `forge.py host set --host <id> --project . --apply`. Bootstrap cannot pass while the active instruction file lacks the contract, because that file is what constrains the next session.
-
-    This gate is Forge's own and covers Forge's own control plane. Nothing downstream is responsible for it, so a failure here must block rather than defer.
+    A `phase-contract` failure usually means overlay installation preserved an existing instruction file and wrote a `.forge-proposed` sibling. Stop for an explicit merge decision, or re-render with `forge.py host set --host <id> --project . --apply`.
 13. **STOP.** Require a fresh project session and present `forge-next`. Forge Next will inspect existing docs, Unreal/code, and GSD state before deciding whether inception, ingestion, onboarding, or phase recovery is correct.
 
 Use `forge-doctor` for read-only environment classification, `forge-research` for newly discovered sources, and `forge-capability-admin` for consent/qualification after bootstrap.

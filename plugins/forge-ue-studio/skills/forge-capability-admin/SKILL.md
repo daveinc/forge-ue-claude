@@ -25,7 +25,7 @@ Manage optional capability surfaces without changing Forge's permanent directive
    python <forge-plugin-root>/scripts/forge.py mcp remove  --project <project-root> --id <provider> --apply
    ```
 
-   Adding a route mid-project is ordinary, not exceptional: a game that gains an audio or capture tool in its third milestone declares it the same way it declared its first. A provider in the shipped catalog inherits its capabilities, lane, isolation mode and fallbacks; anything else declares them in its own entry so routing still resolves. Rendering preserves servers this project did not declare, so a hand-added entry survives. Re-run `mcp-status` afterwards and requalify: a newly declared route starts `UNQUALIFIED` like any other provider.
+   A provider in the shipped catalog inherits its capabilities, lane, isolation mode and fallbacks; anything else declares them in its own entry so routing resolves. Rendering preserves servers this project did not declare. Re-run `mcp-status` afterwards and requalify: a newly declared route starts `UNQUALIFIED` like any other provider.
 10. Choose a route's scope deliberately. `--scope project` is the default and reaches the session opened from this game. `--scope user` or `both` additionally publishes to the machine-wide config, which is what lets agents the session spawns use the route rather than falling back:
 
     ```powershell
@@ -33,6 +33,6 @@ Manage optional capability surfaces without changing Forge's permanent directive
     python <forge-plugin-root>/scripts/forge.py mcp sync-user --project <project-root> --apply  # write
     ```
 
-    This is an external write in this skill's own consent sense: it changes a file every other project on the machine reads. It plans by default, applies only when asked, backs up first, records consent in the ledger, and edits only its own server entries. An entry that no longer matches what Forge renders is reported and left alone rather than reclaimed, and a config that will not parse is never rewritten. Prefer project scope unless delegated work actually needs the route; widening scope to silence a fallback is the wrong fix.
+    Treat this as an external write: plan it by default, apply it only when asked, and record the consent. Forge backs up first, edits only its own server entries, leaves an entry that no longer matches what it renders, and never rewrites a config it cannot parse. Prefer project scope unless delegated work needs the route; never widen scope to silence a fallback.
 
 Never equate free, local, installed, enabled, large-context, or one successful attempt with competence.

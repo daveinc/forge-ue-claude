@@ -5,7 +5,7 @@ description: Inspect, assign, or swap the resident AI runtime host for a Forge p
 
 # Forge Runtime
 
-Forge treats the AI runtime as an **assignment**, not an assumption. A project records its resident host in `.forge/runtime.json` and can change it at any stage — before inception, mid-phase, or at a resume boundary — without losing planning state, packets, or evidence.
+A project records its resident host in `.forge/runtime.json`. Change it at any stage — before inception, mid-phase, or at a resume boundary — without losing planning state, packets, or evidence.
 
 ## The portability contract
 
@@ -16,7 +16,7 @@ Two kinds of files exist in a Forge project. Never confuse them.
 | **Canon** — portable, authoritative | `.forge/agents/*.json`, `.forge/directives.md`, `.forge/templates/`, `.forge/state/`, `.forge/capabilities/`, `.planning/` | Never host-specific. Edit these. |
 | **Rendered** — disposable, host-specific | The project instruction file (`CLAUDE.md`, `AGENTS.md`, …) and the host agent directory (`.claude/agents/`, `.codex/agents/`, …) | Generated from canon. Never hand-edit. |
 
-A project is portable when every host-specific surface can be regenerated from canon. Writing a host name, skill prefix, or vendor path into canon breaks that and must be rejected in review.
+Reject any host name, skill prefix, or vendor path written into canon.
 
 ## Inspect
 
@@ -58,13 +58,15 @@ Preserved: `.planning` phase state, `.forge/state` packets and leases, canonical
 
 Regenerated: the project instruction file and project-local agents, re-rendered from canon in the new host's format and skill spelling.
 
-Invalidated: provider qualification evidence and host context-cost measurements. A route qualified under one runtime is **STALE** under another. Re-probe through `forge-capability-admin` before trusting an offload route after a swap. Routing enforces this — an evaluation recorded under a different host is rejected as ineligible.
+Re-pointed: GSD's `runtime` key in `.planning/config.json`, the only key Forge writes there. The sync is deferred when GSD has not created that file yet, and skipped for a host declaring no GSD runtime name; the swap result reports both, and neither is a failure.
+
+Invalidated: provider qualification evidence and host context-cost measurements. Re-probe through `forge-capability-admin` before trusting an offload route after a swap; routing rejects an evaluation recorded under a different host.
 
 ## Adding a new host
 
-Any runtime satisfying the prerequisite contract can hold the resident seat. To add one, append a profile to `plugins/forge-ue-studio/hosts/registry.json` declaring its CLI, skill-invocation prefix, discovery roots, project surface (instruction filename, agent directory, agent format), plugin install commands, GSD install arguments, and the capabilities it `provides`. No Forge code changes are required. Validate with `python scripts/validate_repo.py`, which refuses duplicate skill prefixes, unsupported agent formats, and hosts that cannot meet the contract.
+Append a profile to `plugins/forge-ue-studio/hosts/registry.json` declaring its CLI, skill-invocation prefix, discovery roots, project surface (instruction filename, agent directory, agent format), plugin install commands, GSD install arguments, and the capabilities it `provides`. Never edit Forge code to add a host. Validate with `python scripts/validate_repo.py`.
 
-If a host cannot supply an optional capability, Forge degrades that behaviour rather than blocking: no project-local agents means delegation is recorded as degraded inline execution; no interactive question tool means Forge prints a numbered list and stops for a reply.
+Profile example and degradation rules: [host runtimes](../../../../docs/host-runtimes.md).
 
 ## Boundaries
 

@@ -24,7 +24,7 @@ Turn an idea into approved, schedulable studio work, then hand control to GSD's 
    python <forge-plugin-root>/scripts/forge.py mcp add --project <project-root> --id <provider> --command <exe> --arg <arg> --apply
    ```
 
-   Declaring a route writes it into the project and renders the host's own MCP surface from it, so a session opened from this project sees the server whatever the machine happened to have configured today. Run `mcp-status` to confirm each declared route before depending on it. A provider in the shipped catalog inherits its capabilities, lane and fallbacks; anything else must declare them in the same entry. Routes stay amendable for the life of the project through `forge-capability-admin` — this step chooses the starting set, it does not close the list.
+   Run `mcp-status` to confirm each declared route before depending on it. A provider in the shipped catalog inherits its capabilities, lane and fallbacks; anything else must declare them in the same entry. Amend the set later through `forge-capability-admin`.
 
 3. Map unresolved gaps, then ask one highest-value question at a time. Resolve mandate, audience, platforms, camera, core loop, progression, tone, scope, content boundaries, references, performance envelope, business constraints, and decision owners. Offer concrete options without forcing the framing.
 4. Record unknowns as explicit hypotheses, deferrals or spikes. Do not silently choose them or make changeable art block the playable contract.

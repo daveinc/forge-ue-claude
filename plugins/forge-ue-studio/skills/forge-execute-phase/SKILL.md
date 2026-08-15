@@ -22,7 +22,7 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 ## POST — Forge
 
-1. Release every lease, including on failure. A leaked lease blocks the next session.
+1. Release every lease, including on failure.
 2. Record attempt results with observed facts separated from inference, naming the route actually taken for every capability that had a fallback available.
 3. Verify phase completion by invoking GSD's own completion check rather than restating what it will accept.
 

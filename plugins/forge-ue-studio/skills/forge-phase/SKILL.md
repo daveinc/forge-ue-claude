@@ -20,4 +20,4 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 ## POST — Forge
 
 1. Verify no canonical packet ID was replaced. A new alias requires an explicit `alias` to `canonical` record; a genuinely new packet requires `derived_from` provenance.
-2. Replacing an established packet ID is the failure that caused the RunnerRoyale drift incident. Refuse it.
+2. Refuse any edit that replaces an established packet ID.
