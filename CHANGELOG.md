@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Resume as a first-class verb
+
+- Add `forge-resume-work`, fronting `gsd-resume-work`. Resuming was previously reachable only as `forge-handoff --resume`, which hid a daily command behind a flag on a verb named for pausing. `forge-handoff` now pauses only, and smart-entry's `gsd-resume-work` emission translates to `/forge-resume-work`.
+- Resuming reclaims lane leases before work restarts and re-probes qualification when the handoff was produced under a different host.
+
+### Correctness
+
+- Fix `mcp-status` routes overwriting the declared scope with the probe's. Both are reported: `scope` is what the project declared (`project`/`user`/`both`), `found_in_scope` is where the probe found the server. Consumers reading `scope` were reading the probe result.
+- Fix `mcp amend` writing an unroutable declaration to disk and only then failing to resolve it, which left `.forge/mcp.json` in a state the next command refused. The amendment now resolves before anything is written.
+
+### Documentation
+
+- Rebuild `README.md` as a landing page — what Forge is, how it works, a quickstart, and an index — instead of a 500-line manual. Everything it used to carry now lives in `docs/`, organised as tutorials, how-to guides, reference, and explanation, with `docs/README.md` as the index.
+- Add [Your first game](docs/tutorials/your-first-game.md), [Adopt an existing project](docs/tutorials/adopt-an-existing-project.md), [Install Forge](docs/how-to/install-forge.md), [Swap the resident runtime](docs/how-to/swap-runtime-host.md), [Troubleshoot](docs/how-to/troubleshoot.md), [Skills](docs/reference/skills.md), [Installer](docs/reference/installer.md), [Repository and project layout](docs/reference/repository-layout.md), and [How Forge works](docs/explanation/how-forge-works.md).
+
+### Comments and skill prose
+
+- Remove every comment from `forge.py`, `validate_repo.py`, `test_forge.py`, and `install.ps1` (−350 lines). Rules moved to the skill step, doc, or registry that owns them; explanations became named values, extracted functions, or failure messages; history stayed in git.
+- Record the rule in `CONTRIBUTING.md` and enforce it in `validate_repo.py`, which now fails on any comment in those four files apart from shebangs and tool pragmas.
+- Cut the same class of prose from 18 `SKILL.md` files: justification clauses, restated rationale, and one reference to a past incident. A skill states what to do and what is refused, not why the rule was written.
+
 ### Host-agnostic runtime
 
 - Make the resident AI runtime a **swappable assignment** rather than a hardcoded vendor. A project records its host in `.forge/runtime.json` and can change it at any stage — including mid-phase and at a resume boundary — without losing planning state, packets, or evidence.

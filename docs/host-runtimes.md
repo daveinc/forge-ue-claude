@@ -88,6 +88,7 @@ A swap:
 - **Preserves** `.planning` phase state, `.forge/state` packets and leases, canonical packet IDs, agent definitions, directives, and research.
 - **Regenerates** the project instruction file and project-local agents in the new host's format and spelling.
 - **Retires** the previous host's generated files, and removes the directory when it empties.
+- **Re-points** GSD's `runtime` key in `.planning/config.json`, so GSD spells its own commands for the assigned host. It is the only key Forge writes there.
 - **Invalidates** provider qualification evidence and host context-cost measurements.
 
 Round-tripping is byte-identical: swapping away and back reproduces the original surfaces exactly, which is what makes the assignment reversible rather than destructive.
