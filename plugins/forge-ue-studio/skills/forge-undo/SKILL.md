@@ -1,13 +1,13 @@
 ---
 name: forge-undo
-description: Safely roll back committed game project work. Use to revert a phase or plan when execution went wrong.
+description: Roll back committed work. Use to revert a phase or plan when execution went wrong.
 ---
 
 # Forge Undo
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow, and require a structured result. The subagent never talks to the user. GSD workflow: `undo.md`.
+Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `undo.md`.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first. It defines the PRE / CORE / POST shape, the delegation modes, and the rules not repeated here.
+Read [delegation-contract.md](../../references/delegation-contract.md) first.
 
 ## PRE — Forge
 

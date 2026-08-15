@@ -1,27 +1,27 @@
 ---
 name: forge-discuss-phase
-description: Gather phase context for a game project through adaptive questioning before planning. Use when starting a new phase, when requirements are unclear, or when gameplay and art decisions must be settled before a plan exists.
+description: Gather phase context through adaptive questioning before planning. Use when starting a phase, or when gameplay and art decisions must be settled before a plan exists.
 ---
 
 # Forge Discuss Phase
 
-Delegation mode: **relay** — this workflow is interactive, so surface each question in game-dev framing and pass answers back down. Never black-box it. GSD workflow: `discuss-phase.md`.
+Delegation mode: **relay** — surface each question in game-dev framing and pass answers back down. Never black-box it. GSD workflow: `discuss-phase.md`.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first. It defines the PRE / CORE / POST shape, the delegation modes, and the rules not repeated here.
+Read [delegation-contract.md](../../references/delegation-contract.md) first.
 
 ## PRE — Forge
 
-1. Read `.forge/directives.md` and the GDD decision ledger. Load the phase entry from the roadmap.
-2. Identify which departments this phase touches (gameplay, visual, audio, narrative, QA) so questions can be scoped.
-3. Read `.forge/capabilities/registry.json` and `.forge/capabilities/detected.json` (written by `forge.py profile`), then run `python <forge-plugin-root>/scripts/forge.py mcp-status --project <project-root>`. Do not raise options that depend on an unqualified provider or an unbound typed tool route.
+1. Read `.forge/directives.md`, the GDD decision ledger, and the phase entry from the roadmap.
+2. Name the departments this phase touches — gameplay, visual, audio, narrative, QA — and scope questions to them.
+3. Read `.forge/capabilities/registry.json` and `.forge/capabilities/detected.json`, then run `python <forge-plugin-root>/scripts/forge.py mcp-status --project <project-root>`. Never raise an option that depends on an unqualified provider or an unbound route.
 
 ## CORE — GSD
 
-1. Relay GSD's discussion. Reframe each question in game terms before presenting it: pillars affected, player-facing outcome, art/gameplay interface at stake, which lane owns the work.
+1. Relay GSD's discussion. Reframe each question in game terms first: pillars affected, player-facing outcome, art/gameplay interface at stake, owning lane.
 2. Ask one high-value question at a time. Never batch.
-3. Pass answers back down verbatim. The relayed workflow owns the context artifact it writes; do not author or edit it from here.
+3. Pass answers back down verbatim. Never author or edit the relayed workflow's context artifact.
 
 ## POST — Forge
 
-1. Record any decision that constrains an asset interface in the GDD ledger, not only in CONTEXT.md.
-2. List unresolved decisions explicitly. An unresolved art/gameplay interface blocks parallel DAGs and must be surfaced, not deferred silently.
+1. Record every decision that constrains an asset interface in the GDD ledger, not only in CONTEXT.md.
+2. Surface unresolved decisions explicitly. Never defer an unresolved art/gameplay interface silently.

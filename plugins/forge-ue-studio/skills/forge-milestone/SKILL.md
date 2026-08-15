@@ -1,17 +1,17 @@
 ---
 name: forge-milestone
-description: Manage game project milestones — start, complete, audit, or summarise. Use at the boundaries between releases or vertical slices.
+description: Start, complete, audit, or summarise a milestone. Use at the boundaries between releases or vertical slices.
 ---
 
 # Forge Milestone
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow, and require a structured result. The subagent never talks to the user. GSD workflow: `complete-milestone.md`.
+Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `complete-milestone.md`.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first. It defines the PRE / CORE / POST shape, the delegation modes, and the rules not repeated here.
+Read [delegation-contract.md](../../references/delegation-contract.md) first.
 
 ## PRE — Forge
 
-1. Confirm every phase in the milestone has passed verification.
+1. Confirm every phase in the milestone passed verification.
 
 ## CORE — GSD
 
@@ -19,4 +19,4 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 ## POST — Forge
 
-1. Carry forward unresolved GDD decisions and unqualified capability routes into the next milestone rather than losing them at the boundary.
+1. Carry unresolved GDD decisions and unqualified capability routes forward into the next milestone.

@@ -1,47 +1,44 @@
 ---
 name: forge-init
-description: Start a greenfield Unreal game through a structured design interview, compact GDD, visual direction, capability-aware planning, and parallel playable/visual work DAGs, while safely routing existing or partial projects to their persisted next action. Use when a user presents a new game idea, asks to begin full game production, or invokes Forge Init in a directory whose state must be detected before inception.
+description: Start a greenfield Unreal game through a design interview, compact GDD, visual direction, and parallel playable/visual DAGs. Use for a new game idea, or when a directory's state must be detected before inception.
 ---
 
 # Forge Init
 
-Turn an idea into approved, schedulable studio work, then hand control to GSD's persisted phase loop. Forge Init is project inception; it is not an execution phase.
-
 ## Entry gate
 
-1. Run the bundled `scripts/forge.py next --project <root>` detector before interpreting or changing project state.
-2. If its recommended action is not `forge-init`, dispatch that one action and **STOP**. This includes Forge adoption/bootstrap, GSD document ingestion, existing-code onboarding, recovery, remediation, and resuming a partially completed GSD phase.
-3. Continue below only when the detector reports `greenfield-ready` and recommends `forge-init`. Do not recursively invoke Forge Init.
-4. Read the project instruction file named by the active host profile, `.forge/state/packet-registry.json`, `.forge/directives.md`, and current `.planning` artifacts. Treat `.planning` and GSD's smart-entry snapshot as the only phase authority; `.forge/state/lifecycle.json` is deprecated compatibility history.
-5. Run `gsd-new-project` without `--auto` as the canonical project/requirements/roadmap initialization workflow. Preserve all of its questions, agent dispatch, approvals, commits, state files, and stop points. Forge artifacts link to GSD decisions; they do not create a competing phase engine.
+1. Run `scripts/forge.py next --project <root>` before interpreting or changing project state.
+2. Dispatch the recommended action and **STOP** when it is not `forge-init`.
+3. Continue only on `greenfield-ready`. Never invoke Forge Init recursively.
+4. Read the host's project instruction file, `.forge/state/packet-registry.json`, `.forge/directives.md`, and current `.planning` artifacts. Treat `.forge/state/lifecycle.json` as deprecated history.
+5. Run `gsd-new-project` without `--auto`. Preserve its questions, agent dispatch, approvals, commits, state files, and stop points.
 
 ## Workflow
 
-1. Run `forge-doctor` before committing to tool-specific routes. Preserve verified and assumed facts separately.
-2. Declare the typed tool routes this game will use, while the project is being created:
+1. Run `forge-doctor`. Record verified and assumed facts separately.
+2. Declare the typed tool routes this game will use:
 
    ```powershell
    python <forge-plugin-root>/scripts/forge.py mcp add --project <project-root> --id <provider> --command <exe> --arg <arg> --apply
    ```
 
-   Run `mcp-status` to confirm each declared route before depending on it. A provider in the shipped catalog inherits its capabilities, lane and fallbacks; anything else must declare them in the same entry. Amend the set later through `forge-capability-admin`.
-
-3. Map unresolved gaps, then ask one highest-value question at a time. Resolve mandate, audience, platforms, camera, core loop, progression, tone, scope, content boundaries, references, performance envelope, business constraints, and decision owners. Offer concrete options without forcing the framing.
-4. Record unknowns as explicit hypotheses, deferrals or spikes. Do not silently choose them or make changeable art block the playable contract.
-5. Run a divergent design pass before locking the compact GDD. Generate materially different core-loop, progression, narrative and production options, test them against the mandate, and preserve rejected tradeoffs in the decision ledger.
-6. Produce the compact GDD, decision ledger and acceptance spine. Keep large lore, research, and references as linked sources rather than worker payload.
-7. Have the resident host develop the first visual pillars, negative references, character/world sheets and storyboard/beat-board candidates, using exposed image generation for art/photo concepts when available. Send bounded alternatives or breakdowns to qualified local workers when useful; preserve prompts, model/source, licence and date.
+   Run `mcp-status` to confirm each route before depending on it. Declare capabilities, lane and fallbacks in the entry for any provider outside the shipped catalog. Amend the set later through `forge-capability-admin`.
+3. Ask one highest-value question at a time. Resolve mandate, audience, platforms, camera, core loop, progression, tone, scope, content boundaries, references, performance envelope, business constraints, and decision owners. Offer concrete options without forcing the framing.
+4. Record every unknown as an explicit hypothesis, deferral, or spike. Never silently choose one, and never let changeable art block the playable contract.
+5. Run a divergent design pass before locking the compact GDD. Generate materially different core-loop, progression, narrative and production options, test them against the mandate, and keep rejected tradeoffs in the decision ledger.
+6. Produce the compact GDD, decision ledger, and acceptance spine. Link large lore, research and references as sources rather than worker payload.
+7. Develop the first visual pillars, negative references, character/world sheets and storyboard candidates on the resident host. Offload bounded alternatives to qualified workers; preserve prompt, model/source, licence and date.
 8. Obtain human approval for the primary visual direction. Create replacement-safe asset interfaces for scale, skeleton, sockets, collision, material slots, animation events, and budgets.
-9. Compile concurrent playable, visual, narrative, audio, research and QA workstreams. Synchronize them only through explicit requirements, accepted decisions and asset interfaces. Register each canonical packet ID once in `.forge/state/packet-registry.json`; later plans must reuse it. An alias requires an explicit alias record, and a genuinely new packet requires `derived_from` provenance.
-10. Run `forge-plan-convergence` on the inception/roadmap artifacts. Do **not** dispatch a walking-skeleton packet from Forge Init.
-11. Run `scripts/forge.py next --project <root>` again after inception artifacts are persisted. It must obtain the next phase action from GSD smart-entry rather than hardcoding a phase number or command.
-12. **STOP.** Require a fresh project task and present `forge-next` as the stable resume entry plus the detected recommended action for transparency. Do not invoke phase discussion, planning, routing, implementation or verification in the Forge Init task.
+9. Compile concurrent playable, visual, narrative, audio, research and QA workstreams. Synchronize them only through requirements, accepted decisions and asset interfaces. Register each canonical packet ID once in `.forge/state/packet-registry.json`; require an explicit alias record for an alias and `derived_from` provenance for a new packet.
+10. Run `forge-plan-convergence` on the inception artifacts. Never dispatch a walking-skeleton packet from Forge Init.
+11. Re-run `scripts/forge.py next --project <root>` once inception artifacts are persisted. Take the next action from GSD smart-entry; never hardcode a phase number or command.
+12. **STOP.** Require a fresh task and present `forge-next`. Never run phase discussion, planning, routing, implementation or verification here.
 
 Read [project-inception.md](references/project-inception.md) when conducting the interview or compiling the two DAGs.
 Read [gsd-lifecycle.md](references/gsd-lifecycle.md) before completing inception or describing the next step.
 
 ## Gates
 
-Never auto-approve the mandate, primary visual direction, subjective art, game feel, or release. Do not start full production while a decision that changes architecture or content scope is still implicit.
-
-Never present a project packet as a Forge workflow step. Use `FI-*` only for Forge bootstrap/inception controls, GSD's own phase/plan identifiers for lifecycle, and registered project IDs such as `P0`/`V0` for production packets.
+- Never auto-approve the mandate, primary visual direction, subjective art, game feel, or release.
+- Never start full production while a decision that changes architecture or content scope is implicit.
+- Never present a project packet as a Forge workflow step. Use `FI-*` for Forge bootstrap and inception controls, GSD's identifiers for lifecycle, and registered IDs such as `P0`/`V0` for production packets.

@@ -1,13 +1,13 @@
 ---
 name: forge-ingest-docs
-description: Ingest existing game design documents into planning state. Use when a project has design docs but no GSD project memory.
+description: Ingest existing design documents into planning state. Use when a project has design docs but no GSD project memory.
 ---
 
 # Forge Ingest Docs
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow, and require a structured result. The subagent never talks to the user. GSD workflow: `ingest-docs.md`.
+Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `ingest-docs.md`.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first. It defines the PRE / CORE / POST shape, the delegation modes, and the rules not repeated here.
+Read [delegation-contract.md](../../references/delegation-contract.md) first.
 
 ## PRE — Forge
 

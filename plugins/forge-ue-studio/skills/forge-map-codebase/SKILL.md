@@ -5,13 +5,9 @@ description: Analyse an Unreal codebase and produce structured planning intel. U
 
 # Forge Map Codebase
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow, and require a structured result. The subagent never talks to the user. GSD workflow: `map-codebase.md`.
+Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `map-codebase.md`.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first. It defines the PRE / CORE / POST shape, the delegation modes, and the rules not repeated here.
-
-## PRE — Forge
-
-_Nothing beyond the shared contract._
+Read [delegation-contract.md](../../references/delegation-contract.md) first.
 
 ## CORE — GSD
 
@@ -19,4 +15,4 @@ _Nothing beyond the shared contract._
 
 ## POST — Forge
 
-1. Add Unreal-specific structure: module boundaries, Blueprint and C++ split, `Content/` organisation, and which assets are binary-locked.
+1. Add Unreal-specific structure: module boundaries, the Blueprint and C++ split, `Content/` organisation, and which assets are binary-locked.

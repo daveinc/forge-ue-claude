@@ -1,17 +1,17 @@
 ---
 name: forge-onboard
-description: Onboard an existing Unreal project into Forge and GSD planning. Use when adopting a codebase that has no planning state.
+description: Onboard an existing Unreal project into Forge and GSD planning. Use when adopting a codebase with no planning state.
 ---
 
 # Forge Onboard
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow, and require a structured result. The subagent never talks to the user. GSD workflow: `onboard.md`.
+Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `onboard.md`.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first. It defines the PRE / CORE / POST shape, the delegation modes, and the rules not repeated here.
+Read [delegation-contract.md](../../references/delegation-contract.md) first.
 
 ## PRE — Forge
 
-1. Run `forge-doctor` first so capability routes are known before mapping begins.
+1. Run `forge-doctor` so capability routes are known before mapping begins.
 
 ## CORE — GSD
 

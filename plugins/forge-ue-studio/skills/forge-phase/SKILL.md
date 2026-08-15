@@ -1,13 +1,13 @@
 ---
 name: forge-phase
-description: Add, insert, remove, or edit phases in a game project roadmap. Use when the plan of record changes shape.
+description: Add, insert, remove, or edit phases in the roadmap. Use when the plan of record changes shape.
 ---
 
 # Forge Phase
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow, and require a structured result. The subagent never talks to the user. GSD workflow: `add-phase.md`.
+Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `add-phase.md`.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first. It defines the PRE / CORE / POST shape, the delegation modes, and the rules not repeated here.
+Read [delegation-contract.md](../../references/delegation-contract.md) first.
 
 ## PRE — Forge
 
@@ -15,9 +15,9 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 ## CORE — GSD
 
-1. Contain GSD's phase CRUD. It owns phase-ID arithmetic, including decimal insertion and milestone-scoped roadmap edits. Do not reimplement either.
+1. Contain GSD's phase CRUD. It owns phase-ID arithmetic, including decimal insertion and milestone-scoped edits.
 
 ## POST — Forge
 
-1. Verify no canonical packet ID was replaced. A new alias requires an explicit `alias` to `canonical` record; a genuinely new packet requires `derived_from` provenance.
+1. Verify no canonical packet ID was replaced. Require an explicit `alias` to `canonical` record for an alias, and `derived_from` provenance for a new packet.
 2. Refuse any edit that replaces an established packet ID.

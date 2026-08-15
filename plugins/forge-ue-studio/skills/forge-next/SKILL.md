@@ -1,43 +1,38 @@
 ---
 name: forge-next
-description: Detect persisted Forge adoption, bootstrap, project-document, Unreal/code, and authoritative GSD planning state, present the valid next actions, dispatch exactly one, and stop. Use as the normal entry or resume command for any Forge project, after a fresh-task boundary or interruption, when a project is partially built, or when Forge Init must avoid restarting existing work.
+description: Detect persisted Forge, document, code, and GSD planning state, present the valid next actions, and dispatch exactly one. Use as the entry and resume command for any Forge project.
 ---
 
 # Forge Next
 
-Use GSD as the sole phase-state authority. Forge Next is a launcher, not another workflow engine and not a worker.
-
 ## Detect
 
-1. Resolve the current project root. Do not infer state from the conversation.
-2. Run the bundled read-only command:
+1. Resolve the current project root. Never infer state from the conversation.
+2. Run the read-only detector:
 
    ```powershell
    python <forge-plugin-root>\scripts\forge.py next --project <project-root>
    ```
 
-3. Parse the `forge.smart-entry/v1` result. It combines Forge readiness with GSD's `smart-entry --json` snapshot.
-4. Treat `.planning` and the GSD snapshot as authoritative for phase status. Treat `.forge/state/lifecycle.json` as deprecated compatibility history only; never use it to override GSD or mutate it.
-5. Read the `runtime` block. It names the assigned host and whether its rendered surfaces are current. Commands in `actions` are already spelled for that host — present them verbatim.
-6. If the situation is `host-surfaces-stale`, the project's generated surfaces do not match the assigned runtime. Route to `forge-runtime` and stop; do not perform production work against stale instructions or agents.
-7. Surface any `warnings` verbatim alongside the summary, then continue. They are advisory and never change the routed action. `execution_coverage` carries the per-phase detail behind a warning about plans without matching summaries. A partially executed phase is normal mid-execution; treat it as a question for the user, not an error.
-8. Read `suppressed_actions` before presenting. It records the GSD commands the verb registry marks `drop` — commands Forge does not route, each with its reason and the spelling that runs it directly. Present them below the Forge actions as available in GSD, never as a routed Forge action and never as a failure. When every offered action was suppressed, the detector still routes to a Forge verb, so the action list is never empty.
-9. If the detector fails, run `forge-doctor`; do not guess the active phase.
+3. Parse the `forge.smart-entry/v1` result.
+4. Treat `.planning` and the GSD snapshot as authoritative for phase status. Never use `.forge/state/lifecycle.json` to override GSD, and never mutate it.
+5. Present commands from `actions` verbatim; they are already spelled for the assigned host.
+6. On situation `host-surfaces-stale`, route to `forge-runtime` and stop.
+7. Surface every `warnings` entry verbatim, then continue. Put a partially executed phase from `execution_coverage` to the user as a question, never as an error.
+8. List `suppressed_actions` below the Forge actions as available in GSD, each with its reason and its `run_directly` spelling. Never present one as a routed action.
+9. On detector failure, run `forge-doctor`. Never guess the active phase.
 
 ## Present and dispatch
 
-1. Show the summary and ordered actions. Put the recommended action first.
-2. Unless `--auto` was explicitly supplied, let the user select an action. If an interactive question tool is unavailable, print a numbered list and stop for a reply.
+1. Show the summary and ordered actions, recommended first.
+2. Let the user select unless `--auto` was supplied. Print a numbered list and stop for a reply when no interactive question tool exists.
 3. Display the chosen command before dispatch.
-4. Dispatch exactly one existing Forge or GSD skill. Then stop. The chosen skill owns subsequent work and its own context boundary.
-5. Never perform the routed work inside Forge Next and never chain a second command.
-6. If the user asks for a GSD command directly, run it. Forge routes game production; it does not gate the user's access to GSD. Say what the Forge route would have added before running the bare command in its place.
+4. Dispatch exactly one skill, then stop.
+5. Never perform the routed work here, and never chain a second command.
+6. Run a GSD command directly when the user asks for one, after naming what the Forge route would have added.
 
 ## Forge Init integration
 
-When Forge Init invokes this detector at its entry gate:
-
-- If the recommended command is `forge-init`, return control to Forge Init and continue inception without recursively invoking it.
-- Otherwise dispatch the recommended action and stop Forge Init.
-- Existing design documents route through `gsd-ingest-docs`; an existing Unreal/code project without planning routes through `gsd-onboard`; an existing `.planning` tree follows the exact GSD smart-entry action.
-- A missing or incomplete Forge control plane routes through `forge-bootstrap` or `forge-bootstrap --resume` before any design or production work.
+1. Return control to Forge Init when the recommended command is `forge-init`. Never invoke Forge Init recursively.
+2. Otherwise dispatch the recommended action and stop Forge Init.
+3. Route an incomplete Forge control plane through `forge-bootstrap` or `forge-bootstrap --resume` before any design or production work.
