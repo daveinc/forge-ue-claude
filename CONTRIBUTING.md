@@ -10,6 +10,16 @@ Inside `forge.py`, write skill references as **bare names** (`forge-next`, not `
 
 Adding a host must not require code changes. If you find yourself editing a host list outside `registry.json`, that is the bug.
 
+## Code carries no comments
+
+`forge.py`, `validate_repo.py`, `test_forge.py`, and `install.ps1` ship with zero comments, and `validate_repo.py` fails the build on a new one. A comment is one of three things, and each has a home that is not the source:
+
+- **A rule** — how Forge must behave. It belongs in the skill step that performs it, in `docs/`, or in the registry that declares it, where the workflow reading it will actually see it. A rule restated in a comment is a second copy that drifts from the first.
+- **An explanation of what the code does** — it belongs in the code: name the value, extract the function, or state it in the failure message the user reads.
+- **History** — why something used to be different. It belongs in the commit message and `CHANGELOG.md`.
+
+Docstrings stay, one line, naming what a function returns. Shebangs and tool pragmas (`# noqa`, `# type:`) are exempt.
+
 Run:
 
 ```powershell

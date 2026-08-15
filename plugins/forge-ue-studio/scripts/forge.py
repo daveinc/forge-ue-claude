@@ -27,12 +27,7 @@ STATUSES = {
 }
 
 def schema_files() -> dict[str, str]:
-    """Kind -> schema filename, derived from what actually ships.
-
-    Hardcoding this list is what let four schemas ship with no way to validate
-    against them. Deriving it means a new schema is validatable the moment it
-    lands, and a deleted one cannot leave a dangling `--kind` behind.
-    """
+    """Kind -> schema filename, derived from the schemas that ship."""
     directory = Path(__file__).resolve().parent.parent / "schemas"
     return {
         path.name[: -len(".schema.json")]: path.name
@@ -45,36 +40,16 @@ SCHEMA_FILES = schema_files()
 RESIDENT_PROVIDER = "resident"
 
 
-# ---------------------------------------------------------------------------
-# CLI failure contract
-#
-# Every failure carries a typed reason code rather than only a sentence. Tests
-# assert on the code, so a reworded message never silently stops a test from
-# checking what it was written to check, and a caller can branch on the reason
-# without parsing prose.
-#
-# Adding a new code:
-#   - Pick a snake_case lowercase value; that string is the wire form
-#   - Group it under the subsystem prefix its call sites belong to
-#   - Raise it through fail(message, ERROR_REASON.NEW_CODE)
-#
-# validate_repo.py refuses a call site that invents a code inline, so the enum
-# stays the single list of everything this CLI can fail with.
-# ---------------------------------------------------------------------------
-
 ERROR_REASON = MappingProxyType(
     {
-        # project / host resolution
         "PROJECT_NOT_FOUND": "project_not_found",
         "PROJECT_NOT_ADOPTED": "project_not_adopted",
         "HOST_UNKNOWN": "host_unknown",
         "HOST_SURFACE_UNSUPPORTED": "host_surface_unsupported",
-        # contracts and payloads
         "CONTRACT_UNKNOWN_KIND": "contract_unknown_kind",
         "CONTRACT_INVALID": "contract_invalid",
         "RESULT_CONTRACT_VIOLATED": "result_contract_violated",
         "JSON_UNREADABLE": "json_unreadable",
-        # typed tool routes
         "MCP_UNKNOWN_CAPABILITY": "mcp_unknown_capability",
         "MCP_FIELD_RESTATED": "mcp_field_restated",
         "MCP_INCOMPLETE_DECLARATION": "mcp_incomplete_declaration",
@@ -82,10 +57,8 @@ ERROR_REASON = MappingProxyType(
         "MCP_NOT_DECLARED": "mcp_not_declared",
         "MCP_MISSING_TRANSPORT": "mcp_missing_transport",
         "MCP_NO_DECLARATION_FILE": "mcp_no_declaration_file",
-        # agents and overlay
         "AGENT_INVALID": "agent_invalid",
         "OVERLAY_MISSING": "overlay_missing",
-        # generic
         "USAGE": "usage",
         "UNKNOWN": "unknown",
     }
@@ -96,34 +69,18 @@ EXIT_FAILURE = 1
 EXIT_CONTRACT = 2
 EXIT_USAGE = 3
 
-# Commands whose answer IS a pass/fail verdict. Each must emit `ok`, and only
-# these may. GSD draws the same line: check-latest-version carries `ok` because
-# "did the check succeed" is its answer, while smart-entry does not because its
-# answer is the situation.
-#
-# main() asserts membership both ways rather than defaulting a missing `ok` to
-# success, so a verb that forgets to compute its verdict fails loudly instead of
-# exiting 0. Anything reporting a richer outcome says so in its own field —
-# `mcp sync-user` reports `mode` (dry-run / apply / blocked / report-only)
-# because "applied nothing" is a correct result, not a failure.
 VERDICT_COMMANDS = frozenset(
     {
-        "verify",           # do the rendered host surfaces still match canon
-        "bootstrap-check",  # is the Forge bootstrap closable
-        "validate",         # does the payload satisfy its declared schema
-        "host status",      # are this host's surfaces current
+        "verify",
+        "bootstrap-check",
+        "validate",
+        "host status",
     }
 )
 
 
 class ForgeExit(Exception):
-    """A failure carrying its exit code and typed reason.
-
-    Raised instead of calling sys.exit() inside the logic, so a caller that
-    imports this module gets an exception it can catch rather than a process
-    that vanishes underneath it. main() is the only place that turns one into
-    an exit code.
-    """
+    """A failure carrying its exit code and typed reason."""
 
     def __init__(self, message: str, reason: str = ERROR_REASON["UNKNOWN"], code: int = EXIT_FAILURE, **extra: Any):
         super().__init__(message)
@@ -138,23 +95,12 @@ class ForgeExit(Exception):
 
 
 def fail(message: str, reason: str = ERROR_REASON["UNKNOWN"], code: int = EXIT_FAILURE, **extra: Any) -> ForgeExit:
-    """Build the failure to raise. Returns rather than raises so the call site
-    reads `raise fail(...)` and static analysis still sees the control flow."""
+    """Build the failure to raise, so a call site reads `raise fail(...)`."""
     return ForgeExit(message, reason=reason, code=code, **extra)
 
 
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
-
-
-# ---------------------------------------------------------------------------
-# Host runtime layer
-#
-# Forge treats the AI runtime as a swappable assignment rather than a hardcoded
-# vendor. Every host-specific surface (project instruction file, project-local
-# agents, skill command spelling) is rendered from the host-neutral canon under
-# .forge, so a project stays portable and can change runtime at any stage.
-# ---------------------------------------------------------------------------
 
 
 def plugin_root() -> Path:
@@ -210,19 +156,6 @@ def toml_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
-# ---------------------------------------------------------------------------
-# Typed tool routes (MCP)
-#
-# A capability is routable when three things agree: the canon declares a server
-# for it, the active host can speak MCP and knows how to spell that server's
-# tool namespace, and a probe found the server declared in a configuration the
-# host actually reads. None of the three is inferred from the others — an
-# installed server is not a granted tool, and a granted tool is not a verified
-# route. Missing pieces degrade to the row's declared fallback; they never
-# silently drop the capability.
-# ---------------------------------------------------------------------------
-
-
 def mcp_registry() -> dict[str, Any]:
     return load_json(plugin_root() / "dependencies" / "mcp-registry.json")
 
@@ -255,12 +188,7 @@ def mcp_tool_namespace(profile: dict[str, Any], server: str) -> str | None:
 
 
 def agent_tool_surface(definition: dict[str, Any], profile: dict[str, Any]) -> list[str]:
-    """Compose an agent's tool allowlist from built-ins plus typed tool routes.
-
-    An unknown capability is a hard error rather than a silent omission: a
-    definition that names a capability no provider serves would otherwise render
-    an agent that quietly cannot do its job.
-    """
+    """Compose an agent's tool allowlist from built-ins plus typed tool routes."""
     tools = [str(item) for item in definition.get("tools", []) if str(item).strip()]
     declared = [str(item) for item in definition.get("mcp_capabilities", []) if str(item).strip()]
     if not declared:
@@ -275,14 +203,18 @@ def agent_tool_surface(definition: dict[str, Any], profile: dict[str, Any]) -> l
             reason=ERROR_REASON["MCP_UNKNOWN_CAPABILITY"],
         )
     if not host_speaks_mcp(profile):
-        # The host cannot bind typed tools at all. The agent still renders and
-        # still works through the row's declared fallback route.
         return tools
     for capability in declared:
         namespace = mcp_tool_namespace(profile, index[capability].get("server", ""))
         if namespace and namespace not in tools:
             tools.append(namespace)
     return tools
+
+
+def _toml_table_header_declares(text: str, server_key: str, server: str) -> bool:
+    """Whether an unparsed TOML config carries the `[key.server]` table header."""
+    header = rf"^\s*\[{re.escape(server_key)}\.{re.escape(server)}\]"
+    return re.search(header, text, re.MULTILINE) is not None
 
 
 def _mcp_config_declares(path: Path, entry: dict[str, Any], server: str) -> bool:
@@ -306,23 +238,14 @@ def _mcp_config_declares(path: Path, entry: dict[str, Any], server: str) -> bool
 
             document = tomllib.loads(text)
         except (ImportError, ValueError):
-            # No parser, or a config this host wrote that we cannot parse. Fall
-            # back to the table header, which is the only shape that declares a
-            # server. Never guess from a bare mention of the name.
-            return re.search(rf"^\s*\[{re.escape(server_key)}\.{re.escape(server)}\]", text, re.MULTILINE) is not None
+            return _toml_table_header_declares(text, server_key, server)
         servers = document.get(server_key)
         return isinstance(servers, dict) and server in servers
     return False
 
 
 def probe_mcp_server(root: Path, profile: dict[str, Any], server: str) -> dict[str, Any]:
-    """Read-only detection: is this server declared where the host would read it?
-
-    Reports the scope it was found in, because scope decides whether a spawned
-    agent can see it at all. A server declared only at project scope is present
-    for the resident session and absent for every agent it spawns, which is the
-    failure this probe exists to make visible instead of surprising.
-    """
+    """Read-only detection: is this server declared where the host would read it?"""
     if not host_speaks_mcp(profile):
         return {
             "server": server,
@@ -370,12 +293,7 @@ def probe_mcp_server(root: Path, profile: dict[str, Any], server: str) -> dict[s
 
 
 def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, Any]]:
-    """Probe every declared server and emit one capability contract per capability.
-
-    Contracts conform to forge.capability-contract/v2. Qualification never rises
-    above UNQUALIFIED here: detection is not evidence of fitness, and route
-    policy forbids inferring qualification from installation.
-    """
+    """Emit one forge.capability-contract/v2 per capability of every declared server."""
     contracts: list[dict[str, Any]] = []
     for provider in mcp_providers():
         server = str(provider.get("server", ""))
@@ -434,10 +352,8 @@ def render_agent(definition: dict[str, Any], profile: dict[str, Any]) -> str:
             rendered += "tools = [" + ", ".join(f'"{toml_escape(item)}"' for item in tools) + "]\n"
         return rendered + f'developer_instructions = "{toml_escape(instructions)}"\n'
     if fmt == "markdown-frontmatter":
-        # Omitting the key entirely inherits every tool the host offers. Emit it
-        # only when the definition restricts the surface, so the seven agents
-        # that declare nothing keep their existing unrestricted rendering.
-        tools_line = f"tools: {', '.join(tools)}\n" if tools else ""
+        inherits_every_host_tool = not tools
+        tools_line = "" if inherits_every_host_tool else f"tools: {', '.join(tools)}\n"
         return (
             "---\n"
             f"name: {name}\n"
@@ -461,17 +377,16 @@ def project_mcp(canon_root: Path) -> dict[str, Any]:
 
 
 def resolve_project_servers(canon_root: Path) -> list[dict[str, Any]]:
-    """Resolve the project's declared servers against the shipped catalog.
+    """Resolve the servers declared on disk against the shipped catalog."""
+    return resolve_declared_servers(project_mcp(canon_root))
 
-    A catalog id inherits its routing fields and must not restate them, so the
-    two files can never disagree. Anything else must declare them itself, so a
-    project may adopt a server Forge has never heard of without becoming
-    unroutable.
-    """
+
+def resolve_declared_servers(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """Resolve a project MCP document against the shipped catalog."""
     catalog = {str(item.get("id")): item for item in mcp_providers()}
     inherited = ("server", "capabilities", "lane", "isolation_mode", "fallbacks")
     resolved: list[dict[str, Any]] = []
-    for entry in project_mcp(canon_root).get("servers", []):
+    for entry in document.get("servers", []):
         entry_id = str(entry.get("id", ""))
         if not entry_id:
             raise fail("Project MCP entry has no id", reason=ERROR_REASON["MCP_INCOMPLETE_DECLARATION"])
@@ -510,17 +425,11 @@ def resolve_project_servers(canon_root: Path) -> list[dict[str, Any]]:
 
 
 def render_project_mcp(root: Path, profile: dict[str, Any], canon_root: Path) -> tuple[Path, bytes] | None:
-    """Render the project's MCP surface, preserving servers Forge does not own.
-
-    Ownership is the entry list in .forge/mcp.json and nothing else, so a server
-    a person added to this file by hand survives every render. Forge learned
-    that lesson from watching an installer overwrite a user-authored config.
-    """
+    """Render the project's MCP surface, preserving servers Forge does not own."""
     surface = profile.get("mcp", {}).get("project_surface")
     if not surface:
         return None
     servers = resolve_project_servers(canon_root)
-    # A user-scoped-only route is published to the machine, not to the project.
     managed = {
         str(item["server"]): item
         for item in servers
@@ -529,7 +438,6 @@ def render_project_mcp(root: Path, profile: dict[str, Any], canon_root: Path) ->
     target = root / str(surface.get("path"))
     server_key = str(surface.get("server_key", "mcpServers"))
     if not managed and not target.is_file():
-        # A project that declares no routes gets no empty artifact.
         return None
 
     document: dict[str, Any] = {}
@@ -573,15 +481,7 @@ def _mcp_transport_entry(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def sync_user_mcp(root: Path, profile: dict[str, Any], apply: bool) -> dict[str, Any]:
-    """Publish user-scoped routes so agents this session spawns can see them.
-
-    This writes outside the project, to a file every other project on the machine
-    also reads, so it is an external write in the consent ledger's sense: planned
-    by default, applied only on request, recorded when it happens, and surgical —
-    it edits its own server entries and copies every other key through untouched.
-    A server entry that no longer matches what Forge renders is treated as
-    somebody else's and is reported rather than reclaimed.
-    """
+    """Publish user-scoped routes so agents this session spawns can see them."""
     surface = profile.get("mcp", {}).get("user_surface")
     wanted = {
         str(item["server"]): item
@@ -633,8 +533,6 @@ def sync_user_mcp(root: Path, profile: dict[str, Any], apply: bool) -> dict[str,
     for name in sorted(entries):
         if name in wanted or name not in declared_servers:
             continue
-        # This project declared the server but no longer wants it at user scope.
-        # Only reclaim an entry that still matches what Forge would render.
         item = next((i for i in resolve_project_servers(root) if str(i["server"]) == name), None)
         if item is not None and entries[name] == _mcp_transport_entry(item):
             planned.append({"action": "remove", "server": name})
@@ -674,8 +572,7 @@ def sync_user_mcp(root: Path, profile: dict[str, Any], apply: bool) -> dict[str,
 
 
 def record_consent(root: Path, scope: str, detail: str, subjects: list[str]) -> None:
-    """Append a scoped consent entry. An external write that leaves no record
-    is indistinguishable from one nobody agreed to."""
+    """Append a scoped consent entry recording an external write."""
     path = root / ".forge" / "capabilities" / "consent-ledger.json"
     if not path.is_file():
         return
@@ -722,8 +619,6 @@ def rendered_surfaces(
         target = agent_dir / f"{definition['name']}{extension}"
         outputs.append((target, render_agent(definition, profile).encode("utf-8")))
 
-    # The project's typed tool routes are a host surface like any other, so they
-    # install, verify and re-render on a host swap through this same path.
     mcp_surface = render_project_mcp(root, profile, canon)
     if mcp_surface is not None:
         outputs.append(mcp_surface)
@@ -930,7 +825,6 @@ def host_set(project_value: str, host_id: str, apply: bool) -> dict[str, Any]:
     keep = {str(Path(item["target"]).relative_to(root)).replace("\\", "/") for item in actions if Path(item["target"]).is_absolute()}
     if previous_id != host_id:
         actions.extend(retire_host_surfaces(root, host_profile(previous_id), keep, apply))
-    # A swap changes which spelling GSD should emit, so re-sync its runtime key.
     gsd_sync = sync_gsd_runtime(root, profile, apply)
     actions.append({"action": gsd_sync["action"], "target": gsd_sync["target"], "source": "forge-gsd-runtime-sync"})
 
@@ -1019,12 +913,7 @@ def gsd_runtime(root: Path, profile: dict[str, Any] | None = None) -> tuple[str 
 
 
 def gsd_runtime_name(profile: dict[str, Any]) -> str | None:
-    """The identifier GSD uses for this host, when GSD recognises it.
-
-    GSD resolves its own command spelling from `.planning/config.json`'s
-    `runtime` key (or GSD_RUNTIME), defaulting to `claude`. Forge assigns the
-    host, so Forge is the one that knows the truth and must tell GSD.
-    """
+    """The identifier GSD uses for this host, or None when GSD has no name for it."""
     return profile.get("gsd", {}).get("runtime_name")
 
 
@@ -1038,18 +927,12 @@ def gsd_environment(profile: dict[str, Any]) -> dict[str, str]:
 
 
 def sync_gsd_runtime(root: Path, profile: dict[str, Any], apply: bool) -> dict[str, Any]:
-    """Write GSD's `runtime` key so its emissions match the assigned host.
-
-    Without this, a Codex-hosted Forge project still gets GSD's default
-    `claude` spelling. Forge only touches this one key; `.planning` remains
-    GSD's to own.
-    """
+    """Write GSD's `runtime` key so its emissions match the assigned host."""
     name = gsd_runtime_name(profile)
     path = root / ".planning" / "config.json"
     if not name:
         return {"action": "skipped", "reason": f"host {profile['id']!r} declares no GSD runtime name", "target": str(path)}
     if not path.is_file():
-        # GSD has not initialised project memory yet; nothing to sync onto.
         return {"action": "deferred", "reason": "GSD .planning/config.json does not exist yet", "target": str(path)}
     try:
         config = load_json(path)
@@ -1106,12 +989,7 @@ def verb_registry() -> dict[str, Any]:
 
 
 def gsd_to_forge_verbs() -> dict[str, str]:
-    """Map every GSD command Forge fronts to its Forge verb.
-
-    Forge owns the whole user-facing vocabulary; GSD is invoked in place and
-    never addressed directly. This map is the single boundary where GSD's
-    structured command emissions become Forge verbs.
-    """
+    """Map every GSD command Forge fronts to its Forge verb."""
     return {
         str(item["gsd"]): str(item["forge"])
         for item in verb_registry().get("verbs", [])
@@ -1128,24 +1006,18 @@ def dropped_gsd_verbs() -> dict[str, str]:
     }
 
 
+def gsd_command_name(command: str) -> str:
+    """The bare `gsd-name` a command carries, before any translation."""
+    return re.sub(r"^[$/]", "", command).split()[0].replace("gsd:", "gsd-")
+
+
 def translate_gsd_verb(name: str) -> str | None:
     """Return the Forge verb fronting a GSD command, or None when unmapped."""
     return gsd_to_forge_verbs().get(name)
 
 
 def normalize_gsd_command(command: str, profile: dict[str, Any] | None = None) -> str:
-    """Render a command in Forge vocabulary, spelled for the active host.
-
-    Any GSD command is translated to the Forge verb that fronts it, so a
-    `gsd-` name can never reach the user. Unmapped GSD commands are surfaced
-    verbatim with a marker rather than silently passed through — the registry
-    declares `unmapped_action: fail`, and a leaked name is a registry gap.
-
-    Accepts a bare skill name, a legacy `/gsd:name` spelling, or a name already
-    carrying another host's prefix. The neutral fallback is no prefix, so a
-    caller that forgets to pass a profile degrades to a bare name rather than
-    silently emitting some other host's spelling.
-    """
+    """Render a command in Forge vocabulary, spelled for the active host."""
     prefix = (profile or {}).get("skill_invocation", {}).get("prefix", "")
     text = command.strip()
 
@@ -1161,7 +1033,6 @@ def normalize_gsd_command(command: str, profile: dict[str, Any] | None = None) -
     if name.startswith("gsd-"):
         translated = translate_gsd_verb(name)
         if translated is None:
-            # Loud rather than silent: an unmapped GSD verb is a registry gap.
             return f"{prefix}{name}{tail}  [UNMAPPED: add {name} to verbs/registry.json]"
         name = translated
     return f"{prefix}{name}{tail}"
@@ -1215,13 +1086,7 @@ BOOTSTRAP_CLOSABLE_VERDICTS = {"PASS", "DEGRADED_ACCEPTED"}
 
 
 def bootstrap_verdict(root: Path, profile: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Decide whether Forge bootstrap is genuinely closable.
-
-    This is Forge's own gate, not GSD's. GSD owns phase state and has no reason
-    to know about capability detection, installation jobs, or whether the
-    rendered instruction file carries the Forge phase contract — so nothing
-    downstream will catch these if Forge does not.
-    """
+    """Decide whether Forge bootstrap is closable."""
     profile = profile or active_profile(root)
     checks: list[dict[str, Any]] = []
 
@@ -1266,16 +1131,11 @@ def bootstrap_verdict(root: Path, profile: dict[str, Any] | None = None) -> dict
         "no blocking items" if not blocking else f"{len(blocking)} blocking item(s) remain",
     )
 
-    # Every canonical installation packet must be accounted for, including the
-    # ones deliberately reported NOT_APPLICABLE with evidence.
     registry_path = root / ".forge" / "state" / "packet-registry.json"
     try:
         packets = load_json(registry_path).get("packets", [])
         expected_jobs = {str(item["id"]) for item in packets if str(item.get("id", "")).startswith("FI-")}
     except (ForgeExit, KeyError) as exc:
-        # Fail closed. An unreadable registry means the expected set is unknown,
-        # not empty — treating it as empty would let the coverage check below
-        # pass vacuously and report a bootstrap complete that was never checked.
         record("packet-coverage", False, f"packet registry is unreadable, so job coverage cannot be checked: {exc}")
         return _bootstrap_result(root, profile, checks)
     reported_jobs = {str(item.get("work_order")) for item in report.get("jobs", []) if isinstance(item, dict)}
@@ -1287,7 +1147,6 @@ def bootstrap_verdict(root: Path, profile: dict[str, Any] | None = None) -> dict
         + ("" if not missing_jobs else "; omitted: " + ", ".join(missing_jobs)),
     )
 
-    # The rendered instruction file is what actually constrains the next session.
     instruction_name = str(profile.get("project_surface", {}).get("instruction_file", "AGENTS.md"))
     instruction_path = root / instruction_name
     has_contract = (
@@ -1332,14 +1191,7 @@ def bootstrap_is_complete(root: Path) -> bool:
 
 
 def execution_coverage(root: Path) -> list[dict[str, Any]]:
-    """Report GSD phase directories whose plans lack matching summaries.
-
-    GSD computes the same set (`incomplete` in its phase output) but keeps it
-    advisory and never blocks completion on it, so an interrupted phase can
-    reach 100% silently. Forge surfaces the fact rather than raising a competing
-    gate: GSD remains the phase authority, and a partially executed phase is a
-    normal mid-execution state, not necessarily an error.
-    """
+    """Report GSD phase directories whose plans lack matching summaries."""
     phases = root / ".planning" / "phases"
     if not phases.is_dir():
         return []
@@ -1397,11 +1249,7 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
         "host_surfaces_current": bool(surfaces_current),
     }
 
-    # GSD actions Forge deliberately does not front, recorded rather than shown.
     suppressed: list[dict[str, str]] = []
-
-    # Advisory only: never changes the routed action, never blocks. GSD owns the
-    # phase gate; Forge just makes the partial-execution fact visible.
     coverage = execution_coverage(root)
     warnings = [
         f"Phase {item['phase']} is partially executed: {item['summaries']}/{item['plans']} plans have summaries "
@@ -1458,13 +1306,9 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
                 if not isinstance(item, dict) or not item.get("command"):
                     continue
                 raw = str(item["command"]).strip()
-                # Classify against the RAW GSD command, before translation.
-                bare = re.sub(r"^[$/]", "", raw).split()[0].replace("gsd:", "gsd-")
-                if bare in dropped:
-                    # Deliberately outside Forge's surface. Suppress rather than
-                    # show something the user cannot run — and record why, so
-                    # nothing is silently lost.
-                    suppressed.append({"gsd_command": raw, "reason": dropped[bare]})
+                untranslated_name = gsd_command_name(raw)
+                if untranslated_name in dropped:
+                    suppressed.append({"gsd_command": raw, "reason": dropped[untranslated_name]})
                     continue
                 actions.append(
                     forge_action(
@@ -1477,9 +1321,6 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
                     )
                 )
             if not actions and suppressed:
-                # Suppression must never strand the user. If every action GSD
-                # offered is outside Forge's surface, fall back to a Forge verb
-                # rather than returning nothing.
                 actions = [
                     forge_action(
                         "progress",
@@ -1667,8 +1508,6 @@ def survey(project_value: str, host_override: str | None = None) -> dict[str, An
     installed_ollama_models = ollama_models(tools["ollama"])
     lm_studio_probe = command_probe([tools["lm_studio"], "ls"]) if tools["lm_studio"] else None
 
-    # Detect every known host, not just the active one, so a swap can be planned
-    # from evidence rather than assumption.
     host_detection = []
     for candidate in host_profiles().values():
         executables = candidate.get("cli", {}).get("executables", [])
@@ -1990,7 +1829,6 @@ def install_overlay(project_value: str, apply: bool, host_override: str | None =
     root, uproject = project_root(project_value)
     actions: list[dict[str, str]] = []
 
-    # 1. Copy the host-neutral canon verbatim.
     for source, relative in template_files():
         destination = root / relative
         if not destination.exists():
@@ -2008,15 +1846,12 @@ def install_overlay(project_value: str, apply: bool, host_override: str | None =
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
 
-    # 2. Render the surfaces the assigned runtime needs, from that canon. During a
-    #    dry run the canon is not in the project yet, so read it from the template.
     profile = active_profile(root, host_override)
     actions.extend(apply_host_surfaces(root, profile, apply))
 
     detected = write_profile(str(root), apply=apply, host_override=host_override)
     actions.append({"action": detected["action"], "target": detected["target"], "source": "forge-survey"})
 
-    # Tell GSD which host it is running under, so its own emissions match.
     gsd_sync = sync_gsd_runtime(root, profile, apply)
     actions.append({"action": gsd_sync["action"], "target": gsd_sync["target"], "source": "forge-gsd-runtime-sync"})
 
@@ -2078,13 +1913,7 @@ def verify_overlay(project_value: str, host_override: str | None = None) -> dict
 
 
 def lifecycle_state(project_value: str, event: str = "status") -> dict[str, Any]:
-    """Read the deprecated Forge lifecycle mirror. Never a phase authority.
-
-    Retained only because projects adopted before GSD became the sole phase
-    engine still carry .forge/state/lifecycle.json with real history in it. The
-    payload states its own irrelevance in-band so anything reading it is told,
-    in the same response, where authority actually lives.
-    """
+    """Read the deprecated Forge lifecycle mirror. Never a phase authority."""
     root, _ = project_root(project_value)
     path = root / ".forge" / "state" / "lifecycle.json"
     if not path.is_file():
@@ -2098,7 +1927,6 @@ def lifecycle_state(project_value: str, event: str = "status") -> dict[str, Any]
             reason=ERROR_REASON["USAGE"],
             code=EXIT_USAGE,
         )
-    # The stored command is host-neutral; spell it for the assigned runtime.
     stored = str(state.get("next_command") or "")
     head, _, tail = stored.partition(" ")
     spelled = f"{host_command(profile, head)}{' ' + tail if tail else ''}" if head else ""
@@ -2195,8 +2023,6 @@ def route_work(project_value: str, request_value: str, host_override: str | None
     ]
     required_capabilities = set(request.get("required_capabilities", []))
     required_lanes = set(request.get("required_lanes", []))
-    # Only the assigned host holds the resident seat. Any other runtime may still
-    # compete as an optional offload worker on its own qualification evidence.
     resident_aliases = {RESIDENT_PROVIDER, profile["id"]}
     for evaluation in qualifications.get("evaluations", []):
         provider = str(evaluation.get("provider", ""))
@@ -2276,11 +2102,7 @@ def mcp_amend(
     args: list[str] | None = None,
     scope: str = "project",
 ) -> dict[str, Any]:
-    """Add, remove, enable or disable one of this project's typed tool routes.
-
-    Amending is a first-class operation rather than a file edit, so the project
-    surface is always re-rendered from the declaration and the two cannot drift.
-    """
+    """Add, remove, enable or disable one of this project's typed tool routes."""
     path = project_mcp_path(root)
     if not path.is_file():
         raise fail(f"{path} does not exist; run the Forge overlay install first", reason=ERROR_REASON["MCP_NO_DECLARATION_FILE"])
@@ -2313,19 +2135,14 @@ def mcp_amend(
     else:
         raise fail(f"Unknown amend action {action!r}", reason=ERROR_REASON["USAGE"], code=EXIT_USAGE)
 
-    document["servers"] = servers
-    # Resolve before writing: a declaration that cannot route must not land.
-    staged = dict(document)
+    staged = {**document, "servers": servers}
+    resolve_declared_servers(staged)
     if apply:
-        path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-        resolve_project_servers(root)
+        path.write_text(json.dumps(staged, indent=2) + "\n", encoding="utf-8")
         rendered = render_project_mcp(root, profile, root)
         if rendered is not None:
             target, body = rendered
             target.parent.mkdir(parents=True, exist_ok=True)
-            # Bytes, not text: the overlay compares rendered surfaces byte for
-            # byte, and text mode would rewrite newlines on some platforms and
-            # report every freshly written surface as a local variant.
             target.write_bytes(body)
     return {
         "schema": "forge.mcp-amend/v1",
@@ -2338,12 +2155,7 @@ def mcp_amend(
 
 
 def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
-    """Report every typed tool route: what it serves, its lane, and whether it is bound.
-
-    Read-only. This is the resolution `forge-execute-phase` and `forge-route-work`
-    consult before acquiring a lease, so the lane a plan takes is derived from the
-    registry rather than chosen by whoever is reading the plan.
-    """
+    """Report every typed tool route: what it serves, its lane, and whether it is bound."""
     contracts = mcp_capability_contracts(root, profile)
     declared = resolve_project_servers(root)
     declared_ids = {item["id"] for item in declared}
@@ -2368,7 +2180,7 @@ def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
                 "session_visible": bool(surface) and item["enabled"] and probe["found"],
                 "subagent_visible": probe["subagent_visible"],
                 "found": probe["found"],
-                "scope": probe["scope"],
+                "found_in_scope": probe["scope"],
                 "fallbacks": item.get("fallbacks", []),
                 "note": probe.get("note") or probe.get("reason"),
             }
@@ -2516,10 +2328,6 @@ def main(argv: list[str] | None = None) -> int:
         command_path = " ".join(
             part for part in (args.command, getattr(args, "host_command", None), getattr(args, "mcp_command", None)) if part
         )
-        # Assert the result contract rather than defaulting a missing verdict to
-        # success. A verdict verb that forgot to compute one, or a reporting verb
-        # that grew a stray `ok`, is a bug that must surface here instead of
-        # silently deciding this process's exit code.
         carries_verdict = "ok" in result
         if command_path in VERDICT_COMMANDS and not carries_verdict:
             raise fail(
@@ -2537,30 +2345,19 @@ def main(argv: list[str] | None = None) -> int:
                 reason=ERROR_REASON["RESULT_CONTRACT_VIOLATED"],
             )
         emit(result, args.output)
-        # No default. The contract above proved which case this is, so the exit
-        # code reads the verdict directly instead of inferring one from absence.
         if command_path in VERDICT_COMMANDS:
             return EXIT_OK if result["ok"] else EXIT_CONTRACT
         return EXIT_OK
     except ForgeExit as exc:
-        # The failure already knows its reason and its exit code. Emitting the
-        # code alongside the message means a caller branches on `reason` instead
-        # of matching prose that may be reworded.
         print(json.dumps({**exc.payload(), "command": args.command}), file=sys.stderr)
         return exc.code
     except OSError as exc:
-        # Anything the process could not read or write. Still typed, so an
-        # unexpected failure is distinguishable from a declared one rather than
-        # arriving as an untagged blob.
         print(
             json.dumps({"ok": False, "reason": ERROR_REASON["JSON_UNREADABLE"], "message": str(exc), "command": args.command}),
             file=sys.stderr,
         )
         return EXIT_FAILURE
     except ValueError as exc:
-        # A ValueError reaching here is a bug: every declared failure raises
-        # ForgeExit. Report it as untyped rather than dressing it up as one of
-        # the declared reasons.
         print(
             json.dumps({"ok": False, "reason": ERROR_REASON["UNKNOWN"], "message": str(exc), "command": args.command}),
             file=sys.stderr,

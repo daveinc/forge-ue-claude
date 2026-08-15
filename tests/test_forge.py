@@ -134,7 +134,6 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertIn("claude", detected)
             self.assertTrue(detected["claude"]["active"])
             self.assertFalse(detected["codex"]["active"])
-            # Detection must never imply the resident seat.
             self.assertTrue(all("qualification" not in item for item in runtime["detected_hosts"]))
 
     def test_route_policy_keeps_resident_host_neutral_and_local_workers_optional(self):
@@ -166,7 +165,6 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertIsNone(result["uproject"])
             self.assertTrue((project / ".forge" / "state" / "lifecycle.json").is_file())
             self.assertTrue((project / ".forge" / "state" / "packet-registry.json").is_file())
-            # Canon is host-neutral; surfaces are rendered for the assigned host.
             self.assertTrue((project / ".forge" / "agents" / "studio-director.json").is_file())
             self.assertTrue((project / ".claude" / "agents" / "studio-director.md").is_file())
             self.assertTrue((project / "CLAUDE.md").is_file())
@@ -386,7 +384,6 @@ class ForgeInstallerTests(unittest.TestCase):
             forge.install_overlay(str(project), apply=True)
             self.complete_bootstrap(project)
 
-            # Canonical state that must survive any swap.
             (project / ".planning").mkdir()
             (project / ".planning" / "STATE.md").write_text("phase 3\n", encoding="utf-8")
             packets = (project / ".forge" / "state" / "packet-registry.json").read_bytes()
@@ -396,18 +393,15 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertTrue(result["swapped"])
             self.assertEqual(result["previous_host"], "claude")
 
-            # Incoming host surfaces exist in the right format.
             self.assertTrue((project / "AGENTS.md").is_file())
             self.assertTrue((project / ".codex" / "agents" / "studio-director.toml").is_file())
             toml_text = (project / ".codex" / "agents" / "studio-director.toml").read_text(encoding="utf-8")
             self.assertIn("developer_instructions = ", toml_text)
             self.assertIn("$forge-plan-convergence", toml_text)
 
-            # Outgoing host surfaces are fully retired.
             self.assertFalse((project / "CLAUDE.md").exists())
             self.assertFalse((project / ".claude").exists())
 
-            # Canon is untouched.
             self.assertEqual((project / ".forge" / "state" / "packet-registry.json").read_bytes(), packets)
             self.assertEqual((project / ".forge" / "directives.md").read_bytes(), directives)
             self.assertEqual((project / ".planning" / "STATE.md").read_text(encoding="utf-8"), "phase 3\n")
@@ -501,7 +495,6 @@ class ForgeInstallerTests(unittest.TestCase):
             request_path = project / "route-request.json"
             request_path.write_text(json.dumps(request), encoding="utf-8")
 
-            # Evidence from another host must not grant a route under the active host.
             result = forge.route_work(str(project), str(request_path))
             self.assertEqual(result["selected"], "resident")
             self.assertEqual(result["resident_host"], "claude")
@@ -509,7 +502,6 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertFalse(candidate["eligible"])
             self.assertIn("re-probe", candidate["reason"])
 
-            # The same evidence recorded under the active host is accepted.
             evaluation["host"] = "claude"
             (project / ".forge" / "capabilities" / "qualifications.json").write_text(
                 json.dumps({"evaluations": [evaluation]}), encoding="utf-8"
@@ -526,11 +518,8 @@ class ForgeInstallerTests(unittest.TestCase):
                 surface = profile["project_surface"]
                 self.assertTrue((project / surface["instruction_file"]).is_file())
                 agents = list((project / surface["agent_dir"]).glob(f"*{surface['agent_extension']}"))
-                # Derived from canon so adding an agent definition cannot leave
-                # this assertion behind asserting a stale count.
                 self.assertEqual(len(agents), len(forge.agent_definitions(forge.template_root())))
                 self.assertTrue(forge.verify_overlay(str(project), host_id)["ok"])
-                # No unresolved canon tokens may survive rendering.
                 for path in [project / surface["instruction_file"], *agents]:
                     self.assertNotIn("{{", path.read_text(encoding="utf-8"), str(path))
 
@@ -538,8 +527,6 @@ class ForgeInstallerTests(unittest.TestCase):
         banned = validate_repo.neutrality_banned_tokens(HOSTS)
         self.assertIn("codex", banned)
         self.assertIn("claude", banned)
-        # The generic placeholder host contributes no tokens; its identifiers are
-        # ordinary words that would produce false positives.
         self.assertNotIn("generic", banned)
 
         roots = [
@@ -557,7 +544,6 @@ class ForgeInstallerTests(unittest.TestCase):
                 self.assertEqual(found, [], f"{path.relative_to(ROOT)} leaks {found}")
 
     def test_neutrality_guard_catches_planted_leaks(self):
-        # The guard is only worth having if it actually fails on a leak.
         banned = validate_repo.neutrality_banned_tokens(HOSTS)
         for leak in (
             '{"active": ["worker.codex.resident"]}',
@@ -571,7 +557,6 @@ class ForgeInstallerTests(unittest.TestCase):
             )
 
     def test_neutrality_guard_tolerates_paths_and_protocol_names(self):
-        # Path segments and the OpenAI-compatible protocol name are not leaks.
         banned = validate_repo.neutrality_banned_tokens(HOSTS)
         for benign in (
             "plugins/forge-ue-studio/hosts/registry.json",
@@ -585,8 +570,6 @@ class ForgeInstallerTests(unittest.TestCase):
             )
 
     def test_bootstrap_gate_enforces_every_forge_specific_check(self):
-        # These checks are Forge's own domain. GSD owns phase state and has no
-        # equivalent, so nothing downstream catches them if this gate does not.
         with workspace_tempdir() as temp:
             project = temp / "BootstrapGate"
             project.mkdir()
@@ -615,8 +598,6 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertIn("report-blocking", failing_ids(lambda r: r.update(blocking=["unresolved"])))
             self.assertIn("installation-jobs", failing_ids(lambda r: r.update(jobs=r["jobs"][:-1])))
 
-            # A rendered instruction file that lost the phase contract must block,
-            # because it is what constrains the next session.
             (project / "CLAUDE.md").write_text("# Project workflow\n", encoding="utf-8")
             result = forge.bootstrap_verdict(project)
             self.assertFalse(result["ok"])
@@ -629,7 +610,6 @@ class ForgeInstallerTests(unittest.TestCase):
             forge.install_overlay(str(project), apply=True)
             gsd = {"ok": True, "error": "", "snapshot": {"situation": "no-project", "actions": []}}
 
-            # A report that is closable but omits canonical jobs must not pass.
             partial = {
                 "schema": "forge.bootstrap-report/v1",
                 "verdict": "PASS",
@@ -673,7 +653,6 @@ class ForgeInstallerTests(unittest.TestCase):
                 {"id": "continue", "label": "Continue", "command": "/gsd:progress", "recommended": True}
             ]}}
             result = forge.forge_next(str(project), gsd)
-            # Advisory only: the routed action is still GSD's, unchanged.
             self.assertEqual(result["recommended"], "continue")
             self.assertEqual(len(result["warnings"]), 1)
             self.assertIn("partially executed", result["warnings"][0])
@@ -696,15 +675,11 @@ class ForgeInstallerTests(unittest.TestCase):
     def test_gsd_commands_are_translated_into_forge_vocabulary(self):
         claude = forge.host_profile("claude")
         codex = forge.host_profile("codex")
-        # A GSD command must never reach the user; it becomes the Forge verb
-        # fronting it, spelled for the active host.
         self.assertEqual(forge.normalize_gsd_command("gsd-execute-phase", claude), "/forge-execute-phase")
         self.assertEqual(forge.normalize_gsd_command("gsd-execute-phase", codex), "$forge-execute-phase")
         self.assertEqual(forge.normalize_gsd_command("/gsd:progress --next", claude), "/forge-progress --next")
         self.assertEqual(forge.normalize_gsd_command("$gsd-onboard", claude), "/forge-onboard")
-        # Forge verbs pass through, re-spelled only.
         self.assertEqual(forge.normalize_gsd_command("forge-next", codex), "$forge-next")
-        # Unmapped GSD verbs fail loudly rather than leaking silently.
         leaked = forge.normalize_gsd_command("gsd-not-in-registry", claude)
         self.assertIn("UNMAPPED", leaked)
 
@@ -761,8 +736,6 @@ class ForgeInstallerTests(unittest.TestCase):
                 },
             }
             result = forge.forge_next(str(project), gsd)
-            # Deliberate exclusions never appear as actions the user cannot run,
-            # and are never emitted as UNMAPPED leaks.
             self.assertEqual([a["command"] for a in result["actions"]], ["/forge-execute-phase"])
             self.assertEqual(len(result["suppressed_actions"]), 2)
             for item in result["suppressed_actions"]:
@@ -789,17 +762,11 @@ class ForgeInstallerTests(unittest.TestCase):
             }
             result = forge.forge_next(str(project), gsd)
             self.assertEqual(len(result["suppressed_actions"]), 2)
-            # A fallback Forge verb, never an empty list.
             self.assertTrue(result["actions"])
             self.assertIsNotNone(result["recommended"])
             self.assertEqual(result["actions"][0]["command"], "/forge-progress")
 
     def test_planning_helpers_are_fronted_not_orphaned(self):
-        # These reach real GSD capability a game project needs. Leaving them
-        # unclassified would strand parts of GSD's own chain:
-        #   plan-milestone-gaps closes the loop from forge-milestone --audit
-        #   analyze-dependencies feeds Forge's lane leases
-        #   the discussion variants are modes forge-discuss-phase must offer
         fronted = forge.gsd_to_forge_verbs()
         expected = {
             "gsd-mvp-phase": "forge-mvp-phase",
@@ -816,9 +783,17 @@ class ForgeInstallerTests(unittest.TestCase):
             with self.subTest(gsd=gsd_verb):
                 self.assertEqual(fronted.get(gsd_verb), forge_verb)
 
+    def test_onboarding_and_resuming_are_first_class_forge_verbs(self):
+        skills = {p.parent.name for p in (ROOT / "plugins" / "forge-ue-studio" / "skills").glob("*/SKILL.md")}
+        for gsd_verb, forge_verb in (("gsd-onboard", "forge-onboard"), ("gsd-resume-work", "forge-resume-work")):
+            with self.subTest(gsd=gsd_verb):
+                self.assertEqual(forge.translate_gsd_verb(gsd_verb), forge_verb)
+                self.assertIn(forge_verb, skills)
+                self.assertEqual(
+                    forge.normalize_gsd_command(gsd_verb, forge.host_profile("claude")), f"/{forge_verb}"
+                )
+
     def test_every_command_smart_entry_can_emit_is_classified(self):
-        # Anything smart-entry can recommend must be fronted or explicitly
-        # dropped; an unclassified command would leak as UNMAPPED at runtime.
         emittable = {
             "gsd-capture", "gsd-code-review", "gsd-complete-milestone", "gsd-debug",
             "gsd-discuss-phase", "gsd-execute-phase", "gsd-extract-learnings", "gsd-help",
@@ -834,14 +809,12 @@ class ForgeInstallerTests(unittest.TestCase):
             project.mkdir()
             forge.install_overlay(str(project), apply=True)
 
-            # GSD has not created .planning yet, so the sync defers rather than failing.
             self.assertEqual(forge.sync_gsd_runtime(project, forge.host_profile("claude"), True)["action"], "deferred")
 
             config = project / ".planning" / "config.json"
             config.parent.mkdir(parents=True, exist_ok=True)
             config.write_text(json.dumps({"runtime": "claude", "other": "preserved"}), encoding="utf-8")
 
-            # Swapping the host must re-point GSD's own command spelling.
             forge.host_set(str(project), "codex", apply=True)
             written = json.loads(config.read_text(encoding="utf-8"))
             self.assertEqual(written["runtime"], "codex")
@@ -863,7 +836,6 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertEqual(result["action"], "would-update")
             self.assertEqual(json.loads(config.read_text(encoding="utf-8"))["runtime"], "claude")
 
-            # The generic host has no GSD identifier; skip rather than write junk.
             self.assertEqual(forge.sync_gsd_runtime(project, forge.host_profile("generic"), True)["action"], "skipped")
 
     def test_packet_registry_has_unique_canonical_ids(self):
@@ -974,8 +946,6 @@ class McpRouteTests(unittest.TestCase):
         self.assertFalse(result["subagent_visible"])
 
     def test_probe_finds_a_project_scoped_server_but_marks_it_invisible_to_agents(self):
-        """The scope distinction is the whole point: present for the session,
-        absent for anything it spawns."""
         with workspace_tempdir() as root:
             (root / ".mcp.json").write_text(json.dumps({"mcpServers": {"unreal-mcp": {}}}), encoding="utf-8")
             result = forge.probe_mcp_server(root, forge.host_profile("claude"), "unreal-mcp")
@@ -1130,6 +1100,26 @@ class ProjectMcpTests(unittest.TestCase):
             self.assertEqual((root / ".forge" / "mcp.json").read_text(encoding="utf-8"), before)
             self.assertFalse((root / ".mcp.json").exists())
 
+    def test_an_unroutable_amendment_never_lands_on_disk(self):
+        with self.game() as root:
+            declaration = root / ".forge" / "mcp.json"
+            before = declaration.read_text(encoding="utf-8")
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.mcp_amend(root, self.profile, "add", "some-new-tool", apply=True, command="node")
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["MCP_INCOMPLETE_DECLARATION"])
+            self.assertEqual(declaration.read_text(encoding="utf-8"), before)
+            self.assertFalse((root / ".mcp.json").exists())
+
+    def test_status_separates_the_declared_scope_from_where_the_probe_found_it(self):
+        with self.game() as root:
+            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="both")
+            route = next(
+                item for item in forge.mcp_status(root, self.profile)["routes"]
+                if item["provider"] == "unreal-native-mcp"
+            )
+            self.assertEqual(route["scope"], "both")
+            self.assertEqual(route["found_in_scope"], "project")
+
     def test_status_reports_session_visibility_from_the_project(self):
         with self.game() as root:
             forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
@@ -1141,9 +1131,8 @@ class ProjectMcpTests(unittest.TestCase):
             self.assertFalse(route["subagent_visible"])
 
     def test_the_project_surface_is_tracked_like_every_other_rendered_surface(self):
-        """Hand-editing the surface is reported as a variant, as for any rendered
-        file. The consequence that matters — the session no longer seeing a
-        declared server — is reported by status, which probes rather than diffs."""
+        """A hand-edited surface is a LOCAL_VARIANT like any rendered file, and
+        status reports the lost server by probing rather than diffing."""
         with self.game() as root:
             forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
             surface_path = str((root / ".mcp.json").resolve())
@@ -1207,25 +1196,19 @@ class FailureContractTests(unittest.TestCase):
         self.assertEqual(payload["command"], "host")
 
     def test_every_declared_reason_is_reachable_from_a_call_site(self):
-        """A reason nothing raises is vocabulary nobody can act on."""
         source = FORGE_PATH.read_text(encoding="utf-8")
         declared = set(forge.ERROR_REASON)
-        # UNKNOWN is the fallback for an untyped bug reaching main().
         used = {key for key in declared if f'ERROR_REASON["{key}"]' in source}
         self.assertEqual(sorted(declared - used), [])
 
     def test_no_declared_failure_still_raises_a_bare_value_error(self):
-        """ValueError reaching main() means a bug, so the CLI must not raise one
-        as a normal outcome. The single permitted site guards the enum itself."""
+        """The one permitted site guards the ERROR_REASON enum itself."""
         source = FORGE_PATH.read_text(encoding="utf-8")
         sites = re.findall(r"raise ValueError\(", source)
         self.assertEqual(len(sites), 1, "only the ERROR_REASON self-check may raise ValueError")
 
     def test_logic_never_calls_sys_exit(self):
-        """Exit code resolution belongs to main(), so an importer of this module
-        gets an exception rather than a process that disappears.
-
-        Checked structurally: a textual scan would match the prose explaining
+        """Checked structurally: a textual scan would match the prose explaining
         the rule and pass or fail for the wrong reason."""
         tree = ast.parse(FORGE_PATH.read_text(encoding="utf-8"))
         calls = [
@@ -1265,8 +1248,6 @@ class ResultContractTests(unittest.TestCase):
         )
 
     def test_every_verdict_command_is_a_real_command_path(self):
-        """A declared verdict verb that no invocation can produce is a rule
-        guarding nothing."""
         self.assertTrue(forge.VERDICT_COMMANDS)
         source = FORGE_PATH.read_text(encoding="utf-8")
         for command in sorted(forge.VERDICT_COMMANDS):
@@ -1276,9 +1257,8 @@ class ResultContractTests(unittest.TestCase):
     def _payloads(self, root):
         """Every result the CLI can emit, produced in-process.
 
-        Deliberately not seven subprocesses: a spawned CLI re-runs live host
-        probes, which turns a contract assertion into a multi-minute wait and
-        makes the suite flaky on whatever happens to be installed."""
+        Not subprocesses: a spawned CLI re-runs live host probes, which is slow
+        and varies with whatever happens to be installed."""
         profile = forge.host_profile("claude")
         return {
             "verify": (forge.verify_overlay(str(root), None), True),
@@ -1302,7 +1282,6 @@ class ResultContractTests(unittest.TestCase):
                 self.assertTrue(payload.get("schema"), name)
 
     def test_the_declared_set_matches_what_the_payloads_actually_carry(self):
-        """Neither list is authoritative alone; a drift between them is the bug."""
         with self.game() as root:
             for name, (payload, _) in self._payloads(root).items():
                 self.assertEqual(
@@ -1321,7 +1300,6 @@ class ResultContractTests(unittest.TestCase):
         source = FORGE_PATH.read_text(encoding="utf-8")
         self.assertIn('command_path in VERDICT_COMMANDS and not carries_verdict', source)
         self.assertIn('command_path not in VERDICT_COMMANDS and carries_verdict', source)
-        # The default that made a missing verdict look like success is gone.
         self.assertNotIn('result.get("ok", True) else EXIT_CONTRACT\n    except', source)
 
 
@@ -1329,8 +1307,7 @@ class ActionSurfaceTests(unittest.TestCase):
     """Forge owns the whole user-facing vocabulary, ids included."""
 
     def test_no_routed_action_id_carries_a_gsd_prefix(self):
-        """The command is translated at dispatch, but an id is displayed too.
-        A `gsd-` id is the same leak by a quieter route."""
+        """The command is translated at dispatch, but the id is displayed too."""
         source = (ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge.py").read_text(encoding="utf-8")
         ids = re.findall(r"forge_action\(\s*\"([^\"]+)\"", source)
         self.assertTrue(ids, "no forge_action ids found; the guard would assert over nothing")
@@ -1344,8 +1321,8 @@ class ActionSurfaceTests(unittest.TestCase):
 
 
 class UserScopeMcpTests(unittest.TestCase):
-    """Publishing to user scope is a machine-wide external write: planned by
-    default, consented when applied, and never destructive to what it finds."""
+    """Publishing to user scope: planned by default, consented when applied, and
+    never destructive to what it finds."""
 
     def setUp(self):
         self.original_command_probe = forge.command_probe
@@ -1359,7 +1336,7 @@ class UserScopeMcpTests(unittest.TestCase):
     @contextmanager
     def game(self, host="claude"):
         """Yield a project plus a profile whose user surface points at a sandbox
-        file, so no test can ever write the developer's real config."""
+        file, so no test writes the developer's real config."""
         with workspace_tempdir() as temp:
             root = temp / "MyGame"
             root.mkdir()
@@ -1466,7 +1443,7 @@ class UserScopeMcpTests(unittest.TestCase):
 
 
 class McpGateTests(unittest.TestCase):
-    """The validator gates must actually fire. A guard that cannot fail is not a guard."""
+    """Each validator gate must fail on a planted violation."""
 
     def _validate(self, mutate):
         """Run the repo validator against a mutated copy of the repository."""
@@ -1685,6 +1662,25 @@ class McpGateTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("no skill names it as a dispatch target", output)
 
+    def test_a_comment_in_shipped_code_fails(self):
+        def mutate(root):
+            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
+            text = source.read_text(encoding="utf-8")
+            source.write_text(text.replace("def utc_now()", "# why\ndef utc_now()", 1), encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("carries a comment", output)
+
+    def test_a_shebang_and_tool_pragma_are_not_comments(self):
+        def mutate(root):
+            source = root / "scripts" / "validate_repo.py"
+            text = source.read_text(encoding="utf-8")
+            source.write_text(text.replace("import json", "import json  # noqa: F401", 1), encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 0, output)
+
     def test_a_state_file_nothing_reads_fails(self):
         def mutate(root):
             state = root / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state"
@@ -1698,8 +1694,9 @@ class McpGateTests(unittest.TestCase):
         def mutate(root):
             source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
             text = source.read_text(encoding="utf-8")
-            text = text.replace('        "verify",           #', '        "not-a-command",\n        "verify",           #', 1)
-            source.write_text(text, encoding="utf-8")
+            mutated = text.replace('        "verify",\n', '        "not-a-command",\n        "verify",\n', 1)
+            self.assertNotEqual(mutated, text, "VERDICT_COMMANDS anchor not found")
+            source.write_text(mutated, encoding="utf-8")
 
         code, output = self._validate(mutate)
         self.assertEqual(code, 1)

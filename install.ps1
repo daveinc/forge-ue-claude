@@ -1,12 +1,7 @@
-﻿[CmdletBinding(SupportsShouldProcess = $true)]
+[CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'Lifecycle', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
     [string]$Mode = 'Plugin',
-    # The resident AI runtime. Defaults to the registry's default_host.
-    # Named -RuntimeHost because $Host is a reserved PowerShell automatic variable.
-    # Deliberately NOT a ValidateSet: hosts are declared in hosts/registry.json, and
-    # binding-time validation here would reject a newly added profile before the
-    # script could read it. Validation happens against the registry below.
     [ArgumentCompleter({
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
         $registry = Join-Path (Split-Path -Parent $commandAst.CommandElements[0].Value) 'plugins\forge-ue-studio\hosts\registry.json'
@@ -23,8 +18,6 @@ param(
     [string]$GsdVersion = '1.10.0',
     [string]$ProjectPath,
     [string]$RequestPath,
-    # Mirrors plugins/forge-ue-studio/schemas/*.schema.json. A ValidateSet must be a
-    # literal, so validate_repo.py gates this list against what actually ships.
     [ValidateSet('asset-interface', 'attempt-result', 'bootstrap-report', 'capability-contract', 'environment-snapshot', 'host-profile', 'lane-lease', 'learning-record', 'lifecycle-state', 'mcp-provider', 'packet-registry', 'project-mcp', 'provider-evaluation', 'research-record', 'review-cycle', 'route-request', 'runtime-state', 'smart-entry', 'work-packet')]
     [string]$ContractKind,
     [string]$InputPath,
@@ -82,8 +75,6 @@ if ($Mode -eq 'Plugin') {
     }
 
     if ($interactive) {
-        # Hosts flagged install_is_interactive install plugins from inside a session.
-        # There is no non-interactive CLI to shell out to, so print the commands to run.
         [pscustomobject]@{
             mode = 'manual'
             host = $RuntimeHost
@@ -248,7 +239,6 @@ if ($Mode -ne 'Validate' -and -not $ProjectPath) {
     throw '-ProjectPath is required for Survey, Install, Verify, Profile, Next, BootstrapCheck, Route, McpStatus, GsdSync, and Lifecycle modes.'
 }
 
-# PascalCase mode names map to the CLI's kebab-case verbs.
 $verbMap = @{ 'BootstrapCheck' = 'bootstrap-check'; 'McpStatus' = 'mcp-status'; 'GsdSync' = 'gsd-sync' }
 $verb = if ($verbMap.ContainsKey($Mode)) { $verbMap[$Mode] } else { $Mode.ToLowerInvariant() }
 $arguments = @($forgeScript, $verb)

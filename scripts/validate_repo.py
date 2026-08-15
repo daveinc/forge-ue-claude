@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import tokenize
 from pathlib import Path
 
 
@@ -13,27 +14,50 @@ ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugins" / "forge-ue-studio"
 IGNORED_PARTS = {".git", ".tmp", "__pycache__"}
 
-# Canon must never name a runtime vendor. These are the only places allowed to.
+COMMENT_FREE_SOURCES = (
+    PLUGIN / "scripts" / "forge.py",
+    ROOT / "scripts" / "validate_repo.py",
+    ROOT / "tests" / "test_forge.py",
+    ROOT / "install.ps1",
+)
+EXEMPT_COMMENT_PREFIXES = ("#!", "# noqa", "# type:", "# pragma:")
+
 NEUTRALITY_EXEMPT_FILES = {
     PLUGIN / "hosts" / "registry.json",
 }
 
-# "OpenAI-compatible" is the ecosystem's name for a wire protocol, not a
-# dependency on a vendor. Anything else matching a banned token is a leak.
 NEUTRALITY_ALLOWED_SUBSTRINGS = ("openai-compatible",)
 
-# Skill spellings belong to a host, never to canon. The leading boundary keeps
-# path segments such as "plugins/forge-ue-studio" and "open-gsd/gsd-core" from
-# matching, since only a real invocation is preceded by whitespace or nothing.
-HOST_SKILL_INVOCATION = re.compile(r"(?<![\w./\\-])[$/](?:forge|gsd)-[a-z0-9-]+")
+NOT_INSIDE_A_PATH = r"(?<![\w./\\-])"
+HOST_SKILL_INVOCATION = re.compile(NOT_INSIDE_A_PATH + r"[$/](?:forge|gsd)-[a-z0-9-]+")
+
+TOP_LEVEL_PARSER = re.compile(r'(?<![\w])sub\.add_parser\(\s*"([a-z][a-z-]*)"')
+SUBCOMMAND_PARSER = re.compile(r'_sub\.add_parser\(\s*"([a-z][a-z-]*)"')
+
+
+def comment_lines(path: Path) -> list[int]:
+    """Line numbers of every non-exempt comment in a Python or PowerShell file."""
+    if path.suffix == ".py":
+        with path.open("rb") as handle:
+            tokens = list(tokenize.tokenize(handle.readline))
+        return [
+            token.start[0]
+            for token in tokens
+            if token.type == tokenize.COMMENT
+            and not token.string.startswith(EXEMPT_COMMENT_PREFIXES)
+        ]
+    return [
+        number
+        for number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1)
+        if line.lstrip().startswith("#") and not line.lstrip().startswith(EXEMPT_COMMENT_PREFIXES)
+    ]
 
 
 def neutrality_banned_tokens(hosts: list) -> list[str]:
     """Derive banned vendor tokens from the host registry itself.
 
-    Keyed off the registry so adding a host automatically extends the guard.
-    Hosts with no CLI executables (the `generic` placeholder profile) contribute
-    nothing, because their identifiers are common words rather than vendor names.
+    Hosts with no CLI executables (the `generic` placeholder) contribute nothing;
+    their identifiers are common words rather than vendor names.
     """
     tokens: set[str] = set()
     for host in hosts:
@@ -81,8 +105,6 @@ def main() -> int:
         except (OSError, json.JSONDecodeError) as exc:
             fail(f"Invalid JSON {path.relative_to(ROOT)}: {exc}", failures)
 
-    # Every host that declares a plugin manifest directory must actually ship one,
-    # so the repo installs cleanly under any supported runtime.
     registry_path = PLUGIN / "hosts" / "registry.json"
     registry = parsed.get(registry_path, {})
     hosts = registry.get("hosts", [])
@@ -154,10 +176,6 @@ def main() -> int:
         if not item.get("classification") or not item.get("capabilities"):
             fail(f"Dependency {item.get('id')} is incomplete", failures)
 
-    # Typed tool routes. The registry is the only place a server is declared, so
-    # every reference leaving it must resolve: to a dependency, to a lane, to a
-    # probe kind, to an acceptance suite, and to a host capability. A row that
-    # points at nothing would render an agent that silently cannot work.
     mcp_path = PLUGIN / "dependencies" / "mcp-registry.json"
     mcp_registry = parsed.get(mcp_path, {})
     mcp_providers = mcp_registry.get("providers", [])
@@ -186,8 +204,6 @@ def main() -> int:
         if dependency is None:
             fail(f"MCP provider {provider_id!r} is not a declared dependency in catalog.json", failures)
         else:
-            # One dependency truth: the route a server degrades to must be the
-            # route the catalog already promises for that dependency.
             if dependency.get("fallback") not in provider.get("fallbacks", []):
                 fail(f"MCP provider {provider_id!r} fallbacks do not include the catalog fallback {dependency.get('fallback')!r}", failures)
             unknown_caps = [item for item in provider.get("capabilities", []) if item not in dependency.get("capabilities", [])]
@@ -216,8 +232,6 @@ def main() -> int:
             if capability not in contract_capabilities:
                 fail(f"MCP provider {provider_id!r} requires host capability {capability!r}, which the prerequisite contract does not declare", failures)
 
-    # A new game project starts with a declaration file it can amend, not with
-    # servers it never chose. The template must parse and start empty.
     project_mcp_path = PLUGIN / "assets" / "project-template" / ".forge" / "mcp.json"
     project_mcp = parsed.get(project_mcp_path, {})
     if project_mcp.get("schema") != "forge.project-mcp/v1":
@@ -227,8 +241,6 @@ def main() -> int:
     elif project_mcp["servers"]:
         fail("Project MCP template must ship empty; a project declares its own routes", failures)
 
-    # A host either speaks MCP and knows how to spell a namespace, or it does
-    # neither. Half a declaration renders agents with tools that cannot bind.
     for host in hosts:
         host_id = host.get("id")
         mcp = host.get("mcp", {})
@@ -244,15 +256,11 @@ def main() -> int:
             fail(f"Host {host_id} mcp.tool_namespace_template must interpolate {{server}}", failures)
         if not mcp.get("config_paths"):
             fail(f"Host {host_id} declares no MCP config paths, so no server can ever be probed", failures)
-        # Where a project's own routes land is a deliberate decision per host,
-        # including "nowhere". An absent key is a forgotten one.
         if "project_surface" not in mcp:
             fail(f"Host {host_id} declares no mcp.project_surface; state the path or state null", failures)
         project_surface = mcp.get("project_surface")
         if project_surface is None and not mcp.get("project_surface_note"):
             fail(f"Host {host_id} renders no project MCP surface but records no reason", failures)
-        # Publishing to user scope writes outside every project on the machine,
-        # so a host must say where that lands and whether Forge may write it.
         if "user_surface" not in mcp:
             fail(f"Host {host_id} declares no mcp.user_surface; state the path or state null", failures)
         user_surface = mcp.get("user_surface")
@@ -281,9 +289,6 @@ def main() -> int:
             if "subagent_visible" not in entry:
                 fail(f"Host {host_id} MCP config path {entry.get('path')!r} must state subagent_visible", failures)
 
-    # Every dependency states whether anything actually dispatches to it. An
-    # aspirational entry is fine; an entry that is silently unreachable is not,
-    # because nothing distinguishes it from one that was meant to be wired.
     routing_states = set(parsed.get(catalog_path, {}).get("routing_states", {}))
     if not routing_states:
         fail("Catalog must declare its routing_states vocabulary", failures)
@@ -301,7 +306,6 @@ def main() -> int:
         if state == "declared" and (caps & served_capabilities):
             fail(f"Dependency {item.get('id')!r} is marked declared but a provider serves its capabilities", failures)
 
-    # Activation can only turn on a capability some dependency provides.
     activation_path = PLUGIN / "assets" / "project-template" / ".forge" / "context" / "activation-policy.json"
     activation = parsed.get(activation_path, {})
     declared_capabilities = {c for item in dependencies for c in item.get("capabilities", [])}
@@ -311,8 +315,6 @@ def main() -> int:
     for capability in sorted(activation_capabilities - declared_capabilities):
         fail(f"Activation policy names capability {capability!r}, which no dependency declares", failures)
 
-    # Lanes and capabilities are separate namespaces. Keeping the prefix on lane
-    # ids is what stops one being read as the other.
     for lane in mcp_lanes:
         if not str(lane).startswith("lane."):
             fail(f"Lane id {lane!r} must carry the lane. prefix so it cannot collide with a capability", failures)
@@ -385,9 +387,6 @@ def main() -> int:
         if not path.is_file():
             fail(f"Missing project template file: {path.relative_to(ROOT)}", failures)
 
-    # Every schema that ships is validatable through the CLI, and the installer's
-    # ValidateSet must match. A PowerShell ValidateSet has to be a literal, so it
-    # cannot derive itself the way forge.py does — this is what keeps it honest.
     schema_kinds = {path.name[: -len(".schema.json")] for path in (PLUGIN / "schemas").glob("*.schema.json")}
     installer = (ROOT / "install.ps1").read_text(encoding="utf-8-sig")
     contract_block = re.search(r"\[ValidateSet\(([^)]*)\)\]\s*\r?\n\s*\[string\]\$ContractKind", installer)
@@ -400,12 +399,8 @@ def main() -> int:
         for extra in sorted(declared_kinds - schema_kinds):
             fail(f"install.ps1 -ContractKind offers {extra!r}, which ships no schema", failures)
 
-    # Every CLI verb is reachable from the installer, which is the entry point the
-    # documentation points Windows users at.
     forge_source = (PLUGIN / "scripts" / "forge.py").read_text(encoding="utf-8")
-    # Top-level verbs only: `sub` is the root subparser, while `host_sub` and
-    # `mcp_sub` hold subcommands reached through their parent mode.
-    cli_verbs = set(re.findall(r'(?<![\w])sub\.add_parser\(\s*"([a-z][a-z-]*)"', forge_source))
+    cli_verbs = set(TOP_LEVEL_PARSER.findall(forge_source))
     grouped = re.search(r'for name in \(([^)]*)\):', forge_source)
     if grouped:
         cli_verbs |= set(re.findall(r'"([a-z][a-z-]*)"', grouped.group(1)))
@@ -419,7 +414,6 @@ def main() -> int:
         if verb.replace("-", "") not in modes and verb not in mapped:
             fail(f"forge.py verb {verb!r} has no install.ps1 -Mode", failures)
 
-    # A studio role nothing dispatches to is a role that never runs.
     project_template = PLUGIN / "assets" / "project-template"
     agent_names = {path.stem for path in (project_template / ".forge" / "agents").glob("*.json")}
     skill_corpus = "\n".join(path.read_text(encoding="utf-8-sig") for path in (PLUGIN / "skills").glob("*/SKILL.md"))
@@ -427,9 +421,6 @@ def main() -> int:
         if name not in skill_corpus:
             fail(f"Agent {name!r} is defined but no skill names it as a dispatch target", failures)
 
-    # The failure vocabulary is one list. A call site that invents a reason
-    # inline puts a code on the wire that no test can assert against and no
-    # caller can branch on, which is the state typed reasons exist to end.
     reason_block = re.search(r"ERROR_REASON = MappingProxyType\(\s*\{(.*?)\}\s*\)", forge_source, re.DOTALL)
     if not reason_block:
         fail("forge.py declares no ERROR_REASON vocabulary", failures)
@@ -440,15 +431,12 @@ def main() -> int:
         for key, value in sorted(declared_reasons.items()):
             if not re.fullmatch(r"[a-z][a-z0-9_]*", value):
                 fail(f"Error reason {key} has non-snake_case wire value {value!r}", failures)
-        # Every reason passed to fail()/ForgeExit must come from the enum.
         for literal in sorted(set(re.findall(r"reason=\"([^\"]+)\"", forge_source))):
             fail(f"forge.py passes an inline reason string {literal!r}; use ERROR_REASON", failures)
         used = {key for key in declared_reasons if f'ERROR_REASON["{key}"]' in forge_source}
         for unused in sorted(set(declared_reasons) - used):
             fail(f"Error reason {unused} is declared but never raised", failures)
 
-    # `ok` is a verdict, not decoration. The declaration and the assertion that
-    # enforces it must both exist, or a missing verdict quietly becomes success.
     verdict_block = re.search(r"VERDICT_COMMANDS = frozenset\(\s*\{(.*?)\}\s*\)", forge_source, re.DOTALL)
     if not verdict_block:
         fail("forge.py declares no VERDICT_COMMANDS set", failures)
@@ -456,15 +444,11 @@ def main() -> int:
         verdict_commands = re.findall(r'"([a-z][a-z -]*)"', verdict_block.group(1))
         if not verdict_commands:
             fail("VERDICT_COMMANDS is declared but empty", failures)
-        # Checked against the parser's own declarations, not against the whole
-        # source: a bare substring search is satisfied by the VERDICT_COMMANDS
-        # entry itself, so the gate would confirm every name including invented
-        # ones.
-        declared_commands = set(re.findall(r'(?<![\w])sub\.add_parser\(\s*"([a-z][a-z-]*)"', forge_source))
+        declared_commands = set(TOP_LEVEL_PARSER.findall(forge_source))
         grouped_commands = re.search(r'for name in \(([^)]*)\):', forge_source)
         if grouped_commands:
             declared_commands |= set(re.findall(r'"([a-z][a-z-]*)"', grouped_commands.group(1)))
-        sub_commands = set(re.findall(r'_sub\.add_parser\(\s*"([a-z][a-z-]*)"', forge_source))
+        sub_commands = set(SUBCOMMAND_PARSER.findall(forge_source))
         for command in verdict_commands:
             parts = command.split()
             if parts[0] not in declared_commands:
@@ -477,26 +461,32 @@ def main() -> int:
         if 'result.get("ok", True)' in forge_source:
             fail("forge.py still defaults a missing verdict to success", failures)
 
-    # A document nothing links to is a document nobody finds.
     doc_sources = {
         path: path.read_text(encoding="utf-8-sig", errors="replace")
         for path in repository_files("*")
         if path.is_file() and path.suffix.lower() in {".md", ".json", ".py", ".ps1"}
     }
     for path in sorted(ROOT.glob("docs/**/*.md")):
-        # Counted across every other file, so a document that happens to name
-        # itself is not thereby considered reachable.
-        if not any(path.name in text for source, text in doc_sources.items() if source != path):
+        every_other_file = [text for source, text in doc_sources.items() if source != path]
+        if not any(path.name in text for text in every_other_file):
             fail(f"Document {path.relative_to(ROOT)} is not linked from anywhere", failures)
 
-    # A state file nothing reads is state nothing resumes from.
+    for path in COMMENT_FREE_SOURCES:
+        if not path.is_file():
+            fail(f"Comment-free source {path.relative_to(ROOT)} does not exist", failures)
+            continue
+        for number in comment_lines(path):
+            fail(
+                f"{path.relative_to(ROOT)}:{number} carries a comment; state it as a rule in a "
+                f"skill or doc, or express it in the code (see CONTRIBUTING.md)",
+                failures,
+            )
+
     state_readers = skill_corpus + forge_source
     for path in sorted((project_template / ".forge" / "state").glob("*.json")):
         if path.name not in state_readers:
             fail(f"Project state file {path.name!r} has no reader in any skill or in forge.py", failures)
 
-    # The project template must stay host-neutral: no host-specific surface may be
-    # shipped verbatim, because those are rendered per host at install time.
     template_root = PLUGIN / "assets" / "project-template"
     host_dirs = {host.get("project_surface", {}).get("agent_dir", "").split("/")[0] for host in hosts}
     host_files = {host.get("project_surface", {}).get("instruction_file") for host in hosts}
@@ -520,9 +510,6 @@ def main() -> int:
             fail(f"Agent definition incomplete: {path.relative_to(ROOT)}", failures)
         declared_caps = definition.get("mcp_capabilities", [])
         if declared_caps:
-            # An agent that names a capability no provider serves would render
-            # with a tool it can never bind, and its fallback prose would never
-            # be reached because nothing reports the gap.
             if definition.get("schema") != "forge.agent-definition/v2":
                 fail(f"Agent {path.stem!r} declares mcp_capabilities but not schema v2", failures)
             if not definition.get("tools"):
@@ -534,9 +521,6 @@ def main() -> int:
             if "fallback" not in instructions.casefold():
                 fail(f"Agent {path.stem!r} routes typed tools but names no fallback route", failures)
 
-    # Verb registry: Forge owns the whole user-facing vocabulary, so every verb it
-    # promises must exist as a skill, and every GSD command Forge may encounter
-    # must map to one. A gap here leaks a gsd- name to the user.
     verb_registry_path = PLUGIN / "verbs" / "registry.json"
     verb_registry = parsed.get(verb_registry_path, {})
     verbs = verb_registry.get("verbs", [])
@@ -561,7 +545,6 @@ def main() -> int:
         seen_gsd.add(gsd_verb)
 
         if disposition == "drop":
-            # A deliberate exclusion carries no Forge verb and must say why.
             if forge_verb is not None:
                 fail(f"Dropped GSD command {gsd_verb!r} must not name a Forge verb", failures)
             if not entry.get("reason"):
@@ -578,9 +561,6 @@ def main() -> int:
         if not entry.get("gsd_workflow") or not entry.get("adaptation"):
             fail(f"Verb {forge_verb!r} missing gsd_workflow or adaptation", failures)
 
-    # Drift check: every gsd_workflow the registry names must exist in an
-    # installed GSD. Skipped when GSD is absent (CI), because the reference is a
-    # runtime dependency, not a repository one.
     workflow_dirs = [
         Path(str(host.get("gsd", {}).get("runtime_root", ""))).expanduser() / "workflows"
         for host in hosts
@@ -602,9 +582,6 @@ def main() -> int:
                     failures,
                 )
 
-    # Canon neutrality: no vendor name, host path, host instruction file, or host
-    # skill prefix may appear anywhere in the shipped canon. Banned tokens come
-    # from the registry, so this guard extends itself when a host is added.
     banned = neutrality_banned_tokens(hosts)
     canon_files = [
         *(p for p in template_root.rglob("*") if p.is_file()),
