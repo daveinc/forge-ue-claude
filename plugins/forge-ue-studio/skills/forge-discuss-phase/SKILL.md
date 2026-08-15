@@ -13,7 +13,7 @@ Read [delegation-contract.md](../../references/delegation-contract.md) first. It
 
 1. Read `.forge/directives.md` and the GDD decision ledger. Load the phase entry from the roadmap.
 2. Identify which departments this phase touches (gameplay, visual, audio, narrative, QA) so questions can be scoped.
-3. Read `.forge/capabilities/registry.json` and run `python <forge-plugin-root>/scripts/forge.py mcp-status --project <project-root>`. Do not raise options that depend on an unqualified provider or an unbound typed tool route.
+3. Read `.forge/capabilities/registry.json` and `.forge/capabilities/detected.json` (written by `forge.py profile`), then run `python <forge-plugin-root>/scripts/forge.py mcp-status --project <project-root>`. Do not raise options that depend on an unqualified provider or an unbound typed tool route.
 
 ## CORE — GSD
 

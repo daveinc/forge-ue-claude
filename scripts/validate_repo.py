@@ -409,6 +409,8 @@ def main() -> int:
     grouped = re.search(r'for name in \(([^)]*)\):', forge_source)
     if grouped:
         cli_verbs |= set(re.findall(r'"([a-z][a-z-]*)"', grouped.group(1)))
+    if not cli_verbs:
+        fail("No CLI verbs found in forge.py; the installer-mode check would assert over nothing", failures)
     mode_block = re.search(r"\[ValidateSet\(([^)]*)\)\]\s*\r?\n\s*\[string\]\$Mode", installer)
     modes = {m.lower() for m in re.findall(r"'([^']+)'", mode_block.group(1))} if mode_block else set()
     verb_map = dict(re.findall(r"'([A-Za-z]+)'\s*=\s*'([a-z][a-z-]*)'", installer))
@@ -424,6 +426,26 @@ def main() -> int:
     for name in sorted(agent_names):
         if name not in skill_corpus:
             fail(f"Agent {name!r} is defined but no skill names it as a dispatch target", failures)
+
+    # The failure vocabulary is one list. A call site that invents a reason
+    # inline puts a code on the wire that no test can assert against and no
+    # caller can branch on, which is the state typed reasons exist to end.
+    reason_block = re.search(r"ERROR_REASON = MappingProxyType\(\s*\{(.*?)\}\s*\)", forge_source, re.DOTALL)
+    if not reason_block:
+        fail("forge.py declares no ERROR_REASON vocabulary", failures)
+    else:
+        declared_reasons = dict(re.findall(r'"([A-Z0-9_]+)":\s*"([a-z0-9_]+)"', reason_block.group(1)))
+        if not declared_reasons:
+            fail("ERROR_REASON is declared but empty", failures)
+        for key, value in sorted(declared_reasons.items()):
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", value):
+                fail(f"Error reason {key} has non-snake_case wire value {value!r}", failures)
+        # Every reason passed to fail()/ForgeExit must come from the enum.
+        for literal in sorted(set(re.findall(r"reason=\"([^\"]+)\"", forge_source))):
+            fail(f"forge.py passes an inline reason string {literal!r}; use ERROR_REASON", failures)
+        used = {key for key in declared_reasons if f'ERROR_REASON["{key}"]' in forge_source}
+        for unused in sorted(set(declared_reasons) - used):
+            fail(f"Error reason {unused} is declared but never raised", failures)
 
     # A document nothing links to is a document nobody finds.
     doc_sources = {

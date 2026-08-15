@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 
@@ -42,6 +43,84 @@ def schema_files() -> dict[str, str]:
 SCHEMA_FILES = schema_files()
 
 RESIDENT_PROVIDER = "resident"
+
+
+# ---------------------------------------------------------------------------
+# CLI failure contract
+#
+# Every failure carries a typed reason code rather than only a sentence. Tests
+# assert on the code, so a reworded message never silently stops a test from
+# checking what it was written to check, and a caller can branch on the reason
+# without parsing prose.
+#
+# Adding a new code:
+#   - Pick a snake_case lowercase value; that string is the wire form
+#   - Group it under the subsystem prefix its call sites belong to
+#   - Raise it through fail(message, ERROR_REASON.NEW_CODE)
+#
+# validate_repo.py refuses a call site that invents a code inline, so the enum
+# stays the single list of everything this CLI can fail with.
+# ---------------------------------------------------------------------------
+
+ERROR_REASON = MappingProxyType(
+    {
+        # project / host resolution
+        "PROJECT_NOT_FOUND": "project_not_found",
+        "PROJECT_NOT_ADOPTED": "project_not_adopted",
+        "HOST_UNKNOWN": "host_unknown",
+        "HOST_SURFACE_UNSUPPORTED": "host_surface_unsupported",
+        # contracts and payloads
+        "CONTRACT_UNKNOWN_KIND": "contract_unknown_kind",
+        "CONTRACT_INVALID": "contract_invalid",
+        "JSON_UNREADABLE": "json_unreadable",
+        # typed tool routes
+        "MCP_UNKNOWN_CAPABILITY": "mcp_unknown_capability",
+        "MCP_FIELD_RESTATED": "mcp_field_restated",
+        "MCP_INCOMPLETE_DECLARATION": "mcp_incomplete_declaration",
+        "MCP_ALREADY_DECLARED": "mcp_already_declared",
+        "MCP_NOT_DECLARED": "mcp_not_declared",
+        "MCP_MISSING_TRANSPORT": "mcp_missing_transport",
+        "MCP_NO_DECLARATION_FILE": "mcp_no_declaration_file",
+        # agents and overlay
+        "AGENT_INVALID": "agent_invalid",
+        "OVERLAY_MISSING": "overlay_missing",
+        # generic
+        "USAGE": "usage",
+        "UNKNOWN": "unknown",
+    }
+)
+
+EXIT_OK = 0
+EXIT_FAILURE = 1
+EXIT_CONTRACT = 2
+EXIT_USAGE = 3
+
+
+class ForgeExit(Exception):
+    """A failure carrying its exit code and typed reason.
+
+    Raised instead of calling sys.exit() inside the logic, so a caller that
+    imports this module gets an exception it can catch rather than a process
+    that vanishes underneath it. main() is the only place that turns one into
+    an exit code.
+    """
+
+    def __init__(self, message: str, reason: str = ERROR_REASON["UNKNOWN"], code: int = EXIT_FAILURE, **extra: Any):
+        super().__init__(message)
+        if reason not in set(ERROR_REASON.values()):
+            raise ValueError(f"ForgeExit reason {reason!r} is not declared in ERROR_REASON")
+        self.reason = reason
+        self.code = code
+        self.extra = extra
+
+    def payload(self) -> dict[str, Any]:
+        return {"ok": False, "reason": self.reason, "message": str(self), **self.extra}
+
+
+def fail(message: str, reason: str = ERROR_REASON["UNKNOWN"], code: int = EXIT_FAILURE, **extra: Any) -> ForgeExit:
+    """Build the failure to raise. Returns rather than raises so the call site
+    reads `raise fail(...)` and static analysis still sees the control flow."""
+    return ForgeExit(message, reason=reason, code=code, **extra)
 
 
 def utc_now() -> str:
@@ -74,7 +153,7 @@ def host_profile(host_id: str) -> dict[str, Any]:
     profiles = host_profiles()
     if host_id not in profiles:
         known = ", ".join(sorted(profiles))
-        raise ValueError(f"Unknown host {host_id!r}; known hosts: {known}")
+        raise fail(f"Unknown host {host_id!r}; known hosts: {known}", reason=ERROR_REASON["HOST_UNKNOWN"], code=EXIT_USAGE)
     return profiles[host_id]
 
 
@@ -170,9 +249,10 @@ def agent_tool_surface(definition: dict[str, Any], profile: dict[str, Any]) -> l
     unknown = [item for item in declared if item not in index]
     if unknown:
         known = ", ".join(sorted(index)) or "none"
-        raise ValueError(
+        raise fail(
             f"Agent {definition.get('name')!r} declares MCP capabilities with no provider: "
-            f"{', '.join(sorted(unknown))}; declared capabilities: {known}"
+            f"{', '.join(sorted(unknown))}; declared capabilities: {known}",
+            reason=ERROR_REASON["MCP_UNKNOWN_CAPABILITY"],
         )
     if not host_speaks_mcp(profile):
         # The host cannot bind typed tools at all. The agent still renders and
@@ -322,7 +402,7 @@ def render_agent(definition: dict[str, Any], profile: dict[str, Any]) -> str:
     description = render_tokens(str(definition.get("description", "")).strip(), profile)
     instructions = render_tokens(str(definition.get("instructions", "")).strip(), profile)
     if not name:
-        raise ValueError("Agent definition is missing a name")
+        raise fail("Agent definition is missing a name", reason=ERROR_REASON["AGENT_INVALID"])
     tools = agent_tool_surface(definition, profile)
     fmt = profile.get("project_surface", {}).get("agent_format", "markdown-frontmatter")
     if fmt == "toml":
@@ -346,7 +426,7 @@ def render_agent(definition: dict[str, Any], profile: dict[str, Any]) -> str:
             "---\n\n"
             f"{instructions}\n"
         )
-    raise ValueError(f"Unsupported agent format: {fmt!r}")
+    raise fail(f"Unsupported agent format: {fmt!r}", reason=ERROR_REASON["HOST_SURFACE_UNSUPPORTED"])
 
 
 def project_mcp_path(canon_root: Path) -> Path:
@@ -374,23 +454,25 @@ def resolve_project_servers(canon_root: Path) -> list[dict[str, Any]]:
     for entry in project_mcp(canon_root).get("servers", []):
         entry_id = str(entry.get("id", ""))
         if not entry_id:
-            raise ValueError("Project MCP entry has no id")
+            raise fail("Project MCP entry has no id", reason=ERROR_REASON["MCP_INCOMPLETE_DECLARATION"])
         row = catalog.get(entry_id)
         if row is not None:
             restated = [field for field in inherited if field in entry]
             if restated:
-                raise ValueError(
+                raise fail(
                     f"Project MCP entry {entry_id!r} restates catalog-owned field(s): "
-                    f"{', '.join(sorted(restated))}. Remove them; the catalog is the single truth."
+                    f"{', '.join(sorted(restated))}. Remove them; the catalog is the single truth.",
+                    reason=ERROR_REASON["MCP_FIELD_RESTATED"],
                 )
             merged = {field: row.get(field) for field in inherited}
             source = "catalog"
         else:
             missing = [field for field in inherited if not entry.get(field)]
             if missing:
-                raise ValueError(
+                raise fail(
                     f"Project MCP entry {entry_id!r} is not in the catalog and must declare "
-                    f"{', '.join(sorted(missing))} so routing can resolve it."
+                    f"{', '.join(sorted(missing))} so routing can resolve it.",
+                    reason=ERROR_REASON["MCP_INCOMPLETE_DECLARATION"],
                 )
             merged = {field: entry.get(field) for field in inherited}
             source = "project"
@@ -436,7 +518,7 @@ def render_project_mcp(root: Path, profile: dict[str, Any], canon_root: Path) ->
             existing = load_json(target)
             if isinstance(existing, dict):
                 document = existing
-        except ValueError:
+        except ForgeExit:
             document = {}
     current = document.get(server_key)
     entries = dict(current) if isinstance(current, dict) else {}
@@ -511,7 +593,7 @@ def sync_user_mcp(root: Path, profile: dict[str, Any], apply: bool) -> dict[str,
             loaded = load_json(target)
             if isinstance(loaded, dict):
                 document = loaded
-        except ValueError:
+        except ForgeExit:
             return {
                 "schema": "forge.mcp-user-sync/v1", "mode": "blocked", "applied": False,
                 "reason": f"{target} is not readable JSON; refusing to rewrite a config we cannot parse",
@@ -579,7 +661,7 @@ def record_consent(root: Path, scope: str, detail: str, subjects: list[str]) -> 
         return
     try:
         ledger = load_json(path)
-    except ValueError:
+    except ForgeExit:
         return
     ledger.setdefault("entries", []).append(
         {"scope": scope, "detail": detail, "subjects": subjects, "granted_at": utc_now()}
@@ -638,7 +720,7 @@ def read_runtime(root: Path) -> dict[str, Any] | None:
         return None
     try:
         return load_json(path)
-    except ValueError:
+    except ForgeExit:
         return None
 
 
@@ -815,13 +897,14 @@ def host_set(project_value: str, host_id: str, apply: bool) -> dict[str, Any]:
     """Assign or swap the resident runtime, re-rendering host surfaces from canon."""
     root, _ = project_root(project_value)
     if not (root / ".forge" / "config.json").is_file():
-        raise ValueError("Forge is not adopted in this directory; run the install overlay before assigning a runtime")
+        raise fail("Forge is not adopted in this directory; run the install overlay before assigning a runtime", reason=ERROR_REASON["PROJECT_NOT_ADOPTED"])
     profile = host_profile(host_id)
     prerequisites = host_prerequisites(profile)
     if not prerequisites["satisfied"]:
-        raise ValueError(
+        raise fail(
             f"Host {host_id!r} does not satisfy the Forge prerequisite contract; missing: "
-            + ", ".join(prerequisites["missing_required"])
+            + ", ".join(prerequisites["missing_required"]),
+            reason=ERROR_REASON["HOST_SURFACE_UNSUPPORTED"],
         )
     previous_id = active_host_id(root)
     actions = apply_host_surfaces(root, profile, apply)
@@ -952,7 +1035,7 @@ def sync_gsd_runtime(root: Path, profile: dict[str, Any], apply: bool) -> dict[s
         return {"action": "deferred", "reason": "GSD .planning/config.json does not exist yet", "target": str(path)}
     try:
         config = load_json(path)
-    except ValueError as exc:
+    except ForgeExit as exc:
         return {"action": "error", "reason": str(exc), "target": str(path)}
     if config.get("runtime") == name:
         return {"action": "unchanged", "runtime": name, "target": str(path)}
@@ -1141,7 +1224,7 @@ def bootstrap_verdict(root: Path, profile: dict[str, Any] | None = None) -> dict
         return _bootstrap_result(root, profile, checks)
     try:
         report = load_json(report_path)
-    except ValueError as exc:
+    except ForgeExit as exc:
         record("bootstrap-report", False, str(exc))
         return _bootstrap_result(root, profile, checks)
     record("bootstrap-report", True, str(report_path))
@@ -1171,8 +1254,12 @@ def bootstrap_verdict(root: Path, profile: dict[str, Any] | None = None) -> dict
     try:
         packets = load_json(registry_path).get("packets", [])
         expected_jobs = {str(item["id"]) for item in packets if str(item.get("id", "")).startswith("FI-")}
-    except (ValueError, KeyError):
-        expected_jobs = set()
+    except (ForgeExit, KeyError) as exc:
+        # Fail closed. An unreadable registry means the expected set is unknown,
+        # not empty — treating it as empty would let the coverage check below
+        # pass vacuously and report a bootstrap complete that was never checked.
+        record("packet-coverage", False, f"packet registry is unreadable, so job coverage cannot be checked: {exc}")
+        return _bootstrap_result(root, profile, checks)
     reported_jobs = {str(item.get("work_order")) for item in report.get("jobs", []) if isinstance(item, dict)}
     missing_jobs = sorted(expected_jobs - reported_jobs)
     record(
@@ -1222,7 +1309,7 @@ def _bootstrap_result(root: Path, profile: dict[str, Any], checks: list[dict[str
 def bootstrap_is_complete(root: Path) -> bool:
     try:
         return bool(bootstrap_verdict(root)["ok"])
-    except (OSError, ValueError):
+    except (OSError, ForgeExit):
         return False
 
 
@@ -1461,7 +1548,7 @@ def load_json(path: Path) -> dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"Cannot read JSON {path}: {exc}") from exc
+        raise fail(f"Cannot read JSON {path}: {exc}", reason=ERROR_REASON["JSON_UNREADABLE"]) from exc
 
 
 def find_uproject(project: Path) -> Path | None:
@@ -1479,11 +1566,11 @@ def project_root(project_value: str, require_uproject: bool = False) -> tuple[Pa
     if uproject:
         return uproject.parent, uproject
     if require_uproject:
-        raise ValueError("This operation requires a directory containing exactly one .uproject, or a .uproject path")
+        raise fail("This operation requires a directory containing exactly one .uproject, or a .uproject path", reason=ERROR_REASON["PROJECT_NOT_FOUND"], code=EXIT_USAGE)
     if requested.is_file():
-        raise ValueError("Project path must be a directory or a .uproject file")
+        raise fail("Project path must be a directory or a .uproject file", reason=ERROR_REASON["PROJECT_NOT_FOUND"], code=EXIT_USAGE)
     if not requested.is_dir():
-        raise ValueError("Project directory does not exist")
+        raise fail("Project directory does not exist", reason=ERROR_REASON["PROJECT_NOT_FOUND"], code=EXIT_USAGE)
     return requested.resolve(), None
 
 
@@ -1500,7 +1587,7 @@ def plugin_names(uproject: Path | None) -> list[str]:
 
 def capability(name: str, provider: str, status: str, lane: str, reason: str) -> dict[str, Any]:
     if status not in STATUSES:
-        raise ValueError(f"Invalid status: {status}")
+        raise fail(f"Invalid status: {status}", reason=ERROR_REASON["CONTRACT_INVALID"])
     if provider == RESIDENT_PROVIDER:
         kind, locality = "resident-model", "resident"
     elif provider == "local-model-runtime" or provider.startswith("ollama:"):
@@ -1862,7 +1949,7 @@ def write_profile(project_value: str, apply: bool, host_override: str | None = N
     if destination.exists():
         try:
             existing = load_json(destination)
-        except ValueError:
+        except ForgeExit:
             existing = {}
         if stable_profile(existing) == stable_profile(profile):
             action = "unchanged"
@@ -1981,13 +2068,15 @@ def lifecycle_state(project_value: str, event: str = "status") -> dict[str, Any]
     root, _ = project_root(project_value)
     path = root / ".forge" / "state" / "lifecycle.json"
     if not path.is_file():
-        raise ValueError("Forge lifecycle state is missing; apply the project overlay first")
+        raise fail("Forge lifecycle state is missing; apply the project overlay first", reason=ERROR_REASON["OVERLAY_MISSING"])
     state = load_json(path)
     profile = active_profile(root)
     if event != "status":
-        raise ValueError(
+        raise fail(
             "Forge lifecycle transitions are deprecated; use "
-            f"{host_command(profile, 'forge-next')} and let GSD own phase state"
+            f"{host_command(profile, 'forge-next')} and let GSD own phase state",
+            reason=ERROR_REASON["USAGE"],
+            code=EXIT_USAGE,
         )
     # The stored command is host-neutral; spell it for the assigned runtime.
     stored = str(state.get("next_command") or "")
@@ -2011,7 +2100,7 @@ def schema_root() -> Path:
 
 def validate_payload(kind: str, input_value: str) -> dict[str, Any]:
     if kind not in SCHEMA_FILES:
-        raise ValueError(f"Unknown contract kind: {kind}")
+        raise fail(f"Unknown contract kind: {kind}", reason=ERROR_REASON["CONTRACT_UNKNOWN_KIND"], code=EXIT_USAGE)
     payload_path = Path(input_value).expanduser().resolve()
     payload = load_json(payload_path)
     schema = load_json(schema_root() / SCHEMA_FILES[kind])
@@ -2045,18 +2134,18 @@ def route_work(project_value: str, request_value: str, host_override: str | None
     required = {"work_order", "task_class", "complexity", "bounded", "required_capabilities", "required_lanes", "mutation_risk"}
     missing = sorted(required - set(request))
     if missing:
-        raise ValueError("Route request missing: " + ", ".join(missing))
+        raise fail("Route request missing: " + ", ".join(missing), reason=ERROR_REASON["CONTRACT_INVALID"], code=EXIT_USAGE)
 
     packet_registry_path = root / ".forge" / "state" / "packet-registry.json"
     if not packet_registry_path.is_file():
-        raise ValueError("Canonical packet registry is missing; apply the Forge overlay before routing")
+        raise fail("Canonical packet registry is missing; apply the Forge overlay before routing", reason=ERROR_REASON["OVERLAY_MISSING"])
     packet_registry = load_json(packet_registry_path)
     packets = {str(item.get("id")): item for item in packet_registry.get("packets", [])}
     aliases = {str(item.get("alias")): str(item.get("canonical")) for item in packet_registry.get("aliases", [])}
     requested_order = str(request["work_order"])
     canonical_order = aliases.get(requested_order, requested_order)
     if canonical_order not in packets:
-        raise ValueError(f"Unregistered work_order {requested_order!r}; register the canonical packet or an explicit alias before routing")
+        raise fail(f"Unregistered work_order {requested_order!r}; register the canonical packet or an explicit alias before routing", reason=ERROR_REASON["CONTRACT_INVALID"])
 
     policy = load_json(plugin_root() / "dependencies" / "route-policy.json")
     offload = policy["offload_policy"]
@@ -2173,7 +2262,7 @@ def mcp_amend(
     """
     path = project_mcp_path(root)
     if not path.is_file():
-        raise ValueError(f"{path} does not exist; run the Forge overlay install first")
+        raise fail(f"{path} does not exist; run the Forge overlay install first", reason=ERROR_REASON["MCP_NO_DECLARATION_FILE"])
     document = load_json(path)
     servers = list(document.get("servers", []))
     index = next((i for i, item in enumerate(servers) if str(item.get("id")) == server_id), None)
@@ -2181,11 +2270,11 @@ def mcp_amend(
 
     if action == "add":
         if index is not None:
-            raise ValueError(f"{server_id!r} is already declared; use enable or remove")
+            raise fail(f"{server_id!r} is already declared; use enable or remove", reason=ERROR_REASON["MCP_ALREADY_DECLARED"], code=EXIT_USAGE)
         if server_id not in catalog and not command:
-            raise ValueError(f"{server_id!r} is not in the catalog, so --command is required")
+            raise fail(f"{server_id!r} is not in the catalog, so --command is required", reason=ERROR_REASON["MCP_MISSING_TRANSPORT"], code=EXIT_USAGE)
         if not command:
-            raise ValueError("--command is required to declare how the server starts")
+            raise fail("--command is required to declare how the server starts", reason=ERROR_REASON["MCP_MISSING_TRANSPORT"], code=EXIT_USAGE)
         entry: dict[str, Any] = {"id": server_id, "enabled": True, "transport": {"command": command}}
         if args:
             entry["transport"]["args"] = list(args)
@@ -2194,14 +2283,14 @@ def mcp_amend(
         servers.append(entry)
     elif action == "remove":
         if index is None:
-            raise ValueError(f"{server_id!r} is not declared")
+            raise fail(f"{server_id!r} is not declared", reason=ERROR_REASON["MCP_NOT_DECLARED"], code=EXIT_USAGE)
         servers.pop(index)
     elif action in {"enable", "disable"}:
         if index is None:
-            raise ValueError(f"{server_id!r} is not declared")
+            raise fail(f"{server_id!r} is not declared", reason=ERROR_REASON["MCP_NOT_DECLARED"], code=EXIT_USAGE)
         servers[index] = {**servers[index], "enabled": action == "enable"}
     else:
-        raise ValueError(f"Unknown amend action {action!r}")
+        raise fail(f"Unknown amend action {action!r}", reason=ERROR_REASON["USAGE"], code=EXIT_USAGE)
 
     document["servers"] = servers
     # Resolve before writing: a declaration that cannot route must not land.
@@ -2404,10 +2493,31 @@ def main(argv: list[str] | None = None) -> int:
         else:
             result = validate_payload(args.kind, args.input)
         emit(result, args.output)
-        return 0 if result.get("ok", True) else 2
-    except (OSError, ValueError) as exc:
-        print(json.dumps({"error": str(exc), "command": args.command}), file=sys.stderr)
-        return 1
+        return EXIT_OK if result.get("ok", True) else EXIT_CONTRACT
+    except ForgeExit as exc:
+        # The failure already knows its reason and its exit code. Emitting the
+        # code alongside the message means a caller branches on `reason` instead
+        # of matching prose that may be reworded.
+        print(json.dumps({**exc.payload(), "command": args.command}), file=sys.stderr)
+        return exc.code
+    except OSError as exc:
+        # Anything the process could not read or write. Still typed, so an
+        # unexpected failure is distinguishable from a declared one rather than
+        # arriving as an untagged blob.
+        print(
+            json.dumps({"ok": False, "reason": ERROR_REASON["JSON_UNREADABLE"], "message": str(exc), "command": args.command}),
+            file=sys.stderr,
+        )
+        return EXIT_FAILURE
+    except ValueError as exc:
+        # A ValueError reaching here is a bug: every declared failure raises
+        # ForgeExit. Report it as untyped rather than dressing it up as one of
+        # the declared reasons.
+        print(
+            json.dumps({"ok": False, "reason": ERROR_REASON["UNKNOWN"], "message": str(exc), "command": args.command}),
+            file=sys.stderr,
+        )
+        return EXIT_FAILURE
 
 
 if __name__ == "__main__":

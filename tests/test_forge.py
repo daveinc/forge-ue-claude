@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import re
@@ -283,7 +284,7 @@ class ForgeInstallerTests(unittest.TestCase):
 
             request["work_order"] = "W1"
             request_path.write_text(json.dumps(request), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "Unregistered work_order"):
+            with self.assertRaisesRegex(forge.ForgeExit, "Unregistered work_order"):
                 forge.route_work(str(project), str(request_path))
 
     def test_legacy_lifecycle_is_status_only_and_gsd_is_authoritative(self):
@@ -300,7 +301,7 @@ class ForgeInstallerTests(unittest.TestCase):
             self.assertEqual(initial["next_command"], "forge-bootstrap --resume")
             self.assertEqual(result["next_command_for_host"], "/forge-bootstrap --resume")
             self.assertEqual(result["host"], "claude")
-            with self.assertRaisesRegex(ValueError, "transitions are deprecated"):
+            with self.assertRaisesRegex(forge.ForgeExit, "transitions are deprecated"):
                 forge.lifecycle_state(str(project), "bootstrap-start")
 
     def test_forge_next_routes_adoption_bootstrap_and_greenfield(self):
@@ -446,10 +447,10 @@ class ForgeInstallerTests(unittest.TestCase):
         with workspace_tempdir() as temp:
             project = temp / "Unadopted"
             project.mkdir()
-            with self.assertRaisesRegex(ValueError, "not adopted"):
+            with self.assertRaisesRegex(forge.ForgeExit, "not adopted"):
                 forge.host_set(str(project), "codex", apply=False)
             forge.install_overlay(str(project), apply=True)
-            with self.assertRaisesRegex(ValueError, "Unknown host"):
+            with self.assertRaisesRegex(forge.ForgeExit, "Unknown host"):
                 forge.host_set(str(project), "not-a-host", apply=False)
 
     def test_forge_next_detects_stale_host_surfaces(self):
@@ -689,7 +690,7 @@ class ForgeInstallerTests(unittest.TestCase):
             project = temp / "NoTransitions"
             project.mkdir()
             forge.install_overlay(str(project), apply=True)
-            with self.assertRaisesRegex(ValueError, "transitions are deprecated"):
+            with self.assertRaisesRegex(forge.ForgeExit, "transitions are deprecated"):
                 forge.lifecycle_state(str(project), "execute-complete")
 
     def test_gsd_commands_are_translated_into_forge_vocabulary(self):
@@ -950,8 +951,9 @@ class McpRouteTests(unittest.TestCase):
 
     def test_unknown_capability_is_a_hard_error(self):
         broken = dict(self.agents["unreal-operator"], mcp_capabilities=["ue.does.not.exist"])
-        with self.assertRaises(ValueError) as caught:
+        with self.assertRaises(forge.ForgeExit) as caught:
             forge.agent_tool_surface(broken, forge.host_profile("claude"))
+        self.assertEqual(caught.exception.reason, forge.ERROR_REASON["MCP_UNKNOWN_CAPABILITY"])
         self.assertIn("ue.does.not.exist", str(caught.exception))
 
     def test_rendered_agent_carries_the_namespace_per_format(self):
@@ -1067,9 +1069,9 @@ class ProjectMcpTests(unittest.TestCase):
                 "transport": {"command": "uvx"}, "lane": "somewhere-else",
             }]
             path.write_text(json.dumps(document), encoding="utf-8")
-            with self.assertRaises(ValueError) as caught:
+            with self.assertRaises(forge.ForgeExit) as caught:
                 forge.resolve_project_servers(root)
-            self.assertIn("restates catalog-owned field", str(caught.exception))
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["MCP_FIELD_RESTATED"])
 
     def test_a_project_local_server_must_declare_its_own_routing(self):
         with self.game() as root:
@@ -1077,9 +1079,9 @@ class ProjectMcpTests(unittest.TestCase):
             document = json.loads(path.read_text(encoding="utf-8"))
             document["servers"] = [{"id": "some-new-tool", "enabled": True, "transport": {"command": "node"}}]
             path.write_text(json.dumps(document), encoding="utf-8")
-            with self.assertRaises(ValueError) as caught:
+            with self.assertRaises(forge.ForgeExit) as caught:
                 forge.resolve_project_servers(root)
-            self.assertIn("must declare", str(caught.exception))
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["MCP_INCOMPLETE_DECLARATION"])
 
     def test_a_fully_declared_project_local_server_routes(self):
         """Any other app: adoptable without shipping a catalog change."""
@@ -1165,6 +1167,76 @@ class ProjectMcpTests(unittest.TestCase):
         with self.game() as root:
             forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
             self.assertIsNone(forge.render_project_mcp(root, forge.host_profile("codex"), root))
+
+
+class FailureContractTests(unittest.TestCase):
+    """Every declared failure carries a typed reason and an exit code."""
+
+    def test_reason_vocabulary_is_frozen(self):
+        with self.assertRaises(TypeError):
+            forge.ERROR_REASON["NEW"] = "new"
+
+    def test_reason_values_are_snake_case_and_unique(self):
+        values = list(forge.ERROR_REASON.values())
+        self.assertEqual(len(values), len(set(values)))
+        for value in values:
+            self.assertRegex(value, r"^[a-z][a-z0-9_]*$")
+
+    def test_an_undeclared_reason_is_refused(self):
+        with self.assertRaises(ValueError):
+            forge.ForgeExit("x", reason="not_a_declared_reason")
+
+    def test_failure_payload_shape(self):
+        error = forge.fail("boom", reason=forge.ERROR_REASON["USAGE"], code=forge.EXIT_USAGE, detail="extra")
+        self.assertEqual(
+            error.payload(),
+            {"ok": False, "reason": "usage", "message": "boom", "detail": "extra"},
+        )
+        self.assertEqual(error.code, forge.EXIT_USAGE)
+
+    def test_cli_emits_a_typed_reason_and_its_exit_code(self):
+        with workspace_tempdir() as temp:
+            completed = subprocess.run(
+                [sys.executable, str(FORGE_PATH), "host", "status", "--project", str(temp / "missing")],
+                capture_output=True, text=True,
+            )
+        self.assertEqual(completed.returncode, forge.EXIT_USAGE)
+        payload = json.loads(completed.stderr)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["reason"], forge.ERROR_REASON["PROJECT_NOT_FOUND"])
+        self.assertEqual(payload["command"], "host")
+
+    def test_every_declared_reason_is_reachable_from_a_call_site(self):
+        """A reason nothing raises is vocabulary nobody can act on."""
+        source = FORGE_PATH.read_text(encoding="utf-8")
+        declared = set(forge.ERROR_REASON)
+        # UNKNOWN is the fallback for an untyped bug reaching main().
+        used = {key for key in declared if f'ERROR_REASON["{key}"]' in source}
+        self.assertEqual(sorted(declared - used), [])
+
+    def test_no_declared_failure_still_raises_a_bare_value_error(self):
+        """ValueError reaching main() means a bug, so the CLI must not raise one
+        as a normal outcome. The single permitted site guards the enum itself."""
+        source = FORGE_PATH.read_text(encoding="utf-8")
+        sites = re.findall(r"raise ValueError\(", source)
+        self.assertEqual(len(sites), 1, "only the ERROR_REASON self-check may raise ValueError")
+
+    def test_logic_never_calls_sys_exit(self):
+        """Exit code resolution belongs to main(), so an importer of this module
+        gets an exception rather than a process that disappears.
+
+        Checked structurally: a textual scan would match the prose explaining
+        the rule and pass or fail for the wrong reason."""
+        tree = ast.parse(FORGE_PATH.read_text(encoding="utf-8"))
+        calls = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "exit"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "sys"
+        ]
+        self.assertEqual(calls, [])
 
 
 class ActionSurfaceTests(unittest.TestCase):
@@ -1535,6 +1607,32 @@ class McpGateTests(unittest.TestCase):
         code, output = self._validate(mutate)
         self.assertEqual(code, 1)
         self.assertIn("has no reader", output)
+
+    def test_an_inline_reason_string_fails(self):
+        def mutate(root):
+            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
+            text = source.read_text(encoding="utf-8")
+            text = text.replace(
+                'reason=ERROR_REASON["HOST_UNKNOWN"]', 'reason="host_unknown"', 1
+            )
+            source.write_text(text, encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("inline reason string", output)
+
+    def test_a_declared_but_never_raised_reason_fails(self):
+        def mutate(root):
+            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
+            text = source.read_text(encoding="utf-8")
+            text = text.replace(
+                '        "USAGE": "usage",', '        "NEVER_RAISED": "never_raised",\n        "USAGE": "usage",', 1
+            )
+            source.write_text(text, encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("declared but never raised", output)
 
     def test_fallback_diverging_from_the_catalog_fails(self):
         def mutate(root):
