@@ -222,4 +222,4 @@ Workspaces, todos, seeds, `thread`, `stats`, `profile-user`, `inbox`, `import`, 
 
 ## Remaining open question
 
-- **Gate authority.** If Forge wraps GSD's verification gate, GSD stays the authority and the RunnerRoyale invariant holds. If Forge replaces it, Forge must become the *sole* authority — never both. That invariant is what the incident was about.
+- **Gate authority.** If Forge wraps GSD's verification gate, GSD stays the authority and the RunnerRoyale invariant holds. If Forge replaces it, Forge must become the *sole* authority — never both. That invariant is what the incident was about: [2026-08-15 RunnerRoyale lifecycle drift](incidents/2026-08-15-runnerroyale-lifecycle-drift.md).

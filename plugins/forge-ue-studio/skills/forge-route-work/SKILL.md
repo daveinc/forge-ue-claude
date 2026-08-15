@@ -5,7 +5,7 @@ description: Use the assigned resident host as supervisor while compiling, ranki
 
 # Forge Route Work
 
-Use the assigned resident host as the resident occupant and supervisor. Select optional local/remote occupants per bounded attempt; do not assign a department to a provider or serialize independent departments.
+Use the assigned resident host as the resident occupant and supervisor, filling the `studio-director` seat: it compiles approved decisions into bounded cross-department work and never owns implementation itself. Select optional local/remote occupants per bounded attempt; do not assign a department to a provider or serialize independent departments.
 
 ## Dispatch workflow
 
@@ -21,8 +21,8 @@ Use the assigned resident host as the resident occupant and supervisor. Select o
 10. Resolve the work order through `.forge/state/packet-registry.json`. Reject unregistered IDs. Preserve the canonical ID; aliases are display/input compatibility only and derived packets must name their parents.
 11. Compile an immutable minimal work packet with canonical work order, GSD phase/plan, revision, task/complexity class, objective, non-goals, referrals, inputs, exact write scope, isolation, leases, capabilities, context budget, output contract, acceptance, verification, evidence, and invalidation hashes. Do not forward the full GDD or resident conversation.
 12. Dispatch independent packets concurrently through the typed GSD/Forge agent surface when it is available and authorized. The orchestrator stops related work while agents run. If dispatch is unavailable, record `DEGRADED_INLINE`; do not describe inline work as delegated. Give the verifier the requirement, artifact/diff, acceptance, and evidence, not builder reasoning.
-13. Require a structured attempt result that separates observed facts, inferences, findings, touched artifacts, evidence, verification, residual risk and next action.
+13. Require a structured attempt result that separates observed facts, inferences, findings, touched artifacts, evidence, verification, residual risk and next action. Dispatch build work to `gameplay-engineer`, visual work to `visual-developer` or `dcc-artist`, engine operation to `unreal-operator`, and research to `researcher`. Give verification to `independent-verifier`, which must never be the agent that produced the work.
 14. On failure, inspect actual artifacts before retry. Substitute a second occupant before changing competence scores when the brief or tool may be defective. Use `forge-retrospective` for inconsistent or repeated failures.
-15. Persist transitions, deactivate packet-only surfaces and release leases. Resume from state, never chat memory.
+15. Persist transitions, deactivate packet-only surfaces and release leases. Record every order transition in `.forge/state/work-orders.json` and stop at one of its declared terminal states. Resume from that file and `.forge/state/leases.json`, never chat memory.
 
 Use `forge-capability-admin` to qualify or activate routes and `forge-research` if no verified capability closes a required step. Block only that step when no fallback exists.

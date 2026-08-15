@@ -25,23 +25,21 @@ STATUSES = {
     "STALE",
 }
 
-SCHEMA_FILES = {
-    "attempt-result": "attempt-result.schema.json",
-    "bootstrap-report": "bootstrap-report.schema.json",
-    "capability-contract": "capability-contract.schema.json",
-    "host-profile": "host-profile.schema.json",
-    "lane-lease": "lane-lease.schema.json",
-    "lifecycle-state": "lifecycle-state.schema.json",
-    "learning-record": "learning-record.schema.json",
-    "packet-registry": "packet-registry.schema.json",
-    "provider-evaluation": "provider-evaluation.schema.json",
-    "research-record": "research-record.schema.json",
-    "review-cycle": "review-cycle.schema.json",
-    "route-request": "route-request.schema.json",
-    "runtime-state": "runtime-state.schema.json",
-    "smart-entry": "smart-entry.schema.json",
-    "work-packet": "work-packet.schema.json",
-}
+def schema_files() -> dict[str, str]:
+    """Kind -> schema filename, derived from what actually ships.
+
+    Hardcoding this list is what let four schemas ship with no way to validate
+    against them. Deriving it means a new schema is validatable the moment it
+    lands, and a deleted one cannot leave a dangling `--kind` behind.
+    """
+    directory = Path(__file__).resolve().parent.parent / "schemas"
+    return {
+        path.name[: -len(".schema.json")]: path.name
+        for path in sorted(directory.glob("*.schema.json"))
+    }
+
+
+SCHEMA_FILES = schema_files()
 
 RESIDENT_PROVIDER = "resident"
 
@@ -1970,14 +1968,6 @@ def verify_overlay(project_value: str, host_override: str | None = None) -> dict
         "checks": checks,
         "ok": all(c["status"] != "MISSING" for c in checks),
     }
-
-
-def phase_directory(root: Path, phase: int) -> Path | None:
-    phases = root / ".planning" / "phases"
-    matches = sorted(path for path in phases.glob(f"{phase:02d}-*") if path.is_dir())
-    if len(matches) > 1:
-        raise ValueError(f"Multiple GSD phase directories match phase {phase}")
-    return matches[0] if matches else None
 
 
 def lifecycle_state(project_value: str, event: str = "status") -> dict[str, Any]:

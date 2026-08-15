@@ -1,6 +1,6 @@
-[CmdletBinding(SupportsShouldProcess = $true)]
+﻿[CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'Lifecycle', 'Validate', 'Host')]
+    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'Lifecycle', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
     [string]$Mode = 'Plugin',
     # The resident AI runtime. Defaults to the registry's default_host.
     # Named -RuntimeHost because $Host is a reserved PowerShell automatic variable.
@@ -23,12 +23,21 @@ param(
     [string]$GsdVersion = '1.10.0',
     [string]$ProjectPath,
     [string]$RequestPath,
-    [ValidateSet('attempt-result', 'bootstrap-report', 'capability-contract', 'host-profile', 'lane-lease', 'lifecycle-state', 'learning-record', 'packet-registry', 'provider-evaluation', 'research-record', 'review-cycle', 'route-request', 'runtime-state', 'smart-entry', 'work-packet')]
+    # Mirrors plugins/forge-ue-studio/schemas/*.schema.json. A ValidateSet must be a
+    # literal, so validate_repo.py gates this list against what actually ships.
+    [ValidateSet('asset-interface', 'attempt-result', 'bootstrap-report', 'capability-contract', 'environment-snapshot', 'host-profile', 'lane-lease', 'learning-record', 'lifecycle-state', 'mcp-provider', 'packet-registry', 'project-mcp', 'provider-evaluation', 'research-record', 'review-cycle', 'route-request', 'runtime-state', 'smart-entry', 'work-packet')]
     [string]$ContractKind,
     [string]$InputPath,
     [ValidateSet('status')]
     [string]$LifecycleEvent = 'status',
     [int]$Phase,
+    [ValidateSet('add', 'remove', 'enable', 'disable', 'sync-user')]
+    [string]$McpAction,
+    [string]$McpId,
+    [string]$McpCommand,
+    [string[]]$McpArg = @(),
+    [ValidateSet('project', 'user', 'both')]
+    [string]$McpScope,
     [switch]$Apply,
     [string]$OutputPath
 )
@@ -186,6 +195,34 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     throw 'Python 3.10+ is required. Forge will not install it automatically.'
 }
 
+if ($Mode -eq 'Mcp') {
+    if (-not $ProjectPath) { throw '-ProjectPath is required for Mcp mode.' }
+    if (-not $McpAction) { throw "-McpAction is required for Mcp mode. One of: add, remove, enable, disable, sync-user." }
+    $arguments = @($forgeScript, 'mcp', $McpAction, '--project', $ProjectPath)
+    if ($McpAction -ne 'sync-user') {
+        if (-not $McpId) { throw '-McpId is required for the add, remove, enable and disable actions.' }
+        $arguments += @('--id', $McpId)
+    }
+    if ($McpAction -eq 'add') {
+        if (-not $McpCommand) { throw '-McpCommand is required when declaring a server.' }
+        $arguments += @('--command', $McpCommand)
+        foreach ($argument in $McpArg) { $arguments += @('--arg', $argument) }
+        if ($McpScope) { $arguments += @('--scope', $McpScope) }
+    }
+    if ($PSBoundParameters.ContainsKey('RuntimeHost')) { $arguments += @('--host', $RuntimeHost) }
+    if ($Apply) {
+        $operation = if ($McpAction -eq 'sync-user') {
+            'Write declared servers into the machine-wide MCP configuration'
+        } else {
+            "Amend this project's typed tool routes"
+        }
+        if ($PSCmdlet.ShouldProcess($ProjectPath, $operation)) { $arguments += '--apply' }
+    }
+    if ($OutputPath) { $arguments += @('--output', $OutputPath) }
+    & python @arguments
+    exit $LASTEXITCODE
+}
+
 if ($Mode -eq 'Host') {
     $arguments = @($forgeScript, 'host', $HostAction)
     if ($HostAction -ne 'list') {
@@ -208,11 +245,11 @@ if ($Mode -eq 'Host') {
 }
 
 if ($Mode -ne 'Validate' -and -not $ProjectPath) {
-    throw '-ProjectPath is required for Survey, Install, Verify, Profile, Next, BootstrapCheck, Route, and Lifecycle modes.'
+    throw '-ProjectPath is required for Survey, Install, Verify, Profile, Next, BootstrapCheck, Route, McpStatus, GsdSync, and Lifecycle modes.'
 }
 
 # PascalCase mode names map to the CLI's kebab-case verbs.
-$verbMap = @{ 'BootstrapCheck' = 'bootstrap-check' }
+$verbMap = @{ 'BootstrapCheck' = 'bootstrap-check'; 'McpStatus' = 'mcp-status'; 'GsdSync' = 'gsd-sync' }
 $verb = if ($verbMap.ContainsKey($Mode)) { $verbMap[$Mode] } else { $Mode.ToLowerInvariant() }
 $arguments = @($forgeScript, $verb)
 if ($Mode -eq 'Validate') {
@@ -223,7 +260,7 @@ if ($Mode -eq 'Validate') {
 } else {
     $arguments += @('--project', $ProjectPath)
 }
-if ($Mode -in @('Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route') -and $PSBoundParameters.ContainsKey('RuntimeHost')) {
+if ($Mode -in @('Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'McpStatus', 'GsdSync') -and $PSBoundParameters.ContainsKey('RuntimeHost')) {
     $arguments += @('--host', $RuntimeHost)
 }
 if ($Mode -eq 'Route') {
@@ -238,7 +275,7 @@ if ($Mode -eq 'Lifecycle') {
 if ($OutputPath) {
     $arguments += @('--output', $OutputPath)
 }
-if ($Mode -in @('Install', 'Profile') -and $Apply) {
+if ($Mode -in @('Install', 'Profile', 'GsdSync') -and $Apply) {
     $operation = if ($Mode -eq 'Profile') { 'Write a non-destructive detected capability profile' } else { 'Apply the reversible Forge project overlay' }
     if ($PSCmdlet.ShouldProcess($ProjectPath, $operation)) {
         $arguments += '--apply'

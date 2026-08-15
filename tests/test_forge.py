@@ -1054,7 +1054,7 @@ class ProjectMcpTests(unittest.TestCase):
             forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
             resolved = forge.resolve_project_servers(root)[0]
             self.assertEqual(resolved["source"], "catalog")
-            self.assertEqual(resolved["lane"], "ue.editor")
+            self.assertEqual(resolved["lane"], "lane.ue-editor")
             self.assertEqual(resolved["isolation_mode"], "project-exclusive")
             self.assertIn("ue.live.typed", resolved["capabilities"])
 
@@ -1088,13 +1088,13 @@ class ProjectMcpTests(unittest.TestCase):
             document = json.loads(path.read_text(encoding="utf-8"))
             document["servers"] = [{
                 "id": "some-new-tool", "enabled": True, "transport": {"command": "node", "args": ["srv.js"]},
-                "server": "some-new-tool", "capabilities": ["audio.mix"], "lane": "audio.authoring",
+                "server": "some-new-tool", "capabilities": ["audio.mix"], "lane": "lane.audio-authoring",
                 "isolation_mode": "git-worktree", "fallbacks": ["human-audio-pass"],
             }]
             path.write_text(json.dumps(document), encoding="utf-8")
             resolved = forge.resolve_project_servers(root)[0]
             self.assertEqual(resolved["source"], "project")
-            self.assertEqual(resolved["lane"], "audio.authoring")
+            self.assertEqual(resolved["lane"], "lane.audio-authoring")
             rendered = forge.render_project_mcp(root, self.profile, root)
             self.assertIn("some-new-tool", json.loads(rendered[1].decode("utf-8"))["mcpServers"])
 
@@ -1426,6 +1426,115 @@ class McpGateTests(unittest.TestCase):
         code, output = self._validate(mutate)
         self.assertEqual(code, 1)
         self.assertIn("interpolate", output)
+
+    def test_a_dependency_with_no_routing_state_fails(self):
+        def mutate(root):
+            self._rewrite(
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "catalog.json",
+                lambda doc: doc["dependencies"][0].pop("routing", None),
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("unknown routing state", output)
+
+    def test_an_unrouted_dependency_without_a_note_fails(self):
+        def mutate(root):
+            def strip(doc):
+                for dep in doc["dependencies"]:
+                    if dep.get("routing") == "declared":
+                        dep.pop("routing_note", None)
+                        return
+
+            self._rewrite(root / "plugins" / "forge-ue-studio" / "dependencies" / "catalog.json", strip)
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("how it is actually exercised", output)
+
+    def test_a_false_routed_claim_fails(self):
+        def mutate(root):
+            def lie(doc):
+                for dep in doc["dependencies"]:
+                    if dep.get("routing") == "declared":
+                        dep["routing"] = "routed"
+                        return
+
+            self._rewrite(root / "plugins" / "forge-ue-studio" / "dependencies" / "catalog.json", lie)
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("claims routed but no provider serves", output)
+
+    def test_activation_naming_an_undeclared_capability_fails(self):
+        def mutate(root):
+            self._rewrite(
+                root / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "context" / "activation-policy.json",
+                lambda doc: doc["profiles"]["design"].append("capability.that.does.not.exist"),
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("which no dependency declares", output)
+
+    def test_an_unprefixed_lane_fails(self):
+        def mutate(root):
+            def rename(doc):
+                doc["lanes"]["ue.editor"] = doc["lanes"].pop("lane.ue-editor")
+                doc["providers"][0]["lane"] = "ue.editor"
+
+            self._rewrite(root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json", rename)
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("must carry the lane. prefix", output)
+
+    def test_a_shipped_schema_the_installer_cannot_validate_fails(self):
+        def mutate(root):
+            installer = root / "install.ps1"
+            text = installer.read_text(encoding="utf-8-sig")
+            installer.write_text(text.replace("'project-mcp', ", "", 1), encoding="utf-8-sig")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("cannot validate shipped schema", output)
+
+    def test_a_cli_verb_with_no_installer_mode_fails(self):
+        def mutate(root):
+            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
+            text = source.read_text(encoding="utf-8")
+            text = text.replace(
+                'validate = sub.add_parser("validate")',
+                'orphan = sub.add_parser("orphan-verb")\n    validate = sub.add_parser("validate")',
+                1,
+            )
+            source.write_text(text, encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("has no install.ps1 -Mode", output)
+
+    def test_an_agent_no_skill_dispatches_to_fails(self):
+        def mutate(root):
+            agents = root / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "agents"
+            (agents / "never-dispatched.json").write_text(
+                json.dumps({
+                    "schema": "forge.agent-definition/v1", "name": "never-dispatched",
+                    "role": "engineering", "description": "x", "instructions": "y",
+                }), encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("no skill names it as a dispatch target", output)
+
+    def test_a_state_file_nothing_reads_fails(self):
+        def mutate(root):
+            state = root / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state"
+            (state / "unread-ledger.json").write_text(json.dumps({"entries": []}), encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("has no reader", output)
 
     def test_fallback_diverging_from_the_catalog_fails(self):
         def mutate(root):

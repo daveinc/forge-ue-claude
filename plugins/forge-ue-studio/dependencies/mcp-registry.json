@@ -6,34 +6,50 @@
     "Every id must match a dependency id in catalog.json. One dependency truth, not two.",
     "A row grants tools only to an agent that declares the matching capability, and only on a host that provides every entry in requires_host_provides.",
     "A row without a resolvable probe is not routable. Detection is never assumed from installation.",
-    "fallbacks must name the same route catalog.json declares for the dependency, so a missing server degrades instead of blocking."
+    "fallbacks must name the same route catalog.json declares for the dependency, so a missing server degrades instead of blocking.",
+    "Lane ids carry a lane. prefix. Capability ids never do, so a lane and a capability cannot collide in the same namespace."
   ],
   "probe_kinds": {
     "mcp-server-declared": "The server id appears in an MCP client configuration the host declares in hosts/registry.json mcp.config_paths. Read-only: it inspects configuration and never starts, installs, or contacts a server."
   },
   "lanes": {
-    "ue.editor": "Live Unreal editor session. Exclusive: native typed calls, live scripting, editor-closed commandlets and human editor work all contend for it.",
-    "dcc.authoring": "External DCC authoring session. Runs concurrently with ue.editor because it writes intermediate assets, not the project."
+    "lane.ue-editor": "Live Unreal editor session. Exclusive: native typed calls, live scripting, editor-closed commandlets and human editor work all contend for it.",
+    "lane.dcc-authoring": "External DCC authoring session. Runs concurrently with ue.editor because it writes intermediate assets, not the project."
   },
   "providers": [
     {
       "id": "unreal-native-mcp",
       "server": "unreal-mcp",
       "kind": "mcp",
-      "capabilities": ["ue.live.typed", "ue.pie", "ue.viewport"],
-      "lane": "ue.editor",
+      "capabilities": [
+        "ue.live.typed",
+        "ue.pie",
+        "ue.viewport"
+      ],
+      "lane": "lane.ue-editor",
       "isolation_mode": "project-exclusive",
       "locality": "local",
-      "requires_host_provides": ["mcp-client"],
+      "requires_host_provides": [
+        "mcp-client"
+      ],
       "probe": "mcp-server-declared",
-      "fallbacks": ["ue.editor-closed-or-human"],
+      "fallbacks": [
+        "ue.editor-closed-or-human"
+      ],
       "permissions": {
-        "read": ["ue.project"],
-        "write": ["ue.project"],
+        "read": [
+          "ue.project"
+        ],
+        "write": [
+          "ue.project"
+        ],
         "network": false,
         "secrets": false
       },
-      "acceptance_suites": ["FORGE-UE-01", "FORGE-CAP-01"],
+      "acceptance_suites": [
+        "FORGE-UE-01",
+        "FORGE-CAP-01"
+      ],
       "invalidation_triggers": [
         "engine-version-change",
         "uproject-plugin-change",
@@ -45,20 +61,36 @@
       "id": "blender-gateway",
       "server": "blender-mcp",
       "kind": "mcp",
-      "capabilities": ["dcc.mesh", "dcc.rig", "dcc.animation", "dcc.export"],
-      "lane": "dcc.authoring",
+      "capabilities": [
+        "dcc.mesh",
+        "dcc.rig",
+        "dcc.animation",
+        "dcc.export"
+      ],
+      "lane": "lane.dcc-authoring",
       "isolation_mode": "git-worktree",
       "locality": "local",
-      "requires_host_provides": ["mcp-client"],
+      "requires_host_provides": [
+        "mcp-client"
+      ],
       "probe": "mcp-server-declared",
-      "fallbacks": ["ue-authoring-or-approved-assets-or-placeholders"],
+      "fallbacks": [
+        "ue-authoring-or-approved-assets-or-placeholders"
+      ],
       "permissions": {
-        "read": ["dcc.workspace"],
-        "write": ["dcc.workspace"],
+        "read": [
+          "dcc.workspace"
+        ],
+        "write": [
+          "dcc.workspace"
+        ],
         "network": false,
         "secrets": false
       },
-      "acceptance_suites": ["FORGE-ROUTE-02", "FORGE-CAP-01"],
+      "acceptance_suites": [
+        "FORGE-ROUTE-02",
+        "FORGE-CAP-01"
+      ],
       "invalidation_triggers": [
         "dcc-version-change",
         "mcp-server-version-change",

@@ -263,8 +263,14 @@ plugins/forge-ue-studio/               installable plugin
 install.ps1                            Windows entry point
 scripts/validate_repo.py               repository validation
 tests/                                 standard-library tests
+  dependencies/mcp-registry.json       typed tool routes: server, capabilities, lane, probe
+  .forge/mcp.json                      the routes THIS project declares
+scripts/forge.py                       survey/next/host/install/verify/mcp CLI
 docs/host-runtimes.md                  runtime contract, swapping, adding a host
 docs/gsd-independence-map.md           what GSD does, what Forge fronts, what it costs
+docs/dependency-policy.md              what Forge requires versus what it routes to
+docs/installation-agent-jobs.md        the jobs forge-bootstrap dispatches
+docs/incidents/                        post-mortems that changed a Forge rule
 ```
 
 ## Manual plugin installation

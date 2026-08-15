@@ -11,19 +11,25 @@
         "worker.code",
         "worker.review",
         "worker.visual-generation",
-        "worker.tool-operation"
+        "worker.tool-operation",
+        "worker.resident",
+        "worker.visual-direction",
+        "worker.storyboard"
       ],
       "fallback": null,
       "host_assigned": true,
       "assigned_in": ".forge/runtime.json",
       "note": "The resident seat is an assignment, not a vendor. Any host satisfying the Forge prerequisite contract may hold it.",
-      "known_hosts_source": "plugins/forge-ue-studio/hosts/registry.json"
+      "known_hosts_source": "plugins/forge-ue-studio/hosts/registry.json",
+      "routing": "declared",
+      "routing_note": "The resident seat is filled by host assignment, not by a route. Its capabilities are exercised directly by whichever host holds the seat."
     },
     {
       "id": "gsd",
       "classification": "core-phase-engine",
       "capabilities": [
-        "workflow.gsd"
+        "workflow.gsd",
+        "forge.state"
       ],
       "fallback": "minimal-fork-only-after-extension-gap-test",
       "source": "https://github.com/open-gsd/gsd-core",
@@ -36,7 +42,9 @@
         "apply_command": ".\\install.ps1 -Mode GSD -RuntimeHost <id> -Apply",
         "requires_user_approval": true,
         "pin_rationale": "Matches the version Forge is tested against. Validated against 1.10.0: the smart-entry contract is unchanged, and every workflow the verb registry fronts resolves."
-      }
+      },
+      "routing": "declared",
+      "routing_note": "Invoked as a phase engine through its own skill surface, not dispatched as a Forge capability route."
     },
     {
       "id": "unreal-engine",
@@ -44,9 +52,16 @@
       "capabilities": [
         "ue.project",
         "ue.build",
-        "ue.cook"
+        "ue.cook",
+        "ue.asset-import",
+        "ue.sequencer",
+        "qa.gameplay",
+        "qa.release",
+        "platform.sdk"
       ],
-      "fallback": "planning-research-and-dcc-only"
+      "fallback": "planning-research-and-dcc-only",
+      "routing": "declared",
+      "routing_note": "The engine itself is a prerequisite, not a dispatch target. Work reaches it through a typed tool route or the editor-closed fallback."
     },
     {
       "id": "vcs",
@@ -56,7 +71,9 @@
         "vcs.rollback",
         "vcs.ownership"
       ],
-      "fallback": "read-only"
+      "fallback": "read-only",
+      "routing": "declared",
+      "routing_note": "Exercised through git directly by the isolation and lease machinery."
     },
     {
       "id": "unreal-native-mcp",
@@ -66,7 +83,8 @@
         "ue.pie",
         "ue.viewport"
       ],
-      "fallback": "ue.editor-closed-or-human"
+      "fallback": "ue.editor-closed-or-human",
+      "routing": "routed"
     },
     {
       "id": "unreal-python",
@@ -75,7 +93,9 @@
         "ue.python.commandlet",
         "ue.batch"
       ],
-      "fallback": "ue.native-mcp-or-cpp-uat"
+      "fallback": "ue.native-mcp-or-cpp-uat",
+      "routing": "declared",
+      "routing_note": "No typed tool route declared yet. Reachable today only as the declared fallback of unreal-native-mcp."
     },
     {
       "id": "vibeue",
@@ -83,7 +103,9 @@
       "capabilities": [
         "ue.live.python"
       ],
-      "fallback": "ue.native-mcp-plus-editor-closed-python"
+      "fallback": "ue.native-mcp-plus-editor-closed-python",
+      "routing": "declared",
+      "routing_note": "Optional accelerator with no typed tool route declared yet."
     },
     {
       "id": "blender-gateway",
@@ -92,9 +114,11 @@
         "dcc.mesh",
         "dcc.rig",
         "dcc.animation",
-        "dcc.export"
+        "dcc.export",
+        "dcc.authoring"
       ],
-      "fallback": "ue-authoring-or-approved-assets-or-placeholders"
+      "fallback": "ue-authoring-or-approved-assets-or-placeholders",
+      "routing": "routed"
     },
     {
       "id": "resident-imagegen",
@@ -106,7 +130,9 @@
         "visual.sprite",
         "visual.board"
       ],
-      "fallback": "licensed-references-or-placeholders"
+      "fallback": "licensed-references-or-placeholders",
+      "routing": "declared",
+      "routing_note": "Exercised through the resident host's own image surface when it exposes one; no separate route."
     },
     {
       "id": "resident-image-direction",
@@ -118,7 +144,9 @@
         "visual.storyboard",
         "visual.prompt-contract"
       ],
-      "fallback": "manual-visual-brief"
+      "fallback": "manual-visual-brief",
+      "routing": "declared",
+      "routing_note": "Prompt-level direction performed by the resident host; no separate route."
     },
     {
       "id": "resident-video-direction",
@@ -130,7 +158,9 @@
         "cinematic.continuity",
         "audio.direction"
       ],
-      "fallback": "manual-shot-list"
+      "fallback": "manual-shot-list",
+      "routing": "declared",
+      "routing_note": "Prompt-level direction performed by the resident host; no separate route."
     },
     {
       "id": "resident-creative-methods",
@@ -140,7 +170,9 @@
         "design.adversarial-scoring",
         "design.refinement"
       ],
-      "fallback": "forge-brainstorming"
+      "fallback": "forge-brainstorming",
+      "routing": "declared",
+      "routing_note": "Prompt-level method applied by the resident host; no separate route."
     },
     {
       "id": "resident-spreadsheets",
@@ -150,7 +182,9 @@
         "production.scorecard.csv",
         "production.scorecard.visual-qa"
       ],
-      "fallback": "canonical-json-scorecard"
+      "fallback": "canonical-json-scorecard",
+      "routing": "declared",
+      "routing_note": "Produced by the resident host through ordinary file writes; no separate route."
     },
     {
       "id": "graphify",
@@ -158,9 +192,13 @@
       "capabilities": [
         "research.relationship-graph",
         "research.retrieval",
-        "research.community-analysis"
+        "research.community-analysis",
+        "research.ingest",
+        "research.graph"
       ],
-      "fallback": "indexed-domain-cards"
+      "fallback": "indexed-domain-cards",
+      "routing": "declared",
+      "routing_note": "Invoked as a CLI when present; no typed tool route declared yet."
     },
     {
       "id": "ollama",
@@ -169,7 +207,9 @@
         "model.local.discovery",
         "model.local.inference"
       ],
-      "fallback": "resident-host"
+      "fallback": "resident-host",
+      "routing": "declared",
+      "routing_note": "Local model runtime discovered by probe and used through its own endpoint; no typed tool route."
     },
     {
       "id": "lm-studio",
@@ -178,7 +218,9 @@
         "model.local.discovery",
         "model.openai-compatible-endpoint"
       ],
-      "fallback": "ollama-or-resident-host"
+      "fallback": "ollama-or-resident-host",
+      "routing": "declared",
+      "routing_note": "Local model runtime discovered by probe and used through its own endpoint; no typed tool route."
     },
     {
       "id": "local-model-runtime",
@@ -188,9 +230,16 @@
         "worker.context-heavy-bounded",
         "worker.code-review",
         "worker.visual-breakdown",
-        "worker.tool-operation"
+        "worker.tool-operation",
+        "model.local.runtime"
       ],
-      "fallback": "resident-host"
+      "fallback": "resident-host",
+      "routing": "declared",
+      "routing_note": "Abstract worker capability satisfied by whichever local runtime qualifies; no typed tool route."
     }
-  ]
+  ],
+  "routing_states": {
+    "routed": "At least one capability is served by a declared provider and bound to an agent that can execute it.",
+    "declared": "Known to Forge and usable by name, but nothing dispatches work to it as a capability route. The note says how it is actually exercised."
+  }
 }

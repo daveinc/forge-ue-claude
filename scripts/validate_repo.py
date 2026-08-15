@@ -281,6 +281,45 @@ def main() -> int:
             if "subagent_visible" not in entry:
                 fail(f"Host {host_id} MCP config path {entry.get('path')!r} must state subagent_visible", failures)
 
+    # Every dependency states whether anything actually dispatches to it. An
+    # aspirational entry is fine; an entry that is silently unreachable is not,
+    # because nothing distinguishes it from one that was meant to be wired.
+    routing_states = set(parsed.get(catalog_path, {}).get("routing_states", {}))
+    if not routing_states:
+        fail("Catalog must declare its routing_states vocabulary", failures)
+    served_capabilities = {c for p in mcp_providers for c in p.get("capabilities", [])}
+    for item in dependencies:
+        state = item.get("routing")
+        if state not in routing_states:
+            fail(f"Dependency {item.get('id')!r} declares unknown routing state {state!r}", failures)
+            continue
+        caps = set(item.get("capabilities", []))
+        if state == "routed" and not (caps & served_capabilities):
+            fail(f"Dependency {item.get('id')!r} claims routed but no provider serves any of its capabilities", failures)
+        if state == "declared" and not item.get("routing_note"):
+            fail(f"Dependency {item.get('id')!r} is unrouted and must record how it is actually exercised", failures)
+        if state == "declared" and (caps & served_capabilities):
+            fail(f"Dependency {item.get('id')!r} is marked declared but a provider serves its capabilities", failures)
+
+    # Activation can only turn on a capability some dependency provides.
+    activation_path = PLUGIN / "assets" / "project-template" / ".forge" / "context" / "activation-policy.json"
+    activation = parsed.get(activation_path, {})
+    declared_capabilities = {c for item in dependencies for c in item.get("capabilities", [])}
+    activation_capabilities = set(activation.get("always_on", []))
+    for entries in activation.get("profiles", {}).values():
+        activation_capabilities |= set(entries)
+    for capability in sorted(activation_capabilities - declared_capabilities):
+        fail(f"Activation policy names capability {capability!r}, which no dependency declares", failures)
+
+    # Lanes and capabilities are separate namespaces. Keeping the prefix on lane
+    # ids is what stops one being read as the other.
+    for lane in mcp_lanes:
+        if not str(lane).startswith("lane."):
+            fail(f"Lane id {lane!r} must carry the lane. prefix so it cannot collide with a capability", failures)
+    for lane in mcp_lanes:
+        if lane in declared_capabilities:
+            fail(f"Lane {lane!r} collides with a declared capability", failures)
+
     schemas = sorted((PLUGIN / "schemas").glob("*.schema.json"))
     for schema_path in schemas:
         schema = parsed.get(schema_path, {})
@@ -345,6 +384,64 @@ def main() -> int:
     for path in required_template:
         if not path.is_file():
             fail(f"Missing project template file: {path.relative_to(ROOT)}", failures)
+
+    # Every schema that ships is validatable through the CLI, and the installer's
+    # ValidateSet must match. A PowerShell ValidateSet has to be a literal, so it
+    # cannot derive itself the way forge.py does — this is what keeps it honest.
+    schema_kinds = {path.name[: -len(".schema.json")] for path in (PLUGIN / "schemas").glob("*.schema.json")}
+    installer = (ROOT / "install.ps1").read_text(encoding="utf-8-sig")
+    contract_block = re.search(r"\[ValidateSet\(([^)]*)\)\]\s*\r?\n\s*\[string\]\$ContractKind", installer)
+    if not contract_block:
+        fail("install.ps1 declares no ContractKind ValidateSet", failures)
+    else:
+        declared_kinds = set(re.findall(r"'([^']+)'", contract_block.group(1)))
+        for missing in sorted(schema_kinds - declared_kinds):
+            fail(f"install.ps1 -ContractKind cannot validate shipped schema {missing!r}", failures)
+        for extra in sorted(declared_kinds - schema_kinds):
+            fail(f"install.ps1 -ContractKind offers {extra!r}, which ships no schema", failures)
+
+    # Every CLI verb is reachable from the installer, which is the entry point the
+    # documentation points Windows users at.
+    forge_source = (PLUGIN / "scripts" / "forge.py").read_text(encoding="utf-8")
+    # Top-level verbs only: `sub` is the root subparser, while `host_sub` and
+    # `mcp_sub` hold subcommands reached through their parent mode.
+    cli_verbs = set(re.findall(r'(?<![\w])sub\.add_parser\(\s*"([a-z][a-z-]*)"', forge_source))
+    grouped = re.search(r'for name in \(([^)]*)\):', forge_source)
+    if grouped:
+        cli_verbs |= set(re.findall(r'"([a-z][a-z-]*)"', grouped.group(1)))
+    mode_block = re.search(r"\[ValidateSet\(([^)]*)\)\]\s*\r?\n\s*\[string\]\$Mode", installer)
+    modes = {m.lower() for m in re.findall(r"'([^']+)'", mode_block.group(1))} if mode_block else set()
+    verb_map = dict(re.findall(r"'([A-Za-z]+)'\s*=\s*'([a-z][a-z-]*)'", installer))
+    mapped = {verb for verb in verb_map.values()}
+    for verb in sorted(cli_verbs):
+        if verb.replace("-", "") not in modes and verb not in mapped:
+            fail(f"forge.py verb {verb!r} has no install.ps1 -Mode", failures)
+
+    # A studio role nothing dispatches to is a role that never runs.
+    project_template = PLUGIN / "assets" / "project-template"
+    agent_names = {path.stem for path in (project_template / ".forge" / "agents").glob("*.json")}
+    skill_corpus = "\n".join(path.read_text(encoding="utf-8-sig") for path in (PLUGIN / "skills").glob("*/SKILL.md"))
+    for name in sorted(agent_names):
+        if name not in skill_corpus:
+            fail(f"Agent {name!r} is defined but no skill names it as a dispatch target", failures)
+
+    # A document nothing links to is a document nobody finds.
+    doc_sources = {
+        path: path.read_text(encoding="utf-8-sig", errors="replace")
+        for path in repository_files("*")
+        if path.is_file() and path.suffix.lower() in {".md", ".json", ".py", ".ps1"}
+    }
+    for path in sorted(ROOT.glob("docs/**/*.md")):
+        # Counted across every other file, so a document that happens to name
+        # itself is not thereby considered reachable.
+        if not any(path.name in text for source, text in doc_sources.items() if source != path):
+            fail(f"Document {path.relative_to(ROOT)} is not linked from anywhere", failures)
+
+    # A state file nothing reads is state nothing resumes from.
+    state_readers = skill_corpus + forge_source
+    for path in sorted((project_template / ".forge" / "state").glob("*.json")):
+        if path.name not in state_readers:
+            fail(f"Project state file {path.name!r} has no reader in any skill or in forge.py", failures)
 
     # The project template must stay host-neutral: no host-specific surface may be
     # shipped verbatim, because those are rendered per host at install time.
