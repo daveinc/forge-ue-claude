@@ -264,6 +264,17 @@ def main() -> int:
             if capability not in contract_capabilities:
                 fail(f"MCP provider {provider_id!r} requires host capability {capability!r}, which the prerequisite contract does not declare", failures)
 
+    agent_declared = set()
+    for path in sorted((PLUGIN / "assets" / "project-template" / ".forge" / "agents").glob("*.json")):
+        agent_declared |= set(parsed.get(path, {}).get("mcp_capabilities") or [])
+    for capability in sorted(seen_capabilities):
+        if capability not in agent_declared:
+            fail(
+                f"Capability {capability!r} is served by route {seen_capabilities[capability]!r} and declared by no "
+                "agent, so route-work step 7 can never dispatch it; the route would be reachable only by hand",
+                failures,
+            )
+
     project_mcp_path = PLUGIN / "assets" / "project-template" / ".forge" / "mcp.json"
     project_mcp = parsed.get(project_mcp_path, {})
     if project_mcp.get("schema") != "forge.project-mcp/v1":
