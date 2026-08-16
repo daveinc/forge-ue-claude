@@ -94,8 +94,8 @@
         "ue.batch"
       ],
       "fallback": "ue.native-mcp-or-cpp-uat",
-      "routing": "declared",
-      "routing_note": "No typed tool route declared yet. Reachable today only as the declared fallback of unreal-native-mcp."
+      "routing": "routed",
+      "routing_note": "Editor-closed Unreal API and commandlets, reached through the process route in route-registry.json. A primary production surface for batch and bulk work, not the degraded path taken when the live editor is missing."
     },
     {
       "id": "vibeue",

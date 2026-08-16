@@ -184,17 +184,24 @@ def main() -> int:
         if not item.get("classification") or not item.get("capabilities"):
             fail(f"Dependency {item.get('id')} is incomplete", failures)
 
-    mcp_path = PLUGIN / "dependencies" / "mcp-registry.json"
-    mcp_registry = parsed.get(mcp_path, {})
-    mcp_providers = mcp_registry.get("providers", [])
-    mcp_lanes = set(mcp_registry.get("lanes", {}))
-    mcp_probe_kinds = set(mcp_registry.get("probe_kinds", {}))
+    mcp_path = PLUGIN / "dependencies" / "route-registry.json"
+    route_registry = parsed.get(mcp_path, {})
+    mcp_providers = route_registry.get("providers", [])
+    mcp_lanes = set(route_registry.get("lanes", {}))
+    mcp_probe_kinds = set(route_registry.get("probe_kinds", {}))
+    route_kinds = {"mcp": "server", "process": "command"}
+    leases_path = PLUGIN / "assets" / "project-template" / ".forge" / "state" / "leases.json"
+    leased_names = {
+        name
+        for members in parsed.get(leases_path, {}).get("exclusive_groups", {}).values()
+        for name in members
+    }
     dependency_by_id = {item.get("id"): item for item in dependencies}
     acceptance_path = PLUGIN / "assets" / "project-template" / ".forge" / "acceptance" / "registry.json"
     acceptance_ids = {suite.get("id") for suite in parsed.get(acceptance_path, {}).get("suites", [])}
     contract_capabilities = set(contract.get("required", [])) | set(contract.get("optional", []))
     isolation_modes = {"read-only", "git-worktree", "lfs-lock", "project-exclusive"}
-    mcp_required = ("id", "server", "kind", "capabilities", "lane", "isolation_mode", "requires_host_provides", "probe", "fallbacks", "permissions", "acceptance_suites", "invalidation_triggers")
+    mcp_required = ("id", "kind", "capabilities", "lane", "isolation_mode", "requires_host_provides", "probe", "fallbacks", "permissions", "acceptance_suites", "invalidation_triggers")
 
     if not mcp_providers:
         fail("MCP registry declares no providers", failures)
@@ -206,8 +213,17 @@ def main() -> int:
         if missing_fields:
             fail(f"MCP provider {provider_id!r} missing {', '.join(missing_fields)}", failures)
             continue
-        if provider.get("kind") != "mcp":
-            fail(f"MCP provider {provider_id!r} must declare kind 'mcp'", failures)
+        kind = provider.get("kind")
+        if kind not in route_kinds:
+            fail(f"Route {provider_id!r} declares unknown kind {kind!r}; expected one of {', '.join(sorted(route_kinds))}", failures)
+            continue
+        reach = route_kinds[kind]
+        if not provider.get(reach):
+            fail(f"Route {provider_id!r} is kind {kind!r} and must declare {reach!r}", failures)
+            continue
+        for unusable in set(route_kinds.values()) - {reach}:
+            if provider.get(unusable):
+                fail(f"Route {provider_id!r} is kind {kind!r} and must not declare {unusable!r}", failures)
         dependency = dependency_by_id.get(provider_id)
         if dependency is None:
             fail(f"MCP provider {provider_id!r} is not a declared dependency in catalog.json", failures)
@@ -217,18 +233,26 @@ def main() -> int:
             unknown_caps = [item for item in provider.get("capabilities", []) if item not in dependency.get("capabilities", [])]
             if unknown_caps:
                 fail(f"MCP provider {provider_id!r} serves capabilities the catalog does not declare: {', '.join(unknown_caps)}", failures)
-        server = provider.get("server", "")
-        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", str(server)):
-            fail(f"MCP provider {provider_id!r} declares a malformed server id {server!r}", failures)
-        if server in seen_servers:
-            fail(f"MCP server {server!r} is declared by both {seen_servers[server]!r} and {provider_id!r}", failures)
-        seen_servers[str(server)] = str(provider_id)
+        if kind == "mcp":
+            server = provider.get("server", "")
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", str(server)):
+                fail(f"MCP route {provider_id!r} declares a malformed server id {server!r}", failures)
+            if server in seen_servers:
+                fail(f"MCP server {server!r} is declared by both {seen_servers[server]!r} and {provider_id!r}", failures)
+            seen_servers[str(server)] = str(provider_id)
         for capability in provider.get("capabilities", []):
             if capability in seen_capabilities:
                 fail(f"Capability {capability!r} is served by both {seen_capabilities[capability]!r} and {provider_id!r}; routing would be ambiguous", failures)
             seen_capabilities[str(capability)] = str(provider_id)
         if provider.get("lane") not in mcp_lanes:
-            fail(f"MCP provider {provider_id!r} names undeclared lane {provider.get('lane')!r}", failures)
+            fail(f"Route {provider_id!r} names undeclared lane {provider.get('lane')!r}", failures)
+        lease_name = provider.get("lease")
+        if lease_name and lease_name not in leased_names:
+            fail(
+                f"Route {provider_id!r} takes lease {lease_name!r}, which no exclusive group in the project "
+                "template's leases.json declares; the registry and the ledger that enforces exclusion would disagree",
+                failures,
+            )
         if provider.get("isolation_mode") not in isolation_modes:
             fail(f"MCP provider {provider_id!r} declares an unsupported isolation mode {provider.get('isolation_mode')!r}", failures)
         if provider.get("probe") not in mcp_probe_kinds:

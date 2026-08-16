@@ -33,7 +33,7 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "description": "A provider id from dependencies/mcp-registry.json, or a project-local id that declares its own routing fields."
+            "description": "A provider id from dependencies/route-registry.json, or a project-local id that declares its own routing fields."
           },
           "enabled": {
             "type": "boolean"

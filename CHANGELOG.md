@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### The editor-closed Unreal API is a route, not a fallback string
+
+- `COUNTERPLAN.md` specifies three deliberately separate Unreal routes and calls the editor-closed API "a primary production surface, not just documentation" and "first-class rather than exceptional" — the first choice for batch import, retargeting, asset audits, LOD generation, null-RHI-safe work and anything unsafe inside the editor tick. The lease layer implemented that: `ue-editor-closed-api` has always been a peer inside `unreal-project-super-lock`. The route layer did not. `mcp-registry.json` held only `kind: mcp` rows, so `unreal-python` sat in the catalog as `routing: declared` with the note "No typed tool route declared yet", and `ue.python.commandlet` and `ue.batch` were capabilities no route could serve, no contract could describe, and `forge-route-work` step 7 could therefore never bind.
+- The registry is now `dependencies/route-registry.json` and admits any kind of route: `mcp` names a server the host connects to, `process` names a command it runs. Nothing else varies by kind, so both are probed, scored, leased and reported the same way. `mcp-provider` becomes `route-provider`, with the required reach field chosen by kind.
+- `unreal-python` is a routed peer on its own lane, `lane.ue-editor-closed`. The `lane.ue-editor` description no longer claims editor-closed commandlets contend for the live lane; they contend for the project, which is what the super-lock already expressed.
+- Add the `ue-commandlet-ready` probe. Readiness is the inverse of `mcp-http-handshake`: the engine command must resolve *and* the editor's MCP endpoint must be silent, because a commandlet must not run against a project the live editor holds. The two Unreal routes now swap availability as the editor opens and closes, and a test asserts they are never both available for one project.
+- Route rows name the `lease` they take, and the validator refuses a lease no exclusive group declares. The registry said `lane.ue-editor` while the ledger that enforces exclusion said `ue-live-native-mcp`; two vocabularies that happened to agree now agree by rule.
+- `route-policy.json` gains `unreal_routing`, which says which work shape belongs to which lane and records that the result file, never the exit code alone, is authoritative for editor-closed work. `forge-route-work` gains a step that picks the route by the shape of the work rather than by what happens to be running.
+
 ### The bootstrap job ledger is wired to the resume it exists for
 
 - `.forge/state/install-jobs.json` was mandated before dispatch by step 6 and read by nothing. Step 4 enumerated what `--resume` reads and did not name it, so the ledger written to survive bootstrap's two stop points was not read by the resume those stops require. Step 4 now reads it and carries forward every job already `COMPLETE`, `NOT_APPLICABLE` or `FAILED`, re-dispatching only what is still `PLANNED` or was left `DISPATCHED`.

@@ -14,7 +14,7 @@ plugins/forge-ue-studio/               installable plugin
   skills/                              one launcher per verb: invocation, flags, what to load
   workflows/                           one procedure per verb, loaded by its launcher
   dependencies/catalog.json            capability and route declarations
-  dependencies/mcp-registry.json       typed tool routes: server, capabilities, lane, probe
+  dependencies/route-registry.json     typed routes: mcp servers and process commands alike
   dependencies/route-policy.json       resident default and offload scoring
   schemas/                             contracts for state and work packets
   assets/project-template/             reversible, host-neutral project overlay

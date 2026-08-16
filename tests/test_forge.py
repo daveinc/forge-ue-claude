@@ -904,7 +904,7 @@ class McpRouteTests(unittest.TestCase):
     """Typed tool routes: composition, host neutrality, probing, and the gates."""
 
     def setUp(self):
-        self.registry = forge.mcp_registry()
+        self.registry = forge.route_registry()
         self.providers = self.registry["providers"]
         self.template = forge.template_root()
         self.agents = {item["name"]: item for item in forge.agent_definitions(self.template)}
@@ -919,7 +919,7 @@ class McpRouteTests(unittest.TestCase):
 
     def test_registry_names_no_host_spelling(self):
         """Canon declares servers; only the host registry spells a namespace."""
-        text = (ROOT / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json").read_text(encoding="utf-8")
+        text = (ROOT / "plugins" / "forge-ue-studio" / "dependencies" / "route-registry.json").read_text(encoding="utf-8")
         self.assertNotIn("mcp__", text)
 
     def test_namespace_is_composed_from_the_host(self):
@@ -1555,7 +1555,7 @@ class McpGateTests(unittest.TestCase):
     def test_provider_without_a_dependency_fails(self):
         def mutate(root):
             self._rewrite(
-                root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json",
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "route-registry.json",
                 lambda doc: doc["providers"][0].__setitem__("id", "not-a-dependency"),
             )
 
@@ -1566,7 +1566,7 @@ class McpGateTests(unittest.TestCase):
     def test_undeclared_lane_fails(self):
         def mutate(root):
             self._rewrite(
-                root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json",
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "route-registry.json",
                 lambda doc: doc["providers"][0].__setitem__("lane", "ue.imaginary"),
             )
 
@@ -1577,7 +1577,7 @@ class McpGateTests(unittest.TestCase):
     def test_unknown_acceptance_suite_fails(self):
         def mutate(root):
             self._rewrite(
-                root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json",
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "route-registry.json",
                 lambda doc: doc["providers"][0].__setitem__("acceptance_suites", ["FORGE-NOPE-99"]),
             )
 
@@ -1588,7 +1588,7 @@ class McpGateTests(unittest.TestCase):
     def test_two_providers_serving_one_capability_fails(self):
         def mutate(root):
             self._rewrite(
-                root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json",
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "route-registry.json",
                 lambda doc: doc["providers"][1].__setitem__("capabilities", doc["providers"][0]["capabilities"]),
             )
 
@@ -1697,7 +1697,7 @@ class McpGateTests(unittest.TestCase):
                 doc["lanes"]["ue.editor"] = doc["lanes"].pop("lane.ue-editor")
                 doc["providers"][0]["lane"] = "ue.editor"
 
-            self._rewrite(root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json", rename)
+            self._rewrite(root / "plugins" / "forge-ue-studio" / "dependencies" / "route-registry.json", rename)
 
         code, output = self._validate(mutate)
         self.assertEqual(code, 1)
@@ -1879,7 +1879,7 @@ class McpGateTests(unittest.TestCase):
     def test_fallback_diverging_from_the_catalog_fails(self):
         def mutate(root):
             self._rewrite(
-                root / "plugins" / "forge-ue-studio" / "dependencies" / "mcp-registry.json",
+                root / "plugins" / "forge-ue-studio" / "dependencies" / "route-registry.json",
                 lambda doc: doc["providers"][0].__setitem__("fallbacks", ["something-else"]),
             )
 
@@ -2436,6 +2436,100 @@ class McpHandshakeTests(unittest.TestCase):
                 self.assertTrue(probe["live"])
                 self.assertFalse(probe["found"])
                 self.assertIn("no configuration the host reads declares it", probe["note"])
+
+
+class EditorClosedRouteTests(unittest.TestCase):
+    """The editor-closed API is a peer route, not the live route's fallback."""
+
+    def setUp(self):
+        self.profile = forge.host_profile("claude")
+        self.row = next(row for row in forge.process_providers() if row["id"] == "unreal-python")
+
+    @contextmanager
+    def game(self, engine_present):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            original = os.environ.get("PATH", "")
+            if engine_present:
+                shim = temp / "engine"
+                shim.mkdir()
+                (shim / "UnrealEditor-Cmd.cmd").write_text("@echo off\r\necho stub\r\n", encoding="utf-8")
+                os.environ["PATH"] = f"{shim}{os.pathsep}{original}"
+            try:
+                yield root
+            finally:
+                os.environ["PATH"] = original
+
+    def contracts(self, root):
+        return {c["capability"]: c for c in forge.mcp_capability_contracts(root, self.profile)}
+
+    def test_it_is_a_peer_route_with_its_own_lane_and_lease(self):
+        self.assertEqual(self.row["kind"], "process")
+        self.assertEqual(self.row["lane"], "lane.ue-editor-closed")
+        self.assertEqual(self.row["lease"], "ue-editor-closed-api")
+        live = next(row for row in forge.mcp_providers() if row["id"] == "unreal-native-mcp")
+        self.assertNotEqual(self.row["lane"], live["lane"], "peer routes must not share a lane")
+
+    def test_its_capabilities_are_servable_at_all(self):
+        """They were catalog-declared and route-less, so no contract could ever bind them."""
+        index = forge.mcp_capability_index()
+        for capability in ("ue.python.commandlet", "ue.batch"):
+            self.assertIn(capability, index)
+            self.assertEqual(index[capability]["id"], "unreal-python")
+
+    def test_both_editor_lanes_sit_in_one_exclusive_group(self):
+        leases = json.loads(
+            (ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state" / "leases.json")
+            .read_text(encoding="utf-8")
+        )
+        group = leases["exclusive_groups"]["unreal-project-super-lock"]
+        live = next(row for row in forge.mcp_providers() if row["id"] == "unreal-native-mcp")
+        self.assertIn(self.row["lease"], group)
+        self.assertIn(live["lease"], group)
+
+    def test_without_the_engine_command_it_is_unavailable(self):
+        with self.game(engine_present=False) as root:
+            probe = forge.probe_process_route(root, self.row)
+            self.assertFalse(probe["found"])
+            self.assertEqual(probe["status"], "UNAVAILABLE_OPTIONAL")
+            self.assertIn("not on PATH", probe["reason"])
+
+    def test_a_clear_lane_makes_it_available(self):
+        with self.game(engine_present=True) as root:
+            probe = forge.probe_process_route(root, self.row)
+            self.assertTrue(probe["lane_clear"])
+            self.assertEqual(probe["status"], "AVAILABLE_UNVERIFIED")
+            self.assertEqual(self.contracts(root)["ue.python.commandlet"]["status"], "AVAILABLE_UNVERIFIED")
+
+    def test_a_live_editor_closes_the_lane(self):
+        """The inverse handshake: a commandlet must not run against a project the editor holds."""
+        with local_server(McpHandler) as url:
+            with self.game(engine_present=True) as root:
+                path = root / ".forge" / "mcp.json"
+                document = json.loads(path.read_text(encoding="utf-8"))
+                for entry in document["servers"]:
+                    if entry["id"] == "unreal-native-mcp":
+                        entry["transport"] = {"type": "http", "url": f"{url}/mcp"}
+                path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+                rendered = forge.render_project_mcp(root, self.profile, root)
+                (root / ".mcp.json").write_bytes(rendered[1])
+
+                probe = forge.probe_process_route(root, self.row)
+                self.assertFalse(probe["lane_clear"])
+                self.assertEqual(probe["status"], "UNAVAILABLE_OPTIONAL")
+
+                contracts = self.contracts(root)
+                self.assertEqual(contracts["ue.live.typed"]["status"], "AVAILABLE_VERIFIED")
+                self.assertEqual(contracts["ue.python.commandlet"]["status"], "UNAVAILABLE_OPTIONAL")
+
+    def test_the_two_editor_routes_are_never_available_together(self):
+        with self.game(engine_present=True) as root:
+            contracts = self.contracts(root)
+            live = contracts["ue.live.typed"]["status"].startswith("AVAILABLE")
+            closed = contracts["ue.python.commandlet"]["status"].startswith("AVAILABLE")
+            self.assertFalse(live and closed, "one project cannot offer both editor lanes at once")
 
 
 class ProfileStabilityTests(unittest.TestCase):

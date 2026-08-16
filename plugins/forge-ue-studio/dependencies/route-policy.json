@@ -121,6 +121,29 @@
       "round_trip_cost"
     ]
   },
+  "unreal_routing": {
+    "note": "The live editor and the editor-closed API are peer routes on mutually exclusive lanes, not a primary and its fallback. Pick by the shape of the work, then take the lane.",
+    "prefer_editor_closed_for": [
+      "batch-import",
+      "ik-retarget",
+      "asset-audit",
+      "lod-generation",
+      "bulk-property-edit",
+      "null-rhi-safe-work",
+      "deterministic-script",
+      "cook-and-build-preparation",
+      "unsafe-inside-editor-tick"
+    ],
+    "prefer_live_editor_for": [
+      "schema-discoverable-inspection",
+      "bounded-scene-or-blueprint-mutation",
+      "pie-verification",
+      "viewport-evidence",
+      "typed-readback"
+    ],
+    "result_authority": "For editor-closed work the script and its result file are authoritative. An exit code alone is not, because a commandlet can exit zero having failed the work.",
+    "lane_exclusion": "Both routes sit in the unreal-project-super-lock group, so acquiring one refuses the other. Never plan concurrent live and closed work on one project."
+  },
   "context_activation": {
     "mode": "phase-scoped-on-demand",
     "always_on": [

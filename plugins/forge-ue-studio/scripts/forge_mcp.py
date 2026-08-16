@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,7 @@ from forge_core import (
     EXIT_USAGE,
     ForgeExit,
     capability,
+    executable,
     expand_host_path,
     fail,
     load_json,
@@ -22,18 +25,29 @@ from forge_core import (
 )
 
 
-def mcp_registry() -> dict[str, Any]:
-    return load_json(plugin_root() / "dependencies" / "mcp-registry.json")
+def route_registry() -> dict[str, Any]:
+    return load_json(plugin_root() / "dependencies" / "route-registry.json")
+
+
+def route_providers() -> list[dict[str, Any]]:
+    """Every declared route, whatever kind it is reached by."""
+    return list(route_registry().get("providers", []))
 
 
 def mcp_providers() -> list[dict[str, Any]]:
-    return list(mcp_registry().get("providers", []))
+    """Only the routes a host reaches by connecting to a server."""
+    return [row for row in route_providers() if str(row.get("kind")) == "mcp"]
+
+
+def process_providers() -> list[dict[str, Any]]:
+    """Only the routes a host reaches by running a command."""
+    return [row for row in route_providers() if str(row.get("kind")) == "process"]
 
 
 def mcp_capability_index() -> dict[str, dict[str, Any]]:
-    """Capability id -> the provider row that serves it."""
+    """Capability id -> the route row that serves it."""
     index: dict[str, dict[str, Any]] = {}
-    for provider in mcp_providers():
+    for provider in route_providers():
         for capability in provider.get("capabilities", []):
             index[str(capability)] = provider
     return index
@@ -124,8 +138,24 @@ def mcp_endpoint_url(root: Path, provider: dict[str, Any]) -> str | None:
     return str(provider.get("transport_default", {}).get("url", "")).strip() or None
 
 
+def endpoint_is_listening(url: str, timeout: float = 0.35) -> bool:
+    """Cheap reachability check so a closed port costs milliseconds, not a full request timeout."""
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.hostname
+    if not host:
+        return False
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def probe_mcp_endpoint(url: str, timeout: float = 3.0) -> dict[str, Any]:
     """Ask a running MCP endpoint to initialize. Contacts it; never starts or writes anything."""
+    if not endpoint_is_listening(url):
+        return {"reachable": False, "speaks_mcp": False, "code": None, "detail": f"nothing is listening at {url}"}
     body = json.dumps(
         {
             "jsonrpc": "2.0",
@@ -250,9 +280,72 @@ def _apply_handshake(root: Path, result: dict[str, Any], provider: dict[str, Any
     return enriched
 
 
+def live_editor_holds_project(root: Path) -> dict[str, Any]:
+    """Whether a live editor is answering for this project, which closes the editor-closed lane."""
+    endpoints = [
+        url
+        for url in (mcp_endpoint_url(root, provider) for provider in mcp_providers())
+        if url
+    ]
+    for url in endpoints:
+        handshake = probe_mcp_endpoint(url, timeout=1.5)
+        if handshake["speaks_mcp"]:
+            return {"held": True, "endpoint": url, "detail": f"a live editor answered an MCP initialize at {url}"}
+    return {
+        "held": False,
+        "endpoint": endpoints[0] if endpoints else None,
+        "detail": "no live editor answered on any declared endpoint, so the project is free for editor-closed work",
+    }
+
+
+def probe_process_route(root: Path, provider: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the command, then require the live editor to be silent.
+
+    Readiness here is the inverse of the MCP handshake: a commandlet must not run
+    against a project the live editor holds open.
+    """
+    command = str(provider.get("command", ""))
+    resolved = executable(command, f"{command}.exe") if command else None
+    if not resolved:
+        return {
+            "found": False,
+            "status": "UNAVAILABLE_OPTIONAL",
+            "reason": f"{command!r} is not on PATH; the engine's editor-closed command could not be resolved",
+            "command": command,
+            "resolved": None,
+            "lane_clear": False,
+            "searched": [command],
+        }
+    editor = live_editor_holds_project(root)
+    if editor["held"]:
+        return {
+            "found": True,
+            "status": "UNAVAILABLE_OPTIONAL",
+            "reason": "the live editor holds this project, so the editor-closed lane is not enterable",
+            "note": f"{editor['detail']}. Close the editor, or route this work to the live typed surface instead.",
+            "command": command,
+            "resolved": resolved,
+            "lane_clear": False,
+            "endpoint": editor["endpoint"],
+            "searched": [command],
+        }
+    return {
+        "found": True,
+        "status": "AVAILABLE_UNVERIFIED",
+        "reason": f"{command} resolved and no live editor holds the project",
+        "note": "Resolving the command is not a round trip. Only an acceptance suite that runs a commandlet and reads its result file earns more than UNVERIFIED.",
+        "command": command,
+        "resolved": resolved,
+        "lane_clear": True,
+        "endpoint": editor["endpoint"],
+        "searched": [command],
+    }
+
+
 def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, Any]]:
-    """Emit one forge.capability-contract/v2 per capability of every declared server."""
+    """Emit one forge.capability-contract/v2 per capability of every declared route."""
     contracts: list[dict[str, Any]] = []
+    contracts.extend(_process_contracts(root, profile))
     for provider in mcp_providers():
         server = str(provider.get("server", ""))
         probe = probe_mcp_server(root, profile, server, provider)
@@ -277,7 +370,7 @@ def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[s
                     "executable_surfaces": [namespace] if namespace else [],
                     "permissions": provider.get("permissions", {}),
                     "integrity": {"verified": False, "method": "none", "note": "MCP servers are user-installed; Forge does not vouch for them."},
-                    "provenance": {"declared_by": "dependencies/mcp-registry.json", "detected_by": f"{provider.get('probe')}:{server}", "config_path": probe.get("config_path")},
+                    "provenance": {"declared_by": "dependencies/route-registry.json", "detected_by": f"{provider.get('probe')}:{server}", "config_path": probe.get("config_path")},
                     "qualification": {"state": "UNQUALIFIED", "task_classes": []},
                     "cost": {"monetary": 0, "note": "Local server; cost is host context plus latency."},
                     "context_cost": {"measured": False, "note": "Measure on the active host; never copy another runtime's estimate."},
@@ -286,6 +379,42 @@ def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[s
                     "acceptance_suites": provider.get("acceptance_suites", []),
                     "invalidation_triggers": provider.get("invalidation_triggers", []),
                     "subagent_visible": probe["subagent_visible"],
+                    "detection_note": probe.get("note") or probe.get("reason"),
+                }
+            )
+    return contracts
+
+
+def _process_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, Any]]:
+    """The same contract shape for a route the host runs rather than connects to."""
+    contracts: list[dict[str, Any]] = []
+    for provider in process_providers():
+        probe = probe_process_route(root, provider)
+        missing = [item for item in provider.get("requires_host_provides", []) if item not in profile.get("provides", [])]
+        status = "UNAVAILABLE_OPTIONAL" if missing else probe["status"]
+        for capability in provider.get("capabilities", []):
+            contracts.append(
+                {
+                    "capability": capability,
+                    "provider": provider.get("id"),
+                    "kind": "process",
+                    "status": status,
+                    "health": "HEALTHY" if status.startswith("AVAILABLE") else "UNAVAILABLE",
+                    "lane": provider.get("lane"),
+                    "locality": provider.get("locality", "local"),
+                    "executable_surfaces": [probe["resolved"]] if probe.get("resolved") else [],
+                    "permissions": provider.get("permissions", {}),
+                    "integrity": {"verified": False, "method": "none", "note": "The engine is user-installed; Forge does not vouch for it."},
+                    "provenance": {"declared_by": "dependencies/route-registry.json", "detected_by": f"{provider.get('probe')}:{provider.get('command')}", "config_path": probe.get("resolved")},
+                    "qualification": {"state": "UNQUALIFIED", "task_classes": []},
+                    "cost": {"monetary": 0, "note": "Local process; cost is wall clock plus the lane it holds."},
+                    "context_cost": {"measured": False, "note": "Measure on the active host; never copy another runtime's estimate."},
+                    "fallbacks": provider.get("fallbacks", []),
+                    "probe": f"{provider.get('probe')}:{provider.get('command')}",
+                    "acceptance_suites": provider.get("acceptance_suites", []),
+                    "invalidation_triggers": provider.get("invalidation_triggers", []),
+                    "subagent_visible": "shell-execution" in profile.get("provides", []),
+                    "lane_clear": probe.get("lane_clear"),
                     "detection_note": probe.get("note") or probe.get("reason"),
                 }
             )
