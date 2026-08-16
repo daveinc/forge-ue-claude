@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import ast
+import builtins
 import importlib.util
 import json
 import re
 import shutil
 import subprocess
+import symtable
 import sys
 import tempfile
 import threading
@@ -18,8 +20,12 @@ from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parent.parent
-FORGE_PATH = ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
-EXECUTOR_PATH = ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge_executor.py"
+SCRIPTS_DIR = ROOT / "plugins" / "forge-ue-studio" / "scripts"
+FORGE_PATH = SCRIPTS_DIR / "forge.py"
+EXECUTOR_PATH = SCRIPTS_DIR / "forge_executor.py"
+CORE_PATH = SCRIPTS_DIR / "forge_core.py"
+MODULE_PATHS = sorted(SCRIPTS_DIR.glob("*.py"))
+REASON_OWNERS = (CORE_PATH, EXECUTOR_PATH)
 TEMP_ROOT = Path(tempfile.gettempdir()) / "forge-ue-studio-tests"
 TEMP_ROOT.mkdir(parents=True, exist_ok=True)
 SPEC = importlib.util.spec_from_file_location("forge_cli", FORGE_PATH)
@@ -1228,8 +1234,8 @@ class FailureContractTests(unittest.TestCase):
         self.assertEqual(payload["command"], "host")
 
     def test_every_declared_reason_is_reachable_from_a_call_site(self):
-        """Reasons the executor owns are raised in its own module, so both are scanned."""
-        source = FORGE_PATH.read_text(encoding="utf-8") + EXECUTOR_PATH.read_text(encoding="utf-8")
+        """A reason may be raised from any module, so every module is scanned."""
+        source = "\n".join(path.read_text(encoding="utf-8") for path in MODULE_PATHS)
         declared = set(forge.ERROR_REASON)
         used = {
             key for key in declared
@@ -1237,11 +1243,12 @@ class FailureContractTests(unittest.TestCase):
         }
         self.assertEqual(sorted(declared - used), [])
 
-    def test_no_declared_failure_still_raises_a_bare_value_error(self):
-        """One permitted site per module, guarding that module's reason enum."""
-        for path in (FORGE_PATH, EXECUTOR_PATH):
+    def test_only_a_reason_vocabulary_may_raise_a_bare_value_error(self):
+        """Two modules declare a reason enum; each guards its own, and nothing else does."""
+        for path in MODULE_PATHS:
             sites = re.findall(r"raise ValueError\(", path.read_text(encoding="utf-8"))
-            self.assertEqual(len(sites), 1, f"only the reason self-check may raise ValueError in {path.name}")
+            expected = 1 if path in REASON_OWNERS else 0
+            self.assertEqual(len(sites), expected, f"unexpected ValueError count in {path.name}")
 
     def test_logic_never_calls_sys_exit(self):
         """Checked structurally: a textual scan would match the prose explaining
@@ -1345,13 +1352,13 @@ class ActionSurfaceTests(unittest.TestCase):
 
     def test_no_routed_action_id_carries_a_gsd_prefix(self):
         """The command is translated at dispatch, but the id is displayed too."""
-        source = (ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge.py").read_text(encoding="utf-8")
+        source = (SCRIPTS_DIR / "forge_lifecycle.py").read_text(encoding="utf-8")
         ids = re.findall(r"forge_action\(\s*\"([^\"]+)\"", source)
         self.assertTrue(ids, "no forge_action ids found; the guard would assert over nothing")
         self.assertEqual([item for item in ids if item.startswith("gsd-")], [])
 
     def test_every_routed_action_id_is_unique_per_situation(self):
-        source = (ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge.py").read_text(encoding="utf-8")
+        source = (SCRIPTS_DIR / "forge_lifecycle.py").read_text(encoding="utf-8")
         for block in re.findall(r"actions\s*=\s*\[(.*?)\n\s*\]", source, re.DOTALL):
             ids = re.findall(r"forge_action\(\s*\"([^\"]+)\"", block)
             self.assertEqual(len(ids), len(set(ids)), f"duplicate action id in block: {ids}")
@@ -1760,7 +1767,7 @@ class McpGateTests(unittest.TestCase):
 
     def test_a_comment_in_shipped_code_fails(self):
         def mutate(root):
-            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
+            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge_core.py"
             text = source.read_text(encoding="utf-8")
             source.write_text(text.replace("def utc_now()", "# why\ndef utc_now()", 1), encoding="utf-8")
 
@@ -1811,7 +1818,7 @@ class McpGateTests(unittest.TestCase):
 
     def test_an_inline_reason_string_fails(self):
         def mutate(root):
-            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
+            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge_hosts.py"
             text = source.read_text(encoding="utf-8")
             text = text.replace(
                 'reason=ERROR_REASON["HOST_UNKNOWN"]', 'reason="host_unknown"', 1
@@ -1824,7 +1831,7 @@ class McpGateTests(unittest.TestCase):
 
     def test_a_declared_but_never_raised_reason_fails(self):
         def mutate(root):
-            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
+            source = root / "plugins" / "forge-ue-studio" / "scripts" / "forge_core.py"
             text = source.read_text(encoding="utf-8")
             text = text.replace(
                 '        "USAGE": "usage",', '        "NEVER_RAISED": "never_raised",\n        "USAGE": "usage",', 1
@@ -2395,6 +2402,85 @@ class McpHandshakeTests(unittest.TestCase):
                 self.assertTrue(probe["live"])
                 self.assertFalse(probe["found"])
                 self.assertIn("no configuration the host reads declares it", probe["note"])
+
+
+class ModuleBoundaryTests(unittest.TestCase):
+    """The split holds: every reference resolves, the layering stays acyclic, and
+    the command line still names the whole public surface."""
+
+    def loaded(self):
+        return {path.stem: sys.modules[path.stem] for path in MODULE_PATHS if path.stem in sys.modules}
+
+    def public_names(self, path):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        names = set()
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                names.add(node.name)
+            elif isinstance(node, ast.Assign):
+                names |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+        return {name for name in names if not name.startswith("_")}
+
+    def imported_modules(self, path):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        found = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("forge"):
+                found.add(node.module)
+            elif isinstance(node, ast.Import):
+                found |= {alias.name for alias in node.names if alias.name.startswith("forge")}
+        return found
+
+    def test_every_name_a_module_references_is_defined_or_imported(self):
+        """Catches a reference the split left behind before a rare path raises NameError."""
+        modules = self.loaded()
+        self.assertIn("forge_core", modules, "modules did not load; the rest would assert over nothing")
+        for name, module in sorted(modules.items()):
+            path = SCRIPTS_DIR / f"{name}.py"
+            table = symtable.symtable(path.read_text(encoding="utf-8"), str(path), "exec")
+            missing = set()
+            pending = [table]
+            while pending:
+                scope = pending.pop()
+                for symbol in scope.get_symbols():
+                    if symbol.is_global() and not symbol.is_assigned():
+                        symbol_name = symbol.get_name()
+                        if not hasattr(module, symbol_name) and not hasattr(builtins, symbol_name):
+                            missing.add(symbol_name)
+                pending.extend(scope.get_children())
+            self.assertEqual(sorted(missing), [], f"{name}.py references names it never defines or imports")
+
+    def test_the_module_layering_is_acyclic(self):
+        graph = {path.stem: self.imported_modules(path) for path in MODULE_PATHS}
+        for start in sorted(graph):
+            seen, pending = set(), [start]
+            while pending:
+                current = pending.pop()
+                for nxt in graph.get(current, set()):
+                    self.assertNotEqual(nxt, start, f"import cycle reaches {start} again through {current}")
+                    if nxt not in seen:
+                        seen.add(nxt)
+                        pending.append(nxt)
+
+    def test_the_command_line_names_every_public_verb(self):
+        """`forge.X` has to keep resolving, so the split cannot quietly drop a name."""
+        for path in MODULE_PATHS:
+            if path.stem in {"forge", "forge_executor"}:
+                continue
+            for name in sorted(self.public_names(path)):
+                self.assertTrue(hasattr(forge, name), f"forge.py does not re-export {name} from {path.name}")
+
+    def test_no_module_imports_the_command_line(self):
+        """forge.py is the entry point; nothing underneath may depend on it."""
+        for path in MODULE_PATHS:
+            if path.stem == "forge":
+                continue
+            self.assertNotIn("forge", {m for m in self.imported_modules(path) if m == "forge"},
+                             f"{path.name} imports the CLI it is supposed to sit below")
+
+    def test_the_executor_stays_independent_of_the_rest(self):
+        """It is the transactional core; a dependency on the CLI layers would undo that."""
+        self.assertEqual(self.imported_modules(EXECUTOR_PATH), set())
 
 
 if __name__ == "__main__":

@@ -15,8 +15,9 @@ A failure carries a reason code, not only a sentence:
 `reason` is the stable part. `message` is written for a person and may be
 reworded at any time. **Branch on `reason`; never parse `message`.**
 
-The full vocabulary is `ERROR_REASON` in `plugins/forge-ue-studio/scripts/forge.py`.
-It is a frozen mapping, so it cannot be extended at runtime, and
+The full vocabulary is `ERROR_REASON` in `plugins/forge-ue-studio/scripts/forge_core.py`,
+which folds in the reasons `forge_executor.py` declares for the leases and isolation
+it enforces. It is a frozen mapping, so it cannot be extended at runtime, and
 `scripts/validate_repo.py` refuses a call site that passes an inline reason
 string or declares a reason nothing raises. The enum is therefore the complete
 list of everything this CLI can fail with.

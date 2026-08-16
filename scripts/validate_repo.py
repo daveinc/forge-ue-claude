@@ -15,8 +15,7 @@ PLUGIN = ROOT / "plugins" / "forge-ue-studio"
 IGNORED_PARTS = {".git", ".tmp", "__pycache__"}
 
 COMMENT_FREE_SOURCES = (
-    PLUGIN / "scripts" / "forge.py",
-    PLUGIN / "scripts" / "forge_executor.py",
+    *sorted((PLUGIN / "scripts").glob("*.py")),
     ROOT / "scripts" / "validate_repo.py",
     ROOT / "tests" / "test_forge.py",
     ROOT / "install.ps1",
@@ -489,9 +488,15 @@ def main() -> int:
         if name not in skill_corpus:
             fail(f"Agent {name!r} is defined but no skill names it as a dispatch target", failures)
 
-    reason_block = re.search(r"ERROR_REASON = MappingProxyType\(\s*\{(.*?)\}\s*\)", forge_source, re.DOTALL)
+    module_sources = {
+        path.name: path.read_text(encoding="utf-8")
+        for path in sorted((PLUGIN / "scripts").glob("*.py"))
+    }
+    every_module = "\n".join(module_sources.values())
+    core_source = module_sources.get("forge_core.py", "")
+    reason_block = re.search(r"ERROR_REASON = MappingProxyType\(\s*\{(.*?)\}\s*\)", core_source, re.DOTALL)
     if not reason_block:
-        fail("forge.py declares no ERROR_REASON vocabulary", failures)
+        fail("forge_core.py declares no ERROR_REASON vocabulary", failures)
     else:
         declared_reasons = dict(re.findall(r'"([A-Z0-9_]+)":\s*"([a-z0-9_]+)"', reason_block.group(1)))
         if not declared_reasons:
@@ -499,11 +504,20 @@ def main() -> int:
         for key, value in sorted(declared_reasons.items()):
             if not re.fullmatch(r"[a-z][a-z0-9_]*", value):
                 fail(f"Error reason {key} has non-snake_case wire value {value!r}", failures)
-        for literal in sorted(set(re.findall(r"reason=\"([^\"]+)\"", forge_source))):
-            fail(f"forge.py passes an inline reason string {literal!r}; use ERROR_REASON", failures)
-        used = {key for key in declared_reasons if f'ERROR_REASON["{key}"]' in forge_source}
+        for name, text in sorted(module_sources.items()):
+            for literal in sorted(set(re.findall(r"reason=\"([^\"]+)\"", text))):
+                fail(f"{name} passes an inline reason string {literal!r}; use the declared vocabulary", failures)
+        used = {
+            key for key in declared_reasons
+            if f'ERROR_REASON["{key}"]' in every_module or f'ERROR_REASONS["{key}"]' in every_module
+        }
         for unused in sorted(set(declared_reasons) - used):
             fail(f"Error reason {unused} is declared but never raised", failures)
+        for name, text in sorted(module_sources.items()):
+            if name in {"forge.py", "forge_core.py", "forge_executor.py"}:
+                continue
+            if "ERROR_REASON" in text and "from forge_core import" not in text:
+                fail(f"{name} uses ERROR_REASON without importing the one vocabulary", failures)
 
     verdict_block = re.search(r"VERDICT_COMMANDS = frozenset\(\s*\{(.*?)\}\s*\)", forge_source, re.DOTALL)
     if not verdict_block:

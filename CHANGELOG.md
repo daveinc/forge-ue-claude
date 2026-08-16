@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### One module per concern, cut where the code already separated
+
+- Split `forge.py` into ten modules. It had grown to 2,558 lines carrying the failure contract, host registry, MCP routes, GSD front, capability survey, lifecycle, installer, routing and the CLI, so every one of those concerns was read and edited through the same file.
+- The cut follows the call graph rather than a guess. Three names had to move first: `capability` was used only by the MCP layer and the survey that defined it, and the overlay's path helpers were used by both the host renderer and the installer, so both belong to `forge_core`. `host_set`, `host_status` and `host_list` are called only by the CLI and sat between the host registry and the GSD sync that depends on it, so they became `forge_runtime`. With those moved the layering is acyclic, and a test asserts it stays that way.
+- `forge.py` keeps every public name, so `forge.<verb>` resolves exactly as before and the split changes no behaviour. A test walks each module with `symtable` and fails on any name a module references but never defines or imports, which is the check that would otherwise wait for a rare path to raise `NameError`.
+- `forge_executor.py` imports nothing from the rest, and a test holds it there. The transactional core does not depend on the layers above it.
+
 ### Isolation is enforced by the runtime, not by workflow compliance
 
 - Add `scripts/forge_executor.py` and the `forge.py exec acquire|release|status` verbs. Leases, Git worktrees and `git lfs lock` were described in `forge-route-work` and `directives.md` and implemented nowhere: the words "lease", "worktree" and "lfs" did not appear in `forge.py`, and `.forge/state/leases.json` shipped an `exclusive_groups` map nothing read or wrote. A guarantee that depends on an agent following prose is not a guarantee.

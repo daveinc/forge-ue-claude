@@ -21,7 +21,17 @@ plugins/forge-ue-studio/               installable plugin
     .forge/agents/*.json               canonical studio-role definitions
     .forge/templates/                  instruction template rendered per host
     .forge/mcp.json                    the routes a project declares
-  scripts/forge.py                     survey/next/host/install/verify/mcp CLI
+  scripts/forge.py                     the CLI: arguments, result contract, exit codes
+  scripts/forge_core.py                failure contract, paths, shared primitives
+  scripts/forge_executor.py            leases, worktrees and LFS locks, transactionally
+  scripts/forge_mcp.py                 typed tool routes and the probes that verify them
+  scripts/forge_hosts.py               host registry and rendered host surfaces
+  scripts/forge_gsd.py                 the pinned phase engine and the verbs Forge fronts
+  scripts/forge_survey.py              read-only capability detection
+  scripts/forge_lifecycle.py           where the project stands and what comes next
+  scripts/forge_install.py             the reversible project overlay
+  scripts/forge_routing.py             which provider earns a work order
+  scripts/forge_runtime.py             assigning and reporting the resident seat
 install.ps1                            Windows entry point
 scripts/validate_repo.py               repository validation
 tests/                                 standard-library tests
