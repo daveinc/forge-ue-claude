@@ -15,6 +15,12 @@ Require fresh evidence before accepting work.
 Delegation: run for validation and test generation, native for grading. Orchestrator role: select test layers, run fresh verification, and return the attempt-result contract.
 </objective>
 
+<flags>
+- `--tests` — generate tests for a completed phase from its UAT criteria.
+
+A flag is active only when its literal token appears in `{{FORGE_ARGS}}`. Never infer that a flag is active because it is documented here.
+</flags>
+
 <execution_context>
 @<forge-plugin-root>/workflows/forge-quality-gate.md
 @<gsd-core>/workflows/validate-phase.md

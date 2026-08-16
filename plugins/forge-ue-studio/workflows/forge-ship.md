@@ -7,6 +7,7 @@
 ## CORE — GSD
 
 1. Relay GSD's ship workflow for the review and PR mechanics.
+2. On `--pr`, run `pr-branch.md` alone. The cook and package gates below still apply before the milestone is called shipped.
 
 ## POST — Forge
 

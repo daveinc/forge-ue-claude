@@ -26,6 +26,12 @@
 - `forge-resume-work` now treats an `ACTIVE` lease past its `expires_at` as stale. The schema has always required that field and nothing read it, so a lease held by a dead session was indistinguishable from a live one.
 - Distinguish `forge-docs-update` from `forge-ingest-docs` in both objectives. They read as duplicates because both touch the GDD ledger; they run in opposite directions — ingest takes documents into planning state, docs-update takes implemented code out to documentation.
 
+### Promises closed
+
+- Declare `forge-quality-gate --tests` and `forge-ship --pr` in their skills. Both appeared in the verb registry and the independence map, and in neither `<flags>` block, so an agent executing the skill could not act on them.
+- Take the real `git lfs lock` on a declared binary write scope where LFS is configured, so a second writer is refused by git rather than by convention. Where it is not configured, the recorded lease stays the only protection and the attempt result now says so.
+- Stop advertising `forge-explore` and `forge-capture`. Five GSD commands were dropped with the reason "Planned: …" against verbs that do not exist. Greybox and blockout belong to `forge-visual-production`; Socratic ideation, spikes, idea capture and backlog triage are not production surface, and each drop reason now says to run the GSD command directly.
+
 ### Forge fronts GSD; it does not replace it
 
 - Correct a claim that was never true of the product: the docs said "GSD is never addressed directly — you will not type a `gsd-` verb". Both surfaces are installed and GSD stays directly usable. The instruction file Forge renders has always pointed at `gsd-quick` and `gsd-debug` for small fixes, so the code and the documentation disagreed.

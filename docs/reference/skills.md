@@ -87,8 +87,8 @@ These are working GSD commands. Forge does not front them, because they are not 
 | GSD command | Why Forge does not route it |
 |---|---|
 | `gsd-quick`, `gsd-fast` | Trivial-task shortcuts; Forge routes production work through packets. |
-| `gsd-capture`, `gsd-review-backlog` | Idea capture and backlog triage. A Forge verb is planned. |
-| `gsd-explore`, `gsd-sketch`, `gsd-spike` | Exploration. `forge-explore` is planned; `--sketch` will be greybox rather than HTML mockups. |
+| `gsd-capture`, `gsd-review-backlog` | Idea capture and backlog triage — not production surface. |
+| `gsd-explore`, `gsd-sketch`, `gsd-spike` | Exploration and throwaway mockups. Greybox and blockout belong to `forge-visual-production`; the rest Forge adds nothing to. |
 | `gsd-workspace`, `gsd-workstreams` | GSD-general isolation. Forge uses lanes and worktrees instead. |
 | `gsd-graphify`, `gsd-mempalace-capture`, `gsd-mempalace-recall` | Optional knowledge and memory tooling, outside the lifecycle. |
 | `gsd-config`, `gsd-settings`, `gsd-surface`, `gsd-update` | Forge configures and installs itself. |

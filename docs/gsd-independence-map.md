@@ -107,8 +107,8 @@ The discuss → plan → execute → verify sequence. Forge must not fork this; 
 |---|---|---|
 | `gsd-spec-phase` | `forge-spec-phase` | **Wrap** |
 | `gsd-mvp-phase` | `forge-mvp-phase` | **Adapt** — vertical slice means playable loop, not a web feature. |
-| `gsd-explore`, `gsd-sketch`, `gsd-spike` | `forge-explore` | **Adapt** — sketch should produce greybox/blockout, not HTML mockups. |
-| `gsd-capture`, `gsd-review-backlog` | `forge-capture` | **Wrap** |
+| `gsd-explore`, `gsd-sketch`, `gsd-spike` | — | **Drop** — greybox and blockout belong to `forge-visual-production`; Forge adds nothing to the rest. |
+| `gsd-capture`, `gsd-review-backlog` | — | **Drop** — not production surface. |
 
 ### Tier 6 — Delivery
 

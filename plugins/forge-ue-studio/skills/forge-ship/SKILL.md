@@ -15,6 +15,12 @@ Deliver a build, not only a merged branch.
 Delegation: relay. Orchestrator role: confirm verification, relay GSD's ship workflow, then require build and package evidence.
 </objective>
 
+<flags>
+- `--pr` — open the PR branch without re-running the cook and package gates.
+
+A flag is active only when its literal token appears in `{{FORGE_ARGS}}`. Never infer that a flag is active because it is documented here.
+</flags>
+
 <execution_context>
 @<forge-plugin-root>/workflows/forge-ship.md
 @<gsd-core>/workflows/ship.md

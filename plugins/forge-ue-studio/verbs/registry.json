@@ -347,7 +347,7 @@
       "forge": null,
       "gsd": "gsd-capture",
       "disposition": "drop",
-      "reason": "Idea capture is not part of Forge's production surface."
+      "reason": "Idea capture is not part of Forge's production surface; run it directly."
     },
     {
       "forge": null,
@@ -491,25 +491,25 @@
       "forge": null,
       "gsd": "gsd-explore",
       "disposition": "drop",
-      "reason": "Planned: forge-explore."
+      "reason": "Socratic ideation. Forge adds nothing to it today; run it directly."
     },
     {
       "forge": null,
       "gsd": "gsd-sketch",
       "disposition": "drop",
-      "reason": "Planned: forge-explore --sketch (greybox, not HTML mockups)."
+      "reason": "Throwaway mockups. Greybox and blockout belong to forge-visual-production; run gsd-sketch directly for anything else."
     },
     {
       "forge": null,
       "gsd": "gsd-spike",
       "disposition": "drop",
-      "reason": "Planned: forge-explore --spike."
+      "reason": "Experiential exploration. Forge adds nothing to it today; run it directly."
     },
     {
       "forge": null,
       "gsd": "gsd-review-backlog",
       "disposition": "drop",
-      "reason": "Planned: forge-capture."
+      "reason": "Backlog triage is not part of Forge's production surface; run it directly."
     },
     {
       "forge": "forge-phase",
