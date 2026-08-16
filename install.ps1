@@ -18,7 +18,7 @@ param(
     [string]$GsdVersion = '1.10.0',
     [string]$ProjectPath,
     [string]$RequestPath,
-    [ValidateSet('asset-interface', 'attempt-result', 'bootstrap-report', 'capability-contract', 'environment-snapshot', 'host-profile', 'lane-lease', 'learning-record', 'lifecycle-state', 'mcp-provider', 'packet-registry', 'project-mcp', 'provider-evaluation', 'research-record', 'review-cycle', 'route-request', 'runtime-state', 'smart-entry', 'work-packet')]
+    [ValidateSet('asset-interface', 'attempt-result', 'bootstrap-report', 'capability-contract', 'environment-snapshot', 'host-profile', 'install-jobs', 'lane-lease', 'learning-record', 'lifecycle-state', 'mcp-provider', 'packet-registry', 'project-mcp', 'provider-evaluation', 'research-record', 'review-cycle', 'route-request', 'runtime-state', 'smart-entry', 'work-packet')]
     [string]$ContractKind,
     [string]$InputPath,
     [ValidateSet('status')]

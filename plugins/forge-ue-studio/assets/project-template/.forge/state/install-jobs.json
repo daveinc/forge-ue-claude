@@ -1,0 +1,6 @@
+{
+  "schema": "forge.install-jobs/v1",
+  "note": "The in-flight ledger for forge-bootstrap. Applicable jobs are compiled here from installation-waves.md and recorded BEFORE dispatch, so a bootstrap interrupted at either of its stop points resumes from what is already known instead of re-probing the machine. bootstrap-report.json is the terminal artifact written after verification; this file is the state that gets there.",
+  "jobs": [],
+  "updated_at": null
+}

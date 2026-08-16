@@ -4,7 +4,7 @@ Fill the `studio-director` seat with the resident host: compile approved decisio
 
 ## Dispatch workflow
 
-1. Load the approved GDD decision IDs, GSD `.planning` phase and plan state, canonical packet registry, dependency DAG, current revision, capability/qualification/activation registries, lane leases, budgets, and acceptance registry. Route only when GSD reports the matching active execution stage, or for an explicitly read-only bootstrap job. Ignore `.forge/state/lifecycle.json`.
+1. Load the approved GDD decision IDs, GSD `.planning` phase and plan state, canonical packet registry, dependency DAG, current revision, `.forge/capabilities/registry.json`, `.forge/capabilities/qualifications.json`, the phase activation policy at `.forge/context/activation-policy.json`, lane leases, budgets, and acceptance registry. Route only when GSD reports the matching active execution stage, or for an explicitly read-only bootstrap job. Ignore `.forge/state/lifecycle.json`.
 2. Finish or unblock in-flight work before opening avoidable new work.
 3. Find ready work with satisfied hard prerequisites and disjoint write sets.
 4. Keep design, gameplay, visual, audio, research, and QA lanes concurrent once their contracts exist.

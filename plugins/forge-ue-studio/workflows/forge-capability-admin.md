@@ -2,7 +2,7 @@
 
 ## Workflow
 
-1. Run `forge-doctor` and load the capability registry, consent ledger, qualification registry, phase activation policy, dependency catalog, and route policy. `capability-manager` owns this seat. Record the overlay state in `.forge/state/install-state.json`.
+1. Run `forge-doctor` and load `.forge/capabilities/registry.json`, `.forge/capabilities/consent-ledger.json`, `.forge/capabilities/qualifications.json`, the phase activation policy at `.forge/context/activation-policy.json`, the dependency catalog, and the route policy. `capability-manager` owns this seat. Record the overlay state in `.forge/state/install-state.json`.
 2. Register the capability contract from [lifecycle.md](../skills/forge-capability-admin/references/lifecycle.md). Treat executable detection as availability evidence only, and start every optional provider `UNQUALIFIED`.
 3. Classify permissions, external effects, secret boundary, executable surfaces, integrity, provenance, licence, locality, cost, context cost, lanes, fallbacks, and invalidation triggers.
 4. Require explicit scoped consent before installing packages or models, enabling plugins, activating executable surfaces, using secrets or network, changing PATH, editing project descriptors, or allowing external writes.

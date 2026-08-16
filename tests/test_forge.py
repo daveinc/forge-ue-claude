@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -2435,6 +2436,49 @@ class McpHandshakeTests(unittest.TestCase):
                 self.assertTrue(probe["live"])
                 self.assertFalse(probe["found"])
                 self.assertIn("no configuration the host reads declares it", probe["note"])
+
+
+class ProfileStabilityTests(unittest.TestCase):
+    """The detected profile describes the machine, so how the path was typed cannot change it."""
+
+    @contextmanager
+    def game(self):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            yield root
+
+    def test_re_profiling_the_same_machine_proposes_nothing(self):
+        with self.game() as root:
+            for spelling in (str(root), str(root) + "/", "."):
+                original = Path.cwd()
+                os.chdir(root)
+                try:
+                    result = forge.write_profile(spelling, apply=True)
+                finally:
+                    os.chdir(original)
+                self.assertEqual(result["action"], "unchanged", f"{spelling!r} proposed a change")
+            proposals = list((root / ".forge" / "capabilities").glob("*.forge-proposed"))
+            self.assertEqual(proposals, [], "re-profiling wrote a proposal a human must resolve")
+
+    def test_the_invocation_record_is_kept_but_never_compared(self):
+        """`requested` stays in the file as provenance; it just cannot cause a proposal."""
+        with self.game() as root:
+            detected = json.loads((root / ".forge" / "capabilities" / "detected.json").read_text(encoding="utf-8"))
+            self.assertIn("requested", detected["project"])
+            widened = json.loads(json.dumps(detected))
+            widened["project"]["requested"] = "somewhere/else"
+            widened["snapshot"]["project"]["requested"] = "somewhere/else"
+            self.assertEqual(forge.stable_profile(detected), forge.stable_profile(widened))
+
+    def test_a_real_capability_change_still_proposes(self):
+        """Stripping the invocation must not blind the comparison to the machine."""
+        with self.game() as root:
+            detected = json.loads((root / ".forge" / "capabilities" / "detected.json").read_text(encoding="utf-8"))
+            changed = json.loads(json.dumps(detected))
+            changed["providers"] = []
+            self.assertNotEqual(forge.stable_profile(detected), forge.stable_profile(changed))
 
 
 class CommandSurfaceTests(unittest.TestCase):

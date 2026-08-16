@@ -24,11 +24,16 @@ from forge_survey import survey
 
 
 def stable_profile(data: dict[str, Any]) -> dict[str, Any]:
+    """Strip what records the invocation rather than the machine, so the same
+    workstation compares equal however the project path was spelled."""
     normalized = json.loads(json.dumps(data))
-    normalized.pop("generated_at", None)
-    snapshot = normalized.get("snapshot")
-    if isinstance(snapshot, dict):
-        snapshot.pop("generated_at", None)
+    for scope in (normalized, normalized.get("snapshot")):
+        if not isinstance(scope, dict):
+            continue
+        scope.pop("generated_at", None)
+        project = scope.get("project")
+        if isinstance(project, dict):
+            project.pop("requested", None)
     return normalized
 
 

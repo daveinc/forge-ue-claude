@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.install-jobs/v1",
+  "type": "object",
+  "required": ["schema", "jobs"],
+  "properties": {
+    "schema": {"const": "forge.install-jobs/v1"},
+    "jobs": {
+      "type": "array",
+      "description": "One entry per applicable installation job, written before dispatch so an interrupted bootstrap resumes from the ledger instead of re-probing. Each entry carries work_order (a canonical FI-* id from the packet registry), wave, objective, inputs, read_scope, write_scope, agent_type, expected_result, acceptance, status and evidence.",
+      "items": {
+        "type": "object",
+        "required": ["work_order", "objective", "agent_type", "acceptance", "status"],
+        "properties": {
+          "work_order": {"type": "string", "minLength": 1},
+          "wave": {"type": "integer", "minimum": 1},
+          "objective": {"type": "string", "minLength": 1},
+          "inputs": {"type": "array", "items": {"type": "string"}},
+          "read_scope": {"type": "array", "items": {"type": "string"}},
+          "write_scope": {"type": "array", "items": {"type": "string"}},
+          "agent_type": {"type": "string", "minLength": 1},
+          "expected_result": {"type": "string"},
+          "acceptance": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "status": {"enum": ["PLANNED", "DISPATCHED", "COMPLETE", "FAILED", "NOT_APPLICABLE", "DEGRADED_INLINE"]},
+          "evidence": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "updated_at": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}

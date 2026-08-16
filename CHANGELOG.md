@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### The bootstrap job ledger is wired to the resume it exists for
+
+- `.forge/state/install-jobs.json` was mandated before dispatch by step 6 and read by nothing. Step 4 enumerated what `--resume` reads and did not name it, so the ledger written to survive bootstrap's two stop points was not read by the resume those stops require. Step 4 now reads it and carries forward every job already `COMPLETE`, `NOT_APPLICABLE` or `FAILED`, re-dispatching only what is still `PLANNED` or was left `DISPATCHED`.
+- The ledger ships in the project template and has a contract, `forge.install-jobs/v1`, with a `status` vocabulary the resume can act on. It was the only bootstrap state file with neither.
+- Name the phase activation policy by path in `forge-capability-admin` and `forge-route-work`. Both told the agent to load "the phase activation policy" while naming fourteen other state files by exact path, leaving the agent to guess that it meant `.forge/context/activation-policy.json`.
+
+### Re-profiling the same machine no longer proposes a change to it
+
+- `forge.py profile --apply` wrote a `.forge-proposed` sibling on every run against an installed project, because the stored profile records the literal `--project` argument and that literal was compared. `install` resolves the path before profiling and an agent typically passes `.`, so the two never matched. The gate treats a proposal as a human merge decision, so the noise arrived exactly where bootstrap tells the agent to run Profile.
+- `stable_profile` now drops the invocation record alongside the timestamp it already dropped. `requested` stays in the file as provenance; it can no longer cause a proposal.
+
 ### `forge-next` stops offering choices that are not choices
 
 - Two situations offered a recommended Forge verb and, as the alternative, a GSD verb the registry fronts with that same Forge verb. On a greenfield project `forge-init` and `project-discovery` both rendered as `/forge-init`, and on unreadable GSD state `doctor` and `planning-health` both rendered as `/forge-doctor`. Distinct ids hid it: the collapse happens at translation, after the ids are assigned.
