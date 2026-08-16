@@ -17,7 +17,7 @@
    python <forge-plugin-root>/scripts/forge.py mcp add --project <project-root> --id <provider> --command <exe> --arg <arg> --apply
    ```
 
-   Run `mcp-status` to confirm each route before depending on it. Declare capabilities, lane and fallbacks in the entry for any provider outside the shipped catalog. Amend the set later through `forge-capability-admin`.
+   Run `route-status` to confirm each route before depending on it. Declare capabilities, lane and fallbacks in the entry for any provider outside the shipped catalog. Amend the set later through `forge-capability-admin`.
 3. Ask one highest-value question at a time. Resolve mandate, audience, platforms, camera, core loop, progression, tone, scope, content boundaries, references, performance envelope, business constraints, and decision owners. Offer concrete options without forcing the framing.
 4. Record every unknown as an explicit hypothesis, deferral, or spike. Never silently choose one, and never let changeable art block the playable contract.
 5. Run a divergent design pass before locking the compact GDD. Generate materially different core-loop, progression, narrative and production options, test them against the mandate, and keep rejected tradeoffs in the decision ledger.

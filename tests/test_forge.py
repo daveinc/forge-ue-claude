@@ -2641,6 +2641,7 @@ class CommandSurfaceTests(unittest.TestCase):
             "bootstrap-check": ["bootstrap-check", *project],
             "gsd-sync": ["gsd-sync", *project],
             "mcp-status": ["mcp-status", *project],
+            "route-status": ["route-status", *project],
             "lifecycle": ["lifecycle", *project],
             "route": ["route", *project, "--request", str(root / "request.json")],
             "validate": ["validate", "--kind", "lane-lease", "--input", str(root / ".forge" / "state" / "leases.json")],

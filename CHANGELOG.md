@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### All three Unreal routes exist, and the verb that reports them says so
+
+- Declare VibeUE's live-Python route, the third of the three `COUNTERPLAN.md` separates. It shares `lane.ue-editor` with the first-party typed route because it runs inside the same editor process, and takes the `ue-live-python` lease the super-lock already declared. Declaring the route does not install it: it stays uncommitted until a project declares the server and the probe finds it, which is what "not a Forge prerequisite" means.
+- `forge.py route-status` replaces `mcp-status`, which reported only the routes reachable by connecting to a server and would have hidden the two routes that are not. Its `routes` list now carries every kind with its lane, lease and reason, and the payload is `forge.route-status/v1`. The `mcp-status` spelling still works, so nothing that already calls it breaks.
+
 ### The editor-closed Unreal API is a route, not a fallback string
 
 - `COUNTERPLAN.md` specifies three deliberately separate Unreal routes and calls the editor-closed API "a primary production surface, not just documentation" and "first-class rather than exceptional" — the first choice for batch import, retargeting, asset audits, LOD generation, null-RHI-safe work and anything unsafe inside the editor tick. The lease layer implemented that: `ue-editor-closed-api` has always been a peer inside `unreal-project-super-lock`. The route layer did not. `mcp-registry.json` held only `kind: mcp` rows, so `unreal-python` sat in the catalog as `routing: declared` with the note "No typed tool route declared yet", and `ue.python.commandlet` and `ue.batch` were capabilities no route could serve, no contract could describe, and `forge-route-work` step 7 could therefore never bind.

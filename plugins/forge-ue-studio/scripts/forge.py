@@ -199,10 +199,14 @@ def build_parser() -> argparse.ArgumentParser:
     route.add_argument("--host")
     route.add_argument("--request", required=True)
     route.add_argument("--output")
-    mcp_status_parser = sub.add_parser("mcp-status", help="Report this project's typed tool routes")
-    mcp_status_parser.add_argument("--project", required=True)
-    mcp_status_parser.add_argument("--host")
-    mcp_status_parser.add_argument("--output")
+    for name, help_text in (
+        ("route-status", "Report every typed route this project can reach: servers and commands alike"),
+        ("mcp-status", "Report this project's typed routes. Retained spelling of route-status"),
+    ):
+        status_parser = sub.add_parser(name, help=help_text)
+        status_parser.add_argument("--project", required=True)
+        status_parser.add_argument("--host")
+        status_parser.add_argument("--output")
     mcp = sub.add_parser("mcp", help="Declare or amend the typed tool routes this project uses")
     mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
     for action in ("add", "remove", "enable", "disable"):
@@ -270,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "bootstrap-check":
             root, _ = project_root(args.project)
             result = bootstrap_verdict(root, active_profile(root, args.host))
-        elif args.command == "mcp-status":
+        elif args.command in {"route-status", "mcp-status"}:
             root, _ = project_root(args.project)
             result = mcp_status(root, active_profile(root, args.host))
         elif args.command == "mcp":

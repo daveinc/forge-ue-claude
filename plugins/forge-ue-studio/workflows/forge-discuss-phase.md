@@ -4,7 +4,7 @@
 
 1. Read `.forge/directives.md`, the GDD decision ledger, and the phase entry from the roadmap.
 2. Name the departments this phase touches — gameplay, visual, audio, narrative, QA — and scope questions to them.
-3. Read `.forge/capabilities/registry.json` and `.forge/capabilities/detected.json`, then run `python <forge-plugin-root>/scripts/forge.py mcp-status --project <project-root>`. Never raise an option that depends on an unqualified provider or an unbound route.
+3. Read `.forge/capabilities/registry.json` and `.forge/capabilities/detected.json`, then run `python <forge-plugin-root>/scripts/forge.py route-status --project <project-root>`. Never raise an option that depends on an unqualified provider or an unbound route.
 
 ## CORE — GSD
 

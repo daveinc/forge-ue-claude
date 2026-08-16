@@ -104,8 +104,8 @@
         "ue.live.python"
       ],
       "fallback": "ue.native-mcp-plus-editor-closed-python",
-      "routing": "declared",
-      "routing_note": "Optional accelerator with no typed tool route declared yet."
+      "routing": "routed",
+      "routing_note": "Optional live-Python accelerator on the live-editor lane, reached through the mcp route in route-registry.json. Declaring the route does not install it: it stays UNAVAILABLE until a project declares the server and the probe finds it."
     },
     {
       "id": "blender-gateway",

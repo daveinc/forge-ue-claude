@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'Exec', 'Lifecycle', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
+    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'RouteStatus', 'Exec', 'Lifecycle', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
     [string]$Mode = 'Plugin',
     [ArgumentCompleter({
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -271,10 +271,10 @@ if ($Mode -eq 'Host') {
 }
 
 if ($Mode -ne 'Validate' -and -not $ProjectPath) {
-    throw '-ProjectPath is required for Survey, Install, Verify, Profile, Next, BootstrapCheck, Route, McpStatus, GsdSync, and Lifecycle modes.'
+    throw '-ProjectPath is required for Survey, Install, Verify, Profile, Next, BootstrapCheck, Route, McpStatus, RouteStatus, GsdSync, and Lifecycle modes.'
 }
 
-$verbMap = @{ 'BootstrapCheck' = 'bootstrap-check'; 'McpStatus' = 'mcp-status'; 'GsdSync' = 'gsd-sync' }
+$verbMap = @{ 'BootstrapCheck' = 'bootstrap-check'; 'McpStatus' = 'mcp-status'; 'RouteStatus' = 'route-status'; 'GsdSync' = 'gsd-sync' }
 $verb = if ($verbMap.ContainsKey($Mode)) { $verbMap[$Mode] } else { $Mode.ToLowerInvariant() }
 $arguments = @($forgeScript, $verb)
 if ($Mode -eq 'Validate') {
@@ -285,7 +285,7 @@ if ($Mode -eq 'Validate') {
 } else {
     $arguments += @('--project', $ProjectPath)
 }
-if ($Mode -in @('Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'McpStatus', 'GsdSync') -and $PSBoundParameters.ContainsKey('RuntimeHost')) {
+if ($Mode -in @('Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'McpStatus', 'RouteStatus', 'GsdSync') -and $PSBoundParameters.ContainsKey('RuntimeHost')) {
     $arguments += @('--host', $RuntimeHost)
 }
 if ($Mode -eq 'Route') {

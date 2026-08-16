@@ -13,7 +13,7 @@
 4. Probe every declared typed tool route:
 
    ```powershell
-   python <forge-plugin-root>\scripts\forge.py mcp-status --project "<project>"
+   python <forge-plugin-root>\scripts\forge.py route-status --project "<project>"
    ```
 
    Report `session_visible` and `subagent_visible` separately. Report a route visible to the session but not to its spawned agents as project scope working as declared, with the declared fallback named. Name the remedy without performing it; widening a route to user scope belongs to `forge-capability-admin`. Never report a route as available because the server is installed.

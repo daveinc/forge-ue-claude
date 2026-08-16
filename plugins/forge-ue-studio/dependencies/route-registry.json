@@ -80,6 +80,54 @@
       ]
     },
     {
+      "id": "vibeue",
+      "server": "vibeue",
+      "kind": "mcp",
+      "implementation": "Optional live-Python accelerator inside the open editor: arbitrary unreal.*, VibeUE skills and service wrappers, GeometryScript, materials and properties the first-party typed toolsets do not expose. Not a prerequisite; it earns its place when its probe shows live Python closing a real route gap.",
+      "capabilities": [
+        "ue.live.python"
+      ],
+      "lane": "lane.ue-editor",
+      "lease": "ue-live-python",
+      "isolation_mode": "project-exclusive",
+      "locality": "local",
+      "requires_host_provides": [
+        "mcp-client"
+      ],
+      "requires_engine": {
+        "min_version": "5.0",
+        "uproject_plugins": [
+          "PythonScriptPlugin"
+        ],
+        "note": "Runs inside the open editor's Python, so it needs the editor up and PythonScriptPlugin enabled."
+      },
+      "tool_surface": "Arbitrary unreal.* execution. Never used for known re-entrant or heavy operations: those belong on lane.ue-editor-closed, where a commandlet cannot corrupt a live editor tick.",
+      "probe": "mcp-server-declared",
+      "fallbacks": [
+        "ue.native-mcp-plus-editor-closed-python"
+      ],
+      "permissions": {
+        "read": [
+          "ue.project"
+        ],
+        "write": [
+          "ue.project"
+        ],
+        "network": false,
+        "secrets": false
+      },
+      "acceptance_suites": [
+        "FORGE-UE-01",
+        "FORGE-CAP-01"
+      ],
+      "invalidation_triggers": [
+        "engine-version-change",
+        "uproject-plugin-change",
+        "mcp-server-version-change",
+        "host-swap"
+      ]
+    },
+    {
       "id": "unreal-python",
       "command": "UnrealEditor-Cmd",
       "kind": "process",

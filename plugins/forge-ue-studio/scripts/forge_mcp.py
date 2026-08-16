@@ -729,7 +729,9 @@ def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
         routes.append(
             {
                 "provider": item["id"],
+                "kind": "mcp",
                 "server": server,
+                "lease": (catalog.get(str(item["id"])) or {}).get("lease"),
                 "source": item["source"],
                 "enabled": item["enabled"],
                 "scope": item.get("scope", "project"),
@@ -750,8 +752,32 @@ def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
                 "note": probe.get("note") or probe.get("reason"),
             }
         )
+    for provider in process_providers():
+        probe = probe_process_route(root, provider)
+        routes.append(
+            {
+                "provider": provider["id"],
+                "kind": "process",
+                "command": provider.get("command"),
+                "source": "catalog",
+                "enabled": True,
+                "scope": "project",
+                "capabilities": provider.get("capabilities", []),
+                "lane": provider.get("lane"),
+                "lease": provider.get("lease"),
+                "isolation_mode": provider.get("isolation_mode"),
+                "declared_in_project": True,
+                "session_visible": probe["status"].startswith("AVAILABLE"),
+                "found": probe["found"],
+                "resolved": probe.get("resolved"),
+                "lane_clear": probe.get("lane_clear"),
+                "status": probe["status"],
+                "fallbacks": provider.get("fallbacks", []),
+                "note": probe.get("note") or probe.get("reason"),
+            }
+        )
     return {
-        "schema": "forge.mcp-status/v1",
+        "schema": "forge.route-status/v1",
         "project": str(root),
         "host": profile.get("id"),
         "host_speaks_mcp": host_speaks_mcp(profile),

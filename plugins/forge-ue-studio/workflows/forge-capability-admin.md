@@ -18,7 +18,7 @@
    python <forge-plugin-root>/scripts/forge.py mcp remove  --project <project-root> --id <provider> --apply
    ```
 
-   Declare capabilities, lane, isolation mode and fallbacks in the entry for any provider outside the shipped catalog. Re-run `mcp-status` afterwards and requalify; a newly declared route starts `UNQUALIFIED`.
+   Declare capabilities, lane, isolation mode and fallbacks in the entry for any provider outside the shipped catalog. Re-run `route-status` afterwards and requalify; a newly declared route starts `UNQUALIFIED`.
 10. Choose each route's scope deliberately. `--scope project` reaches this game's session; `--scope user` or `both` also publishes to the machine-wide config so spawned agents can use the route:
 
     ```powershell
