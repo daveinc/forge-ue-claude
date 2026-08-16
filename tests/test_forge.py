@@ -1365,6 +1365,37 @@ class ActionSurfaceTests(unittest.TestCase):
             ids = re.findall(r"forge_action\(\s*\"([^\"]+)\"", block)
             self.assertEqual(len(ids), len(set(ids)), f"duplicate action id in block: {ids}")
 
+    def test_no_situation_offers_the_same_command_twice(self):
+        """Two ids that translate to one verb are a choice the user does not have.
+        Distinct ids are not enough: the registry fronts GSD verbs with Forge ones,
+        so an alternative naming the fronted verb collapses onto the recommended one."""
+        profile = forge.host_profile("claude")
+        tree = ast.parse((SCRIPTS_DIR / "forge_lifecycle.py").read_text(encoding="utf-8"))
+        blocks = 0
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.List):
+                continue
+            if not any(isinstance(t, ast.Name) and t.id == "actions" for t in node.targets):
+                continue
+            rendered = {}
+            for call in node.value.elts:
+                if not (isinstance(call, ast.Call) and getattr(call.func, "id", "") == "forge_action"):
+                    continue
+                action_id = call.args[0].value
+                spelling = call.args[2]
+                if isinstance(spelling, ast.Constant):
+                    command = spelling.value
+                elif isinstance(spelling, ast.JoinedStr):
+                    command = "".join(p.value for p in spelling.values if isinstance(p, ast.Constant))
+                else:
+                    continue
+                verb = forge.normalize_gsd_command(command.split()[0], profile)
+                rendered.setdefault(verb, []).append(action_id)
+            blocks += 1
+            for verb, owners in sorted(rendered.items()):
+                self.assertEqual(len(owners), 1, f"{owners} all render as {verb}")
+        self.assertGreater(blocks, 3, "no action blocks parsed; the guard would assert over nothing")
+
 
 class UserScopeMcpTests(unittest.TestCase):
     """Publishing to user scope: planned by default, consented when applied, and

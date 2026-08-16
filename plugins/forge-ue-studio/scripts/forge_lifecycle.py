@@ -299,7 +299,6 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
             summary = "GSD planning state exists, but its smart-entry runtime could not be read safely."
             actions = [
                 forge_action("doctor", "Repair or inspect GSD", "forge-doctor", True, str(gsd.get("error", "GSD state unavailable")), profile),
-                forge_action("planning-health", "Inspect planning health", "gsd-health", False, "Use only if the GSD skill surface is available.", profile),
             ]
     elif sources:
         source_arg = str(Path(sources[0]).relative_to(root))
@@ -321,7 +320,7 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
         summary = "Forge bootstrap is complete and no existing GSD project, design corpus, or Unreal source was found."
         actions = [
             forge_action("forge-init", "Start Forge project inception", "forge-init", True, "Begins the design interview and creates canonical GSD project memory.", profile),
-            forge_action("project-discovery", "Start with plain project discovery", "gsd-new-project", False, "Use when Forge-specific design inception is not needed.", profile),
+            forge_action("doctor", "Inspect the environment", "forge-doctor", False, "Read-only capability diagnosis before committing to inception.", profile),
         ]
 
     recommended = next((action["id"] for action in actions if action["recommended"]), actions[0]["id"] if actions else None)

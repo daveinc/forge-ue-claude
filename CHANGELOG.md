@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### `forge-next` stops offering choices that are not choices
+
+- Two situations offered a recommended Forge verb and, as the alternative, a GSD verb the registry fronts with that same Forge verb. On a greenfield project `forge-init` and `project-discovery` both rendered as `/forge-init`, and on unreadable GSD state `doctor` and `planning-health` both rendered as `/forge-doctor`. Distinct ids hid it: the collapse happens at translation, after the ids are assigned.
+- Greenfield now offers `forge-doctor` as its alternative, which is a different action. The unfronted GSD path is not lost: `gsd_snapshot` already lists `/gsd:new-project` untranslated, which is where a user who wants stock GSD should find it.
+- A test renders every action block's commands through the same translation the payload uses and fails when two ids land on one verb.
+
 ### One module per concern, cut where the code already separated
 
 - Split `forge.py` into ten modules. It had grown to 2,558 lines carrying the failure contract, host registry, MCP routes, GSD front, capability survey, lifecycle, installer, routing and the CLI, so every one of those concerns was read and edited through the same file.
