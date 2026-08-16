@@ -53,7 +53,7 @@ def bootstrap_verdict(root: Path, profile: dict[str, Any] | None = None) -> dict
     detected_path = root / ".forge" / "capabilities" / "detected.json"
     report_path = root / ".forge" / "state" / "bootstrap-report.json"
 
-    has_profile = record(
+    record(
         "capability-profile",
         detected_path.is_file(),
         str(detected_path) if detected_path.is_file() else "detected.json is missing; run capability detection",
@@ -118,7 +118,6 @@ def bootstrap_verdict(root: Path, profile: dict[str, Any] | None = None) -> dict
         f"{instruction_name}.forge-proposed file, or re-render with: "
         f"forge.py host set --host {profile['id']} --project . --apply",
     )
-    _ = has_profile
     return _bootstrap_result(root, profile, checks)
 
 

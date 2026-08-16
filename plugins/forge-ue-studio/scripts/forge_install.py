@@ -89,6 +89,7 @@ def write_profile(project_value: str, apply: bool, host_override: str | None = N
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(payload)
     return {
+        "schema": "forge.profile-write/v1",
         "mode": "apply" if apply else "dry-run",
         "project": str(project),
         "action": action,

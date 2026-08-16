@@ -26,6 +26,7 @@
     | `report-schema` | A required `forge.bootstrap-report/v1` field is absent. |
     | `report-verdict` | The verdict is not `PASS` or `DEGRADED_ACCEPTED`. |
     | `report-blocking` | Blocking items remain unresolved. |
+    | `packet-coverage` | The canonical packet registry is unreadable, so coverage cannot be judged. |
     | `installation-jobs` | A canonical `FI-*` packet is unaccounted for. |
     | `phase-contract` | The rendered instruction file is missing or lacks `## Forge phase contract`. |
 

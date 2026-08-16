@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import ast
 import builtins
+import contextlib
 import importlib.util
+import io
 import json
 import re
 import shutil
@@ -2402,6 +2404,125 @@ class McpHandshakeTests(unittest.TestCase):
                 self.assertTrue(probe["live"])
                 self.assertFalse(probe["found"])
                 self.assertIn("no configuration the host reads declares it", probe["note"])
+
+
+class CommandSurfaceTests(unittest.TestCase):
+    """Every verb the parser declares is dispatched at least once, through main, so a
+    payload that violates the result contract cannot reach a user unexercised."""
+
+    @classmethod
+    def leaf_commands(cls):
+        found = set()
+
+        def walk(parser, prefix=""):
+            for action in parser._actions:
+                if action.__class__.__name__ != "_SubParsersAction":
+                    continue
+                for name, sub in action.choices.items():
+                    path = f"{prefix} {name}".strip()
+                    nested = [a for a in sub._actions if a.__class__.__name__ == "_SubParsersAction"]
+                    if nested:
+                        walk(sub, path)
+                    else:
+                        found.add(path)
+
+        walk(forge.build_parser())
+        return found
+
+    @contextmanager
+    def game(self):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            for command in (
+                ["git", "init", "-q", "-b", "main"],
+                ["git", "config", "user.email", "forge@test.invalid"],
+                ["git", "config", "user.name", "Forge Test"],
+                ["git", "add", "-A"],
+                ["git", "commit", "-qm", "base"],
+            ):
+                subprocess.run(command, cwd=str(root), capture_output=True, check=True)
+            (root / "request.json").write_text(
+                json.dumps({
+                    "work_order": "FI-HOST", "task_class": "research", "complexity": "low",
+                    "bounded": True, "required_capabilities": [], "required_lanes": [],
+                    "mutation_risk": "read-only",
+                }),
+                encoding="utf-8",
+            )
+            (root / "packet.json").write_text(
+                json.dumps({
+                    "work_order": "WO-SURFACE", "leases": ["ue-live-native-mcp"],
+                    "write_scope": ["project-files"],
+                    "isolation": {"mode": "project-exclusive", "base_revision": "HEAD"},
+                }),
+                encoding="utf-8",
+            )
+            yield root
+
+    def invocations(self, root):
+        project = ["--project", str(root)]
+        return {
+            "survey": ["survey", *project],
+            "install": ["install", *project],
+            "verify": ["verify", *project],
+            "profile": ["profile", *project],
+            "next": ["next", *project],
+            "bootstrap-check": ["bootstrap-check", *project],
+            "gsd-sync": ["gsd-sync", *project],
+            "mcp-status": ["mcp-status", *project],
+            "lifecycle": ["lifecycle", *project],
+            "route": ["route", *project, "--request", str(root / "request.json")],
+            "validate": ["validate", "--kind", "lane-lease", "--input", str(root / ".forge" / "state" / "leases.json")],
+            "host list": ["host", "list"],
+            "host status": ["host", "status", *project],
+            "host set": ["host", "set", *project, "--host", "claude"],
+            "mcp add": ["mcp", "add", *project, "--id", "blender-gateway", "--command", "uvx"],
+            "mcp remove": ["mcp", "remove", *project, "--id", "unreal-native-mcp"],
+            "mcp enable": ["mcp", "enable", *project, "--id", "unreal-native-mcp"],
+            "mcp disable": ["mcp", "disable", *project, "--id", "unreal-native-mcp"],
+            "mcp sync-user": ["mcp", "sync-user", *project],
+            "exec acquire": ["exec", "acquire", *project, "--packet", str(root / "packet.json")],
+            "exec status": ["exec", "status", *project],
+            "exec release": ["exec", "release", *project, "--work-order", "WO-SURFACE", "--outcome", "passed"],
+        }
+
+    def run_command(self, argv):
+        stream = io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            code = forge.main(argv)
+        return code, stream.getvalue()
+
+    def test_every_declared_command_is_exercised(self):
+        """A new verb with no invocation here is a verb nothing ever ran."""
+        self.assertEqual(sorted(self.leaf_commands() - set(self.invocations(Path(".")))), [])
+
+    def test_every_command_answers_with_an_identified_payload(self):
+        with self.game() as root:
+            for name, argv in sorted(self.invocations(root).items()):
+                if name == "exec release":
+                    forge.executor.acquire(
+                        root, json.loads((root / "packet.json").read_text(encoding="utf-8")),
+                        owner="surface-test", apply=True,
+                    )
+                with self.subTest(command=name):
+                    code, out = self.run_command(argv)
+                    self.assertIn(code, {forge.EXIT_OK, forge.EXIT_CONTRACT}, f"{name} exited {code}: {out}")
+                    payload = json.loads(out)
+                    self.assertIn("schema", payload, f"{name} returned a payload with no schema identity")
+
+    def test_a_read_only_invocation_stays_a_preview(self):
+        """None of the above may write without --apply, or the surface sweep is destructive."""
+        with self.game() as root:
+            before = {p: p.read_bytes() for p in sorted((root / ".forge").rglob("*")) if p.is_file()}
+            for name, argv in sorted(self.invocations(root).items()):
+                if name.startswith("exec"):
+                    continue
+                self.run_command(argv)
+            after = {p: p.read_bytes() for p in sorted((root / ".forge").rglob("*")) if p.is_file()}
+            self.assertEqual(sorted(before), sorted(after), "a preview created or removed a file")
+            self.assertEqual([p.name for p in before if before[p] != after[p]], [])
 
 
 class ModuleBoundaryTests(unittest.TestCase):
