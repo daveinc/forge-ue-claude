@@ -1,18 +1,31 @@
 ---
 name: forge-docs-update
-description: Generate or update project documentation verified against the codebase. Use after significant implementation lands.
+description: Generate or update project documentation verified against the codebase
 ---
 
-# Forge Docs Update
+<invocation>
+- Invoked by naming `forge-docs-update`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `docs-update.md`.
+<objective>
+Refresh documentation after implementation lands.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: contain GSD's doc writers and verifier, then reconcile the GDD ledger and asset-interface registry.
+</objective>
 
-## CORE — GSD
+<execution_context>
+@<forge-plugin-root>/workflows/forge-docs-update.md
+@<gsd-core>/workflows/docs-update.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Contain GSD's doc writers and verifier.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## POST — Forge
-
-1. Keep the GDD ledger and asset-interface registry consistent with what the docs now claim.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (codebase verification, ledger consistency).
+</process>

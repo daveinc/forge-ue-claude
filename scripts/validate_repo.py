@@ -22,6 +22,9 @@ COMMENT_FREE_SOURCES = (
 )
 EXEMPT_COMMENT_PREFIXES = ("#!", "# noqa", "# type:", "# pragma:")
 
+SKILL_SECTIONS = ("invocation", "objective", "execution_context", "context", "process")
+SKILL_DESCRIPTION_LIMIT = 110
+
 NEUTRALITY_EXEMPT_FILES = {
     PLUGIN / "hosts" / "registry.json",
 }
@@ -33,6 +36,11 @@ HOST_SKILL_INVOCATION = re.compile(NOT_INSIDE_A_PATH + r"[$/](?:forge|gsd)-[a-z0
 
 TOP_LEVEL_PARSER = re.compile(r'(?<![\w])sub\.add_parser\(\s*"([a-z][a-z-]*)"')
 SUBCOMMAND_PARSER = re.compile(r'_sub\.add_parser\(\s*"([a-z][a-z-]*)"')
+
+
+def verbs_for_skill(verbs: list, name: str) -> list:
+    """Every fronted registry entry that maps to one Forge skill."""
+    return [item for item in verbs if item.get("disposition", "front") == "front" and item.get("forge") == name]
 
 
 def comment_lines(path: Path) -> list[int]:
@@ -348,23 +356,61 @@ def main() -> int:
     if not swap.get("allowed_at_any_stage") or not swap.get("preserves"):
         fail("Route policy must permit a host swap at any stage and declare what it preserves", failures)
 
+    registry_verbs = parsed.get(PLUGIN / "verbs" / "registry.json", {}).get("verbs", [])
     skills = sorted((PLUGIN / "skills").glob("*/SKILL.md"))
     if not skills:
         fail("No skills found", failures)
+    referenced_workflows: set[str] = set()
     for skill_path in skills:
+        name = skill_path.parent.name
         text = skill_path.read_text(encoding="utf-8")
-        match = re.match(r"^---\nname: ([a-z0-9-]+)\ndescription: (.+?)\n---\n", text, re.DOTALL)
+        match = re.match(r"^---\nname: ([a-z0-9-]+)\ndescription: ([^\n]+)\n---\n", text)
         if not match:
             fail(f"Invalid skill frontmatter: {skill_path.relative_to(ROOT)}", failures)
-        elif match.group(1) != skill_path.parent.name:
-            fail(f"Skill folder/name mismatch: {skill_path.relative_to(ROOT)}", failures)
+        else:
+            if match.group(1) != name:
+                fail(f"Skill folder/name mismatch: {skill_path.relative_to(ROOT)}", failures)
+            description = match.group(2)
+            if len(description) > SKILL_DESCRIPTION_LIMIT:
+                fail(f"Skill {name!r} description is {len(description)} characters; the limit is {SKILL_DESCRIPTION_LIMIT}", failures)
+            if re.search(r"\bUse (when|for|as)\b", description):
+                fail(f"Skill {name!r} description states when to use it; say what it does and stop", failures)
+        for section in SKILL_SECTIONS:
+            if f"<{section}>" not in text:
+                fail(f"Skill {name!r} is missing its <{section}> block", failures)
         agent_metadata = skill_path.parent / "agents" / "openai.yaml"
         if not agent_metadata.is_file():
             fail(f"Skill missing agents/openai.yaml: {skill_path.relative_to(ROOT)}", failures)
         else:
             metadata_text = agent_metadata.read_text(encoding="utf-8")
-            if f"${skill_path.parent.name}" not in metadata_text:
+            if f"${name}" not in metadata_text:
                 fail(f"Skill default prompt must mention its skill name: {agent_metadata.relative_to(ROOT)}", failures)
+
+        own_workflow = f"@<forge-plugin-root>/workflows/{name}.md"
+        if own_workflow not in text:
+            fail(f"Skill {name!r} does not load its own workflow ({own_workflow})", failures)
+        for plugin_path in re.findall(r"@<forge-plugin-root>/(\S+)", text):
+            if not (PLUGIN / plugin_path).is_file():
+                fail(f"Skill {name!r} loads {plugin_path!r}, which does not exist", failures)
+            if plugin_path.startswith("workflows/"):
+                referenced_workflows.add(plugin_path[len("workflows/"):])
+        loaded_gsd = set(re.findall(r"@<gsd-core>/workflows/(\S+)", text))
+        declared_gsd = {
+            str(item["gsd_workflow"])
+            for item in verbs_for_skill(registry_verbs, name)
+            if item.get("delegation") in {"contain", "relay"} and item.get("gsd_workflow")
+        }
+        for extra in sorted(loaded_gsd - declared_gsd):
+            fail(f"Skill {name!r} loads GSD workflow {extra!r}, which the verb registry does not map to it", failures)
+        for absent in sorted(declared_gsd - loaded_gsd):
+            fail(f"Skill {name!r} fronts GSD workflow {absent!r} but never loads it", failures)
+
+    workflow_files = sorted((PLUGIN / "workflows").glob("*.md"))
+    if not workflow_files:
+        fail("No skill workflows found", failures)
+    for workflow_path in workflow_files:
+        if workflow_path.name not in referenced_workflows:
+            fail(f"Workflow {workflow_path.name!r} is loaded by no skill", failures)
 
     required_template = [
         PLUGIN / "assets" / "project-template" / ".forge" / "config.json",
@@ -416,7 +462,10 @@ def main() -> int:
 
     project_template = PLUGIN / "assets" / "project-template"
     agent_names = {path.stem for path in (project_template / ".forge" / "agents").glob("*.json")}
-    skill_corpus = "\n".join(path.read_text(encoding="utf-8-sig") for path in (PLUGIN / "skills").glob("*/SKILL.md"))
+    skill_corpus = "\n".join(
+        path.read_text(encoding="utf-8-sig")
+        for path in [*(PLUGIN / "skills").glob("*/SKILL.md"), *(PLUGIN / "workflows").glob("*.md")]
+    )
     for name in sorted(agent_names):
         if name not in skill_corpus:
             fail(f"Agent {name!r} is defined but no skill names it as a dispatch target", failures)
@@ -606,7 +655,10 @@ def main() -> int:
         for message in failures:
             print(f"ERROR: {message}")
         return 1
-    print(f"OK: {len(json_files)} JSON files, {len(schemas)} schemas, {len(skills)} skills, {len(dependencies)} dependency declarations")
+    print(
+        f"OK: {len(json_files)} JSON files, {len(schemas)} schemas, {len(skills)} skills, "
+        f"{len(workflow_files)} workflows, {len(dependencies)} dependency declarations"
+    )
     return 0
 
 

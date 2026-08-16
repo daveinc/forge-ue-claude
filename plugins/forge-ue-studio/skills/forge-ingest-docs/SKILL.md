@@ -1,23 +1,31 @@
 ---
 name: forge-ingest-docs
-description: Ingest existing design documents into planning state. Use when a project has design docs but no GSD project memory.
+description: Ingest existing design documents into planning state
 ---
 
-# Forge Ingest Docs
+<invocation>
+- Invoked by naming `forge-ingest-docs`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `ingest-docs.md`.
+<objective>
+Turn existing design documents into project memory.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: locate sources, contain GSD's ingestion including conflict detection, then fold decisions into the GDD ledger.
+</objective>
 
-## PRE — Forge
+<execution_context>
+@<forge-plugin-root>/workflows/forge-ingest-docs.md
+@<gsd-core>/workflows/ingest-docs.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Locate design sources. Forge Next reports them in `signals.design_sources`.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## CORE — GSD
-
-1. Contain GSD's document ingestion, including its conflict detection.
-
-## POST — Forge
-
-1. Fold accepted decisions into the GDD decision ledger.
-2. Surface every LOCKED-vs-LOCKED conflict for a human ruling. Never auto-resolve a design conflict.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (conflict surfacing, no auto-resolution of design conflicts).
+</process>

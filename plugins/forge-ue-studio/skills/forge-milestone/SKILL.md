@@ -1,22 +1,45 @@
 ---
 name: forge-milestone
-description: Start, complete, audit, or summarise a milestone. Use at the boundaries between releases or vertical slices.
+description: Start, complete, audit, or summarise a milestone
 ---
 
-# Forge Milestone
+<invocation>
+- Invoked by naming `forge-milestone`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `complete-milestone.md`.
+<objective>
+Run the boundary between releases or vertical slices.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: confirm every phase verified, contain the matching GSD workflow, then carry unresolved items forward.
+</objective>
 
-## PRE — Forge
+<flags>
+- `--new` — start the next milestone.
+- `--complete` — archive a finished milestone.
+- `--audit` — audit completion against original intent.
+- `--summary` — generate the milestone summary.
+- `--plan-gaps` — turn audit findings into fix phases.
 
-1. Confirm every phase in the milestone passed verification.
+A flag is active only when its literal token appears in `{{FORGE_ARGS}}`. Never infer that a flag is active because it is documented here.
+</flags>
 
-## CORE — GSD
+<execution_context>
+@<forge-plugin-root>/workflows/forge-milestone.md
+@<gsd-core>/workflows/complete-milestone.md
+@<gsd-core>/workflows/new-milestone.md
+@<gsd-core>/workflows/audit-milestone.md
+@<gsd-core>/workflows/milestone-summary.md
+@<gsd-core>/workflows/plan-milestone-gaps.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Contain the matching GSD workflow for the requested mode: `--new`, `--complete`, `--audit`, or `--summary`.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## POST — Forge
-
-1. Carry unresolved GDD decisions and unqualified capability routes forward into the next milestone.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (verification precondition, carry-forward of open decisions and unqualified routes).
+</process>

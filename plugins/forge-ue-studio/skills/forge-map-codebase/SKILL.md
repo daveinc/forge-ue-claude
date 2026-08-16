@@ -1,18 +1,31 @@
 ---
 name: forge-map-codebase
-description: Analyse an Unreal codebase and produce structured planning intel. Use before planning work in unfamiliar or inherited code.
+description: Analyse an Unreal codebase and produce structured planning intel
 ---
 
-# Forge Map Codebase
+<invocation>
+- Invoked by naming `forge-map-codebase`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `map-codebase.md`.
+<objective>
+Map unfamiliar or inherited code before planning against it.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: contain GSD's mappers, then add Unreal-specific structure.
+</objective>
 
-## CORE — GSD
+<execution_context>
+@<forge-plugin-root>/workflows/forge-map-codebase.md
+@<gsd-core>/workflows/map-codebase.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Contain GSD's codebase mappers.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## POST — Forge
-
-1. Add Unreal-specific structure: module boundaries, the Blueprint and C++ split, `Content/` organisation, and which assets are binary-locked.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (Unreal module, Blueprint, and binary-asset coverage).
+</process>

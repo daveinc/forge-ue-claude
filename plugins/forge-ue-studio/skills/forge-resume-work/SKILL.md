@@ -1,26 +1,31 @@
 ---
 name: forge-resume-work
-description: Resume interrupted work from persisted state. Use after a context reset, a fresh session, or a handoff.
+description: Resume interrupted work from persisted state
 ---
 
-# Forge Resume Work
+<invocation>
+- Invoked by naming `forge-resume-work`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `resume-project.md`.
+<objective>
+Restart work from files after a context reset, fresh session, or handoff.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: route through Forge Next, reclaim leases, contain GSD's resume workflow, then hand back to the recommended action.
+</objective>
 
-## PRE — Forge
+<execution_context>
+@<forge-plugin-root>/workflows/forge-resume-work.md
+@<gsd-core>/workflows/resume-project.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Run `forge-next` first. Take routing from persisted state, never from what the previous session said.
-2. Route to `forge-runtime` and stop when the runtime block reports stale surfaces.
-3. Read `.forge/state/leases.json` and reclaim or release every lane lease the interrupted session still holds.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## CORE — GSD
-
-1. Contain GSD's resume workflow. It owns phase state and decides where work restarts.
-
-## POST — Forge
-
-1. Compare the host recorded in the handoff with `.forge/runtime.json`. On a difference, treat qualification evidence as stale and re-probe through `forge-capability-admin` before any offload route.
-2. Confirm the recorded editor state — open project, held locks, in-flight builds — before resuming production work.
-3. Hand control to the action `forge-next` recommends, then stop.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (file-sourced routing, lease reclamation, cross-host qualification staleness).
+</process>

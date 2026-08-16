@@ -1,24 +1,31 @@
 ---
 name: forge-verify-work
-description: Validate completed work through UAT plus in-engine evidence. Use when a phase claims completion and before a milestone closes.
+description: Validate completed work through UAT plus in-engine evidence
 ---
 
-# Forge Verify Work
+<invocation>
+- Invoked by naming `forge-verify-work`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **relay** — surface each question in game-dev framing and pass answers back down. Never black-box it. GSD workflow: `verify-work.md`.
+<objective>
+Confirm a phase actually works in the engine, not only in the test suite.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: relay. Orchestrator role: grade against registered acceptance suites, relay GSD's UAT session, then require in-engine evidence.
+</objective>
 
-## PRE — Forge
+<execution_context>
+@<forge-plugin-root>/workflows/forge-verify-work.md
+@<gsd-core>/workflows/verify-work.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Load the acceptance suites registered for this phase. Grade against them, never against a generic definition of done.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## CORE — GSD
-
-1. Relay GSD's UAT session. It owns the pass/fail predicate; never weaken, duplicate, or re-derive it.
-
-## POST — Forge
-
-1. Require in-engine evidence on top of a passing UAT: PIE session outcome, fixed-condition frame captures, or a recorded playthrough of the affected loop.
-2. Never accept a green build and green tests as a verified game phase. Keep feel and presentation human gates.
-3. Record residual risk explicitly.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (acceptance-suite grading, single verification authority, in-engine evidence, human feel gates).
+</process>

@@ -1,20 +1,31 @@
 ---
 name: forge-handoff
-description: Pause work before a context reset without losing state. Use when a session must end mid-phase.
+description: Pause work before a context reset without losing state
 ---
 
-# Forge Handoff
+<invocation>
+- Invoked by naming `forge-handoff`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `pause-work.md`.
+<objective>
+Persist everything the next session needs.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: contain GSD's pause workflow, then persist leases, editor state, and the producing host.
+</objective>
 
-## CORE — GSD
+<execution_context>
+@<forge-plugin-root>/workflows/forge-handoff.md
+@<gsd-core>/workflows/pause-work.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Contain GSD's pause workflow.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## POST — Forge
-
-1. Persist lane leases and editor state alongside context, including every held write-lock.
-2. Record which runtime host produced the handoff.
-3. Point the user at `forge-resume-work` for the return.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (lease and editor-state persistence, host recording).
+</process>

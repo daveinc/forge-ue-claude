@@ -11,7 +11,8 @@ plugins/forge-ue-studio/               installable plugin
   hosts/registry.json                  runtime host profiles and prerequisite contract
   verbs/registry.json                  GSD command -> Forge verb map, with delegation modes
   references/delegation-contract.md    the PRE / CORE / POST shape every delegating verb follows
-  skills/                              progressive studio workflows
+  skills/                              one launcher per verb: invocation, flags, what to load
+  workflows/                           one procedure per verb, loaded by its launcher
   dependencies/catalog.json            capability and route declarations
   dependencies/mcp-registry.json       typed tool routes: server, capabilities, lane, probe
   dependencies/route-policy.json       resident default and offload scoring

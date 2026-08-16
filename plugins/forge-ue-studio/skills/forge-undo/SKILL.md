@@ -1,23 +1,31 @@
 ---
 name: forge-undo
-description: Roll back committed work. Use to revert a phase or plan when execution went wrong.
+description: Roll back a phase or plan when execution went wrong
 ---
 
-# Forge Undo
+<invocation>
+- Invoked by naming `forge-undo`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `undo.md`.
+<objective>
+Revert committed work safely.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: check locks and dependants, contain GSD's undo, then confirm the project still opens.
+</objective>
 
-## PRE — Forge
+<execution_context>
+@<forge-plugin-root>/workflows/forge-undo.md
+@<gsd-core>/workflows/undo.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Check the binary-asset lock. Never revert Unreal content while another lane holds the project-exclusive lease.
-2. Identify dependent packets from the canonical registry before reverting.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## CORE — GSD
-
-1. Contain GSD's undo, which owns the phase manifest and dependency checks.
-
-## POST — Forge
-
-1. Confirm the working copy still opens in the editor before declaring the rollback complete.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (lock safety, dependency check, post-revert editor check).
+</process>

@@ -1,23 +1,31 @@
 ---
 name: forge-onboard
-description: Onboard an existing Unreal project into Forge and GSD planning. Use when adopting a codebase with no planning state.
+description: Onboard an existing Unreal project into Forge and GSD planning
 ---
 
-# Forge Onboard
+<invocation>
+- Invoked by naming `forge-onboard`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `onboard.md`.
+<objective>
+Adopt a codebase that has no planning state.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: establish capability routes first, contain GSD's onboarding, then extend the map into Unreal-specific structure.
+</objective>
 
-## PRE — Forge
+<execution_context>
+@<forge-plugin-root>/workflows/forge-onboard.md
+@<gsd-core>/workflows/onboard.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Run `forge-doctor` so capability routes are known before mapping begins.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## CORE — GSD
-
-1. Contain GSD's onboarding.
-
-## POST — Forge
-
-1. Extend the map beyond source: `Content/` asset classes, Blueprint dependencies, enabled plugins, and C++ module boundaries.
-2. Register the asset interfaces the existing project already implies.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (capability-first ordering, Unreal structure coverage, asset-interface registration).
+</process>

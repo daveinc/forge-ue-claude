@@ -1,23 +1,32 @@
 ---
 name: forge-ship
-description: Cook, package, verify, and open a PR for a verified milestone. Use when a milestone is ready to go out.
+description: Cook, package, verify, and open a PR for a verified milestone
 ---
 
-# Forge Ship
+<invocation>
+- Invoked by naming `forge-ship`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **relay** — surface each question in game-dev framing and pass answers back down. Never black-box it. GSD workflow: `ship.md`.
+<objective>
+Deliver a build, not only a merged branch.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: relay. Orchestrator role: confirm verification, relay GSD's ship workflow, then require build and package evidence.
+</objective>
 
-## PRE — Forge
+<execution_context>
+@<forge-plugin-root>/workflows/forge-ship.md
+@<gsd-core>/workflows/ship.md
+@<gsd-core>/workflows/pr-branch.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Confirm milestone verification passed. Refuse to ship an unverified milestone.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## CORE — GSD
-
-1. Relay GSD's ship workflow for the review and PR mechanics.
-
-## POST — Forge
-
-1. Require build and package verification for the target platform before declaring the milestone shipped.
-2. Record the built artifact's provenance and the engine version used.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (verification precondition, packaged-build evidence, artifact provenance).
+</process>

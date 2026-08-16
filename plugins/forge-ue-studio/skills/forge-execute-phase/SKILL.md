@@ -1,28 +1,31 @@
 ---
 name: forge-execute-phase
-description: Execute the plans in a phase under Unreal lane control. Use when plans are approved and work should begin, including wave-based parallel execution.
+description: Execute the plans in a phase under Unreal lane control
 ---
 
-# Forge Execute Phase
+<invocation>
+- Invoked by naming `forge-execute-phase`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `execute-phase.md`.
+<objective>
+Run approved plans with the write-lock and lane leases held around GSD's executor.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: resolve capabilities to lanes, acquire leases, route each plan, then release everything.
+</objective>
 
-## PRE — Forge
+<execution_context>
+@<forge-plugin-root>/workflows/forge-execute-phase.md
+@<gsd-core>/workflows/execute-phase.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Resolve each plan's required capabilities: `python <forge-plugin-root>/scripts/forge.py mcp-status --project <project-root>`. Take the lane and isolation mode from that resolution, never from a judgement call.
-2. Acquire the lease for every resolved lane and record it in `.forge/state/leases.json`. Send a capability reporting `UNAVAILABLE_OPTIONAL` down its declared fallback; never drop it silently.
-3. Verify the clean base revision. Give concurrent text and code writers clean-base Git worktrees, and binary assets an LFS lock or the project-exclusive lease.
-4. Route each plan through `forge-route-work`. Send a plan needing a typed tool route to the agent declaring that capability — `unreal-operator` for the editor lane, `dcc-artist` for the authoring lane — never to a general-purpose executor.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## CORE — GSD
-
-1. Contain GSD's executor for plans needing no typed tool route. It owns wave scheduling, plan dispatch, and SUMMARY authorship.
-
-## POST — Forge
-
-1. Release every lease, including on failure.
-2. Record attempt results with observed facts separated from inference, naming the route actually taken for every capability that had a fallback.
-3. Verify phase completion by invoking GSD's own completion check.
-4. Hold the write-lock across GSD's steps: acquire in PRE, release in POST, and never let a delegated agent acquire it independently.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (lane resolution, lease acquisition and release, worktree isolation, fallback recording).
+</process>

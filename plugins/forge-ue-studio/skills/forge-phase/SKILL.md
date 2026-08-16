@@ -1,23 +1,42 @@
 ---
 name: forge-phase
-description: Add, insert, remove, or edit phases in the roadmap. Use when the plan of record changes shape.
+description: Add, insert, remove, or edit phases in the roadmap
 ---
 
-# Forge Phase
+<invocation>
+- Invoked by naming `forge-phase`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `add-phase.md`.
+<objective>
+Change the plan of record.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: load the packet registry, contain GSD's phase CRUD, then verify no canonical packet ID was replaced.
+</objective>
 
-## PRE — Forge
+<flags>
+- `--insert` — insert a phase between existing ones.
+- `--remove` — remove a phase.
+- `--edit` — edit an existing phase.
 
-1. Load the canonical packet registry before any mutation.
+A flag is active only when its literal token appears in `{{FORGE_ARGS}}`. Never infer that a flag is active because it is documented here.
+</flags>
 
-## CORE — GSD
+<execution_context>
+@<forge-plugin-root>/workflows/forge-phase.md
+@<gsd-core>/workflows/add-phase.md
+@<gsd-core>/workflows/insert-phase.md
+@<gsd-core>/workflows/remove-phase.md
+@<gsd-core>/workflows/edit-phase.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Contain GSD's phase CRUD. It owns phase-ID arithmetic, including decimal insertion and milestone-scoped edits.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## POST — Forge
-
-1. Verify no canonical packet ID was replaced. Require an explicit `alias` to `canonical` record for an alias, and `derived_from` provenance for a new packet.
-2. Refuse any edit that replaces an established packet ID.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (packet-ID immutability, alias and provenance records).
+</process>

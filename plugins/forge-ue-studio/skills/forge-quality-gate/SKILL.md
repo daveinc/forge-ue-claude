@@ -1,18 +1,33 @@
 ---
 name: forge-quality-gate
-description: Design acceptance coverage, review attempts independently, and refuse unsupported completion claims. Use when defining tests, reviewing a result, accepting a work order, or claiming a phase complete.
+description: Design acceptance coverage, review attempts independently, and refuse unsupported completion claims
 ---
 
-# Forge Quality Gate
+<invocation>
+- Invoked by naming `forge-quality-gate`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-## Workflow
+<objective>
+Require fresh evidence before accepting work.
 
-1. Read the requirement, work packet, artifact or diff, acceptance registry, route contract, and returned evidence. Read builder reasoning only when investigating a failure after the independent pass.
-2. Select the smallest sufficient test layers from schema/static, unit, contract, integration, editor/commandlet, PIE/runtime, asset structural, performance, cook/package, platform, visual, and human subjective.
-3. Audit missing regression coverage, boundary compatibility, bad-input behaviour, idempotency, rollback, stale references, and seeded-bad rejection.
-4. Run fresh verification commands or inspect fresh tool-produced evidence. Separate observed facts, inferences, uncertainties, and residual risk.
-5. Contain GSD's `validate-phase.md` when asked to fill validation gaps for a completed phase, and `add-tests.md` when asked to generate tests from its UAT criteria. Spawn a subagent for each, require a structured result, and grade it through steps 1–4.
-6. Return the attempt-result contract from [result-contract.md](references/result-contract.md), findings ordered by severity.
-7. Accept only when every required criterion has current evidence and every required human gate is signed. Never let a review finding grant permission to apply its own fix.
-8. On `FAIL`, `PARTIAL`, `BLOCKED`, or `INDETERMINATE`, preserve the attempt and route the next action through `forge-route-work` or `forge-retrospective`.
-9. Never replace a human decision on primary art direction, likeness, appeal, game feel, or release.
+Delegation: contain for validation and test generation, native for grading. Orchestrator role: select test layers, run fresh verification, and return the attempt-result contract.
+</objective>
+
+<execution_context>
+@<forge-plugin-root>/workflows/forge-quality-gate.md
+@<gsd-core>/workflows/validate-phase.md
+@<gsd-core>/workflows/add-tests.md
+@<forge-plugin-root>/references/delegation-contract.md
+@<forge-plugin-root>/skills/forge-quality-gate/references/result-contract.md
+</execution_context>
+
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
+
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (evidence freshness, reviewer independence, human gates, attempt preservation).
+</process>

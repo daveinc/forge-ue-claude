@@ -1,26 +1,38 @@
 ---
 name: forge-plan-phase
-description: Create an executable phase plan declaring asset interfaces, required lanes, and mutation risk. Use after discussion is complete and before execution.
+description: Create a phase plan declaring asset interfaces, required lanes, and mutation risk
 ---
 
-# Forge Plan Phase
+<invocation>
+- Invoked by naming `forge-plan-phase`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `plan-phase.md`.
+<objective>
+Turn a discussed phase into executable plans.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: apply Forge preconditions, contain GSD's planner, then reject any plan that cannot be routed safely.
+</objective>
 
-## PRE — Forge
+<flags>
+- `--dependencies` — detect file overlap between phases and feed the lane leases.
 
-1. Confirm CONTEXT.md exists. Never plan a phase that has not been discussed.
-2. Load the canonical packet registry. Reference existing packet IDs; never mint replacements.
+A flag is active only when its literal token appears in `{{FORGE_ARGS}}`. Never infer that a flag is active because it is documented here.
+</flags>
 
-## CORE — GSD
+<execution_context>
+@<forge-plugin-root>/workflows/forge-plan-phase.md
+@<gsd-core>/workflows/plan-phase.md
+@<gsd-core>/workflows/analyze-dependencies.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Contain GSD's planner. Require every returned plan to carry `required_lanes`, `mutation_risk`, and any asset interface it produces or consumes.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## POST — Forge
-
-1. Reject any plan that mutates Unreal content without declaring the project-exclusive lane.
-2. Register new asset interfaces so the visual DAG can proceed against them.
-3. Return any plan that declares no lane as incomplete.
-4. Run `forge-plan-convergence` before execution on any non-trivial phase.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (lane declaration, packet-ID reuse, asset-interface registration, convergence before execution).
+</process>

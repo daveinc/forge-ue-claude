@@ -1,0 +1,22 @@
+# Forge Route Work — workflow
+
+Fill the `studio-director` seat with the resident host: compile approved decisions into bounded cross-department work and never own implementation. Select optional occupants per attempt; never assign a department to a provider and never serialize independent departments.
+
+## Dispatch workflow
+
+1. Load the approved GDD decision IDs, GSD `.planning` phase and plan state, canonical packet registry, dependency DAG, current revision, capability/qualification/activation registries, lane leases, budgets, and acceptance registry. Route only when GSD reports the matching active execution stage, or for an explicitly read-only bootstrap job. Ignore `.forge/state/lifecycle.json`.
+2. Finish or unblock in-flight work before opening avoidable new work.
+3. Find ready work with satisfied hard prerequisites and disjoint write sets.
+4. Keep design, gameplay, visual, audio, research, and QA lanes concurrent once their contracts exist.
+5. Decide whether the task is safely decomposable. Keep unresolved design, novel architecture, cross-system integration, delicate mutation, and final synthesis on the resident host.
+6. Apply hard filters and rank offload routes using [routing.md](../skills/forge-route-work/references/routing.md). Prefer a qualified free, local, or already-installed worker when resident-context, time, or lane savings exceed handoff and verification cost.
+7. Apply the `required_tool_access` hard filter. Resolve every declared capability through `python <forge-plugin-root>/scripts/forge.py mcp-status --project <project-root>`. Dispatch a capability served by a typed tool route only to an agent declaring it, and only while its contract reports the route bound. Dispatch on the declared fallback when a route is unbound, and record which route was taken. Never dispatch a packet whose capability resolves to nothing.
+8. Select isolation before dispatch, taking lane and isolation mode from the registry row: a clean-base Git worktree for concurrent text and code writers, an LFS lock or project-exclusive lease for binary assets, read-only isolation for reviewers. Never let two workers share an undeclared write surface.
+9. Activate only the packet's required optional surfaces and acquire declared resources atomically. Share the project super-lock across every Unreal package writer; keep editor-open, editor-closed, and human routes mutually exclusive.
+10. Resolve the work order through `.forge/state/packet-registry.json`. Reject unregistered IDs, preserve the canonical ID, treat aliases as display compatibility only, and require derived packets to name their parents.
+11. Compile an immutable minimal work packet: canonical work order, GSD phase and plan, revision, task and complexity class, objective, non-goals, referrals, inputs, exact write scope, isolation, leases, capabilities, context budget, output contract, acceptance, verification, evidence, and invalidation hashes. Never forward the full GDD or the resident conversation.
+12. Dispatch independent packets concurrently through the typed agent surface when it is available and authorized, stopping related local work while agents run. Record `DEGRADED_INLINE` when dispatch is unavailable; never describe inline work as delegated. Give the verifier the requirement, artifact or diff, acceptance, and evidence — never builder reasoning.
+13. Require a structured attempt result separating observed facts, inferences, findings, touched artifacts, evidence, verification, residual risk, and next action. Dispatch build work to `gameplay-engineer`, visual work to `visual-developer` or `dcc-artist`, engine operation to `unreal-operator`, and research to `researcher`. Give verification to `independent-verifier`, never to the agent that produced the work.
+14. Inspect actual artifacts before retry on failure. Substitute a second occupant before changing competence scores when the brief or tool may be defective. Use `forge-retrospective` for inconsistent or repeated failures.
+15. Persist transitions, deactivate packet-only surfaces, and release leases. Record every order transition in `.forge/state/work-orders.json` and stop at one of its declared terminal states. Resume from that file and `.forge/state/leases.json`, never from chat memory.
+16. Use `forge-capability-admin` to qualify or activate a route, and `forge-research` when no verified capability closes a required step. Block only the step that has no fallback.

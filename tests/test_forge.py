@@ -1628,6 +1628,64 @@ class McpGateTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("must carry the lane. prefix", output)
 
+    def test_a_skill_that_does_not_load_its_workflow_fails(self):
+        def mutate(root):
+            skill = root / "plugins" / "forge-ue-studio" / "skills" / "forge-undo" / "SKILL.md"
+            text = skill.read_text(encoding="utf-8")
+            skill.write_text(text.replace("@<forge-plugin-root>/workflows/forge-undo.md\n", ""), encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("does not load its own workflow", output)
+
+    def test_a_workflow_no_skill_loads_fails(self):
+        def mutate(root):
+            orphan = root / "plugins" / "forge-ue-studio" / "workflows" / "forge-orphan.md"
+            orphan.write_text("# Orphan\n\n1. Do nothing.\n", encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("is loaded by no skill", output)
+
+    def test_a_skill_loading_an_undeclared_gsd_workflow_fails(self):
+        def mutate(root):
+            skill = root / "plugins" / "forge-ue-studio" / "skills" / "forge-undo" / "SKILL.md"
+            text = skill.read_text(encoding="utf-8")
+            skill.write_text(
+                text.replace("@<gsd-core>/workflows/undo.md", "@<gsd-core>/workflows/undo.md\n@<gsd-core>/workflows/ship.md"),
+                encoding="utf-8",
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("the verb registry does not map to it", output)
+
+    def test_a_description_that_says_when_to_use_it_fails(self):
+        def mutate(root):
+            skill = root / "plugins" / "forge-ue-studio" / "skills" / "forge-undo" / "SKILL.md"
+            text = skill.read_text(encoding="utf-8")
+            skill.write_text(
+                text.replace(
+                    "description: Roll back a phase or plan when execution went wrong",
+                    "description: Roll back a phase or plan. Use when execution went wrong",
+                ),
+                encoding="utf-8",
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("description states when to use it", output)
+
+    def test_a_skill_missing_a_required_section_fails(self):
+        def mutate(root):
+            skill = root / "plugins" / "forge-ue-studio" / "skills" / "forge-undo" / "SKILL.md"
+            text = skill.read_text(encoding="utf-8")
+            skill.write_text(text.replace("<invocation>", "<invoked>"), encoding="utf-8")
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("is missing its <invocation> block", output)
+
     def test_a_shipped_schema_the_installer_cannot_validate_fails(self):
         def mutate(root):
             installer = root / "install.ps1"

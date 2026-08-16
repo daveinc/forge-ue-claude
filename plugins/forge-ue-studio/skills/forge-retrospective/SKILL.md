@@ -1,17 +1,32 @@
 ---
 name: forge-retrospective
-description: Run read-only failure forensics and extract evidence-backed learning. Use after a failed or interrupted workflow, repeated retries, scope drift, or when deciding whether a recipe should be promoted.
+description: Run read-only failure forensics and extract evidence-backed learning
 ---
 
-# Forge Retrospective
+<invocation>
+- Invoked by naming `forge-retrospective`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-## Workflow
+<objective>
+Explain what happened before changing it, then preserve only defensible learning.
 
-1. Freeze repair work. Inspect revision history, work orders, attempts, leases, capability snapshots, review cycles, phase artifacts, acceptance evidence, tool outputs, and filesystem state read-only.
-2. Detect stuck loops, missing artifacts, partial-plan drift, abandoned work, interruption, scope drift, undeclared writes, stale capability evidence, test regression, and broken handoffs.
-3. Ground every anomaly in specific evidence. Mark a root cause as a hypothesis when proof is incomplete. Redact secrets.
-4. Write a forensic report with evidence summary, confidence, likely cause, ruled-out causes, untested explanations, and recommended actions. Give the pass to `forensic-investigator`, never to the agent that produced the work under investigation. Never repair during the forensic pass.
-5. Contain GSD's `extract-learnings.md` after an accepted phase or resolved incident, then shape its result into atomic learning records using [promotion.md](references/promotion.md). Own the forensic pass natively; delegate only the extraction.
-6. Quarantine new records. Promote a recipe only after repeated independent success under a declared scope, and retain failed attempts and contradictory evidence.
-7. Invalidate learning after a relevant environment, engine, provider, schema, hardware, or workflow change.
-8. Keep production metrics in canonical JSON. Generate a derived XLSX or CSV scorecard on request and verify it visually; never make the spreadsheet the source of truth.
+Delegation: native for forensics, contain for extraction. Orchestrator role: freeze repair, ground every anomaly in evidence, then quarantine new records.
+</objective>
+
+<execution_context>
+@<forge-plugin-root>/workflows/forge-retrospective.md
+@<gsd-core>/workflows/extract-learnings.md
+@<forge-plugin-root>/references/delegation-contract.md
+@<forge-plugin-root>/skills/forge-retrospective/references/promotion.md
+</execution_context>
+
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
+
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (read-only forensics, investigator independence, promotion thresholds, invalidation triggers).
+</process>

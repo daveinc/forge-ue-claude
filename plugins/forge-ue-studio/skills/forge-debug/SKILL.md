@@ -1,23 +1,31 @@
 ---
 name: forge-debug
-description: Debug a defect with persistent state across context resets. Use for crashes, PIE failures, broken gameplay, or asset problems.
+description: Debug a defect with persistent state across context resets
 ---
 
-# Forge Debug
+<invocation>
+- Invoked by naming `forge-debug`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **relay** — surface each question in game-dev framing and pass answers back down. Never black-box it. GSD workflow: `debug.md`.
+<objective>
+Diagnose a crash, PIE failure, broken mechanic, or asset problem.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: relay. Orchestrator role: collect Unreal evidence first, relay GSD's debugging cycle, then require editor-closed reproduction.
+</objective>
 
-## PRE — Forge
+<execution_context>
+@<forge-plugin-root>/workflows/forge-debug.md
+@<gsd-core>/workflows/debug.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Collect Unreal evidence first: crash logs, `Saved/Logs`, PIE output, and the exact reproduction lane — editor open, editor closed, or packaged build.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## CORE — GSD
-
-1. Relay GSD's debugging cycle. It owns hypothesis tracking and session state.
-
-## POST — Forge
-
-1. Reproduce editor-closed before accepting a fix wherever possible. Never treat editor-open behaviour as proof for a packaged build.
-2. Promote a confirmed root cause to `.forge/learnings/` only after repeated evidence-backed success.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (evidence collection, reproduction lane, learning promotion thresholds).
+</process>

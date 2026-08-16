@@ -1,20 +1,31 @@
 ---
 name: forge-progress
-description: Report phase state, execution coverage, and the next action. Use to see what is complete and what comes next.
+description: Report phase state, execution coverage, and the next action
 ---
 
-# Forge Progress
+<invocation>
+- Invoked by naming `forge-progress`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-Delegation mode: **contain** — spawn a subagent to read and follow the stock GSD workflow and return a structured result. The subagent never talks to the user. GSD workflow: `progress.md`.
+<objective>
+Report where the project stands.
 
-Read [delegation-contract.md](../../references/delegation-contract.md) first.
+Delegation: contain. Orchestrator role: contain GSD's progress reporting, then add Forge's execution-coverage and capability-staleness views. Never mutates phase state.
+</objective>
 
-## CORE — GSD
+<execution_context>
+@<forge-plugin-root>/workflows/forge-progress.md
+@<gsd-core>/workflows/progress.md
+@<forge-plugin-root>/references/delegation-contract.md
+</execution_context>
 
-1. Contain GSD's progress reporting. `.planning` is authoritative for phase status.
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
 
-## POST — Forge
-
-1. Add execution coverage: phases whose plans lack summaries.
-2. Add capability staleness: routes qualified under a previous host.
-3. Never mutate phase state from this verb.
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (read-only reporting, coverage and staleness reporting).
+</process>

@@ -10,6 +10,17 @@ Inside `forge.py`, write skill references as **bare names** (`forge-next`, not `
 
 Adding a host must not require code changes. If you find yourself editing a host list outside `registry.json`, that is the bug.
 
+## Skills are launchers; workflows are procedures
+
+Forge follows GSD's split. `skills/<verb>/SKILL.md` is a launcher and carries five blocks — `<invocation>`, `<objective>`, `<flags>` when the verb has any, `<execution_context>`, `<context>`, `<process>` — and nothing else. The steps live in `workflows/<verb>.md`, which the launcher loads by path.
+
+- **Descriptions** say what the verb does, in one line, under 110 characters. Never "Use when …" — the trigger belongs in `<objective>`.
+- **Flags** are declared in `<flags>` with the rule that a flag is active only when its literal token appears in `{{FORGE_ARGS}}`.
+- **`<execution_context>`** lists every file the verb loads: its own workflow, each GSD workflow the verb registry maps to it, the delegation contract, and its references.
+- **Every line of a workflow is a step.** Reasoning becomes a step or it goes; see the rule below.
+
+`scripts/validate_repo.py` enforces all of it: missing blocks, an over-long or trigger-phrased description, a workflow no skill loads, a skill that does not load its own workflow, and any GSD workflow a skill loads that the registry does not map to that verb.
+
 ## Code carries no comments
 
 `forge.py`, `validate_repo.py`, `test_forge.py`, and `install.ps1` ship with zero comments, and `validate_repo.py` fails the build on a new one. A comment is one of three things, and each has a home that is not the source:

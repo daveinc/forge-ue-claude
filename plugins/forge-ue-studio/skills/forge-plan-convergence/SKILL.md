@@ -1,18 +1,30 @@
 ---
 name: forge-plan-convergence
-description: Challenge and revise a phase plan through bounded, source-grounded, independent review cycles with stall detection and human escalation. Use before executing a non-trivial plan, or when a plan cites Unreal assets that must be verified.
+description: Challenge and revise a phase plan through bounded, source-grounded review cycles
 ---
 
-# Forge Plan Convergence
+<invocation>
+- Invoked by naming `forge-plan-convergence`. The active host supplies the prefix.
+- Treat all user text after the name as `{{FORGE_ARGS}}`.
+- Treat `{{FORGE_ARGS}}` as empty when no arguments are present.
+</invocation>
 
-## Workflow
+<objective>
+Converge on an executable plan without an endless review loop.
 
-1. Require a plan carrying scope, dependencies, work packets, write sets, lanes, acceptance, verification, fallbacks, human gates, and declared new artifacts.
-2. Select independent reviewers from currently qualified lanes. Keep at least one isolated from planner reasoning.
-3. Ground every cited symbol, asset, plugin, API, path, capability and acceptance command against source or a verified registry. Exclude artifacts the plan says it will create.
-4. Record findings by severity. Return only current-cycle `HIGH` and actionable non-high counts; keep prior cycles as audit history and never re-count resolved findings.
-5. Revise the plan so every actionable finding becomes a task, acceptance item, verified closure, explicit deferral, or reasoned rejection.
-6. Repeat until both counts reach zero, the cycle limit is reached, or counts stop decreasing.
-7. Stop and present remaining concerns to the human owner on a stall, malformed reviewer output, unverifiable source, or cycle exhaustion. Never silently proceed.
+Delegation: native. Orchestrator role: ground every citation, count findings per cycle, revise, and escalate on a stall.
+</objective>
 
-Read [cycle-contract.md](references/cycle-contract.md) before creating or updating review state.
+<execution_context>
+@<forge-plugin-root>/workflows/forge-plan-convergence.md
+@<forge-plugin-root>/skills/forge-plan-convergence/references/cycle-contract.md
+</execution_context>
+
+<context>
+Arguments: {{FORGE_ARGS}}
+</context>
+
+<process>
+Execute the Forge workflow end-to-end.
+Preserve every Forge gate (reviewer independence, source grounding, cycle bounds, human escalation).
+</process>
