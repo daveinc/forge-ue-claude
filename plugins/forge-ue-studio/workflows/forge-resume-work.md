@@ -4,7 +4,7 @@
 
 1. Run `forge-next` first. Take routing from persisted state, never from what the previous session said.
 2. Route to `forge-runtime` and stop when the runtime block reports stale surfaces.
-3. Read `.forge/state/leases.json` and reclaim or release every lane lease the interrupted session still holds.
+3. Read `.forge/state/leases.json` and reclaim or release every lane lease the interrupted session still holds. Release any `ACTIVE` lease past its `expires_at` as stale; anything inside its window needs an explicit decision before you touch it.
 
 ## CORE — GSD
 

@@ -12,6 +12,20 @@
 - Fix `mcp-status` routes overwriting the declared scope with the probe's. Both are reported: `scope` is what the project declared (`project`/`user`/`both`), `found_in_scope` is where the probe found the server. Consumers reading `scope` were reading the probe result.
 - Fix `mcp amend` writing an unroutable declaration to disk and only then failing to resolve it, which left `.forge/mcp.json` in a state the next command refused. The amendment now resolves before anything is written.
 
+### Skills follow GSD's architecture
+
+- Split every skill into a launcher and a workflow, the way GSD does. `skills/<verb>/SKILL.md` carries `<invocation>`, `<objective>`, `<flags>`, `<execution_context>`, `<context>` and `<process>`; the steps live in `workflows/<verb>.md` and load by path. Descriptions are one line under 110 characters, saying what the verb does — the "Use when …" trailer moved into `<objective>`.
+- `<execution_context>` lists every file a verb loads, which closed a silent gap: `forge-discuss-phase` fronts four GSD workflows and named one, `forge-milestone` fronts five and named one, `forge-review` fronts five and named four.
+- Declare flags where the agent reads them, with GSD's rule that a flag is active only when its literal token appears in `{{FORGE_ARGS}}`. `forge-discuss-phase --assumptions/--power/--list-assumptions` and `forge-plan-phase --dependencies` were documented publicly and absent from the skill.
+- Every line of a workflow is now a step. Justification clauses, restated rationale, and one reference to a past incident are gone or have become instructions.
+
+### Forge runs GSD's workflows instead of containing them
+
+- Replace the `contain` delegation mode with `run`. It spawned a subagent whose only job was reading a workflow file whose path the registry already declares, which then spawned GSD's real agents — three layers where GSD itself uses two. Forge now loads the workflow from disk and runs it end to end in the current session, with its own PRE before and POST after. GSD's typed agents still spawn as its workflow directs.
+- Delete `forge-execute-phase`. Its PRE restated `forge-route-work` steps 7–9 and its POST restated step 15, and its own PRE ended by routing through `forge-route-work` anyway. `gsd-execute-phase` now fronts `forge-route-work`, which gained clean-base verification and a step that runs GSD's executor under the leases it already holds.
+- `forge-resume-work` now treats an `ACTIVE` lease past its `expires_at` as stale. The schema has always required that field and nothing read it, so a lease held by a dead session was indistinguishable from a live one.
+- Distinguish `forge-docs-update` from `forge-ingest-docs` in both objectives. They read as duplicates because both touch the GDD ledger; they run in opposite directions — ingest takes documents into planning state, docs-update takes implemented code out to documentation.
+
 ### Forge fronts GSD; it does not replace it
 
 - Correct a claim that was never true of the product: the docs said "GSD is never addressed directly — you will not type a `gsd-` verb". Both surfaces are installed and GSD stays directly usable. The instruction file Forge renders has always pointed at `gsd-quick` and `gsd-debug` for small fixes, so the code and the documentation disagreed.

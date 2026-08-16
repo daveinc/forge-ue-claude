@@ -94,7 +94,7 @@ The Forge verbs you will use daily:
 | `forge-resume-work` | Returning to work that was interrupted or paused. |
 | `forge-doctor` | Asking what is actually available, changing nothing. |
 
-All 32: [skills reference](docs/reference/skills.md).
+All 31: [skills reference](docs/reference/skills.md).
 
 ## Status
 
