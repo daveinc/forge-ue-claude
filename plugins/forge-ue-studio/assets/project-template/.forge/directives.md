@@ -38,6 +38,7 @@ These directives are host-neutral. "The resident host" means whichever runtime i
 - Benchmark Blender and Unreal authoring by asset class and allow split-stage routes.
 - Use typed GSD/Forge agents for authorized installation and execution jobs when the runtime exposes them. If dispatch is unavailable, mark the inline fallback as degraded instead of presenting it as equivalent delegation.
 - Isolate concurrent text/code writers in clean-base Git worktrees; protect binary assets with LFS locks or the project-exclusive lease. Reviewers use read-only copies or diffs.
+- Establish that isolation only through `forge.py exec acquire`, and release it only through `forge.py exec release`. A worktree or lock taken by hand leaves the ledger blind to it, which is how two writers end up in one lane.
 
 ## Evidence and gates
 

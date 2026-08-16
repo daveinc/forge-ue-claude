@@ -4,7 +4,18 @@
   "rules": [
     "An entry naming a provider in dependencies/mcp-registry.json inherits its capabilities, lane, isolation mode and fallbacks. Do not restate them here.",
     "An entry naming anything else must declare server, capabilities, lane, isolation_mode and fallbacks itself, so routing can still resolve it.",
-    "Rendering preserves servers this file does not declare. Forge only owns the entries listed here."
+    "Rendering preserves servers this file does not declare. Forge only owns the entries listed here.",
+    "A transport declares either a command the host starts or a url it calls. Unreal's first-party server is hosted by the editor, so it is a url and Forge never starts it."
   ],
-  "servers": []
+  "servers": [
+    {
+      "id": "unreal-native-mcp",
+      "enabled": true,
+      "transport": {
+        "type": "http",
+        "url": "http://127.0.0.1:8000/mcp"
+      },
+      "note": "Unreal Engine's first-party Unreal MCP plugin, Experimental since 5.8. Enable ModelContextProtocol and AllToolsets in the .uproject, then keep the editor open. `forge.py mcp-status` handshakes this endpoint and reports AVAILABLE_VERIFIED only when it answers; until then the route degrades to its declared fallback. Change the url here if the editor serves on another port."
+    }
+  ]
 }

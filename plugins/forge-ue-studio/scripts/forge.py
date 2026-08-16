@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import os
 import platform
@@ -13,9 +14,25 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+
+
+def load_sibling_module(name: str) -> Any:
+    """Load a module that ships beside this one, without depending on sys.path."""
+    path = Path(__file__).resolve().parent / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+executor = load_sibling_module("forge_executor")
 
 
 STATUSES = {
@@ -61,6 +78,7 @@ ERROR_REASON = MappingProxyType(
         "OVERLAY_MISSING": "overlay_missing",
         "USAGE": "usage",
         "UNKNOWN": "unknown",
+        **executor.ERROR_REASONS,
     }
 )
 
@@ -244,7 +262,62 @@ def _mcp_config_declares(path: Path, entry: dict[str, Any], server: str) -> bool
     return False
 
 
-def probe_mcp_server(root: Path, profile: dict[str, Any], server: str) -> dict[str, Any]:
+def mcp_endpoint_url(root: Path, provider: dict[str, Any]) -> str | None:
+    """The endpoint to handshake: what the project declared, else the catalog default."""
+    provider_id = str(provider.get("id", ""))
+    try:
+        for entry in project_mcp(root).get("servers", []):
+            if str(entry.get("id")) == provider_id:
+                url = str((entry.get("transport") or {}).get("url", "")).strip()
+                if url:
+                    return url
+    except ForgeExit:
+        pass
+    return str(provider.get("transport_default", {}).get("url", "")).strip() or None
+
+
+def probe_mcp_endpoint(url: str, timeout: float = 3.0) -> dict[str, Any]:
+    """Ask a running MCP endpoint to initialize. Contacts it; never starts or writes anything."""
+    body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "forge-capability-probe", "version": "1"},
+            },
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = response.read(8192).decode("utf-8", "replace")
+            speaks_mcp = '"result"' in payload or "serverInfo" in payload
+            return {
+                "reachable": True,
+                "speaks_mcp": speaks_mcp,
+                "code": getattr(response, "status", None),
+                "detail": "initialize returned an MCP result" if speaks_mcp else "endpoint answered but did not return an MCP result",
+            }
+    except urllib.error.HTTPError as exc:
+        return {
+            "reachable": True,
+            "speaks_mcp": False,
+            "code": exc.code,
+            "detail": f"endpoint answered HTTP {exc.code}; something is listening but it did not complete an MCP initialize",
+        }
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return {"reachable": False, "speaks_mcp": False, "code": None, "detail": f"no endpoint answered at {url}: {exc}"}
+
+
+def probe_mcp_server(root: Path, profile: dict[str, Any], server: str, provider: dict[str, Any] | None = None) -> dict[str, Any]:
     """Read-only detection: is this server declared where the host would read it?"""
     if not host_speaks_mcp(profile):
         return {
@@ -257,6 +330,7 @@ def probe_mcp_server(root: Path, profile: dict[str, Any], server: str) -> dict[s
             "searched": [],
         }
     searched: list[str] = []
+    result: dict[str, Any] | None = None
     for entry in profile.get("mcp", {}).get("config_paths", []):
         raw = str(entry.get("path", ""))
         if not raw:
@@ -267,7 +341,7 @@ def probe_mcp_server(root: Path, profile: dict[str, Any], server: str) -> dict[s
             continue
         if _mcp_config_declares(path, entry, server):
             visible = bool(entry.get("subagent_visible"))
-            return {
+            result = {
                 "server": server,
                 "found": True,
                 "status": "AVAILABLE_UNVERIFIED",
@@ -281,15 +355,49 @@ def probe_mcp_server(root: Path, profile: dict[str, Any], server: str) -> dict[s
                     "can use it; delegated work must take the declared fallback route."
                 ),
             }
-    return {
-        "server": server,
-        "found": False,
-        "status": "UNAVAILABLE_OPTIONAL",
-        "reason": "not declared in any MCP client configuration the host reads",
-        "scope": None,
-        "subagent_visible": False,
-        "searched": searched,
-    }
+            break
+    if result is None:
+        result = {
+            "server": server,
+            "found": False,
+            "status": "UNAVAILABLE_OPTIONAL",
+            "reason": "not declared in any MCP client configuration the host reads",
+            "scope": None,
+            "subagent_visible": False,
+            "searched": searched,
+        }
+    return _apply_handshake(root, result, provider)
+
+
+def _apply_handshake(root: Path, result: dict[str, Any], provider: dict[str, Any] | None) -> dict[str, Any]:
+    """Upgrade a declaration to verified evidence when the provider declares a live probe."""
+    if not provider or provider.get("probe") != "mcp-http-handshake":
+        return result
+    url = mcp_endpoint_url(root, provider)
+    if not url:
+        return {**result, "live": False, "endpoint": None, "note": "no http endpoint declared, so the live probe could not run"}
+    handshake = probe_mcp_endpoint(url)
+    live = bool(handshake["speaks_mcp"])
+    enriched = {**result, "live": live, "endpoint": url, "handshake": handshake}
+    if result["found"] and live:
+        enriched["status"] = "AVAILABLE_VERIFIED"
+        enriched["reason"] = f"declared to the host and answered an MCP initialize at {url}"
+        return enriched
+    if result["found"]:
+        enriched["status"] = "UNAVAILABLE_OPTIONAL"
+        enriched["reason"] = f"declared to the host but did not answer an MCP initialize at {url}"
+        enriched["note"] = (
+            f"{handshake['detail']}. A route with a live probe that fails is unavailable, not unverified, "
+            "so work degrades to the declared fallback instead of dispatching into nothing. For Unreal's "
+            "first-party server the editor must be open with the ModelContextProtocol and AllToolsets plugins enabled."
+        )
+        return enriched
+    if live:
+        enriched["note"] = (
+            f"A live MCP server answered at {url} but no configuration the host reads declares it. "
+            "Declare it with `forge.py mcp add` so this session can route to it."
+        )
+    return enriched
 
 
 def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, Any]]:
@@ -297,12 +405,12 @@ def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[s
     contracts: list[dict[str, Any]] = []
     for provider in mcp_providers():
         server = str(provider.get("server", ""))
-        probe = probe_mcp_server(root, profile, server)
+        probe = probe_mcp_server(root, profile, server, provider)
         missing = [item for item in provider.get("requires_host_provides", []) if item not in profile.get("provides", [])]
         if missing:
             status = "UNAVAILABLE_OPTIONAL"
         elif probe["found"]:
-            status = "AVAILABLE_UNVERIFIED"
+            status = probe["status"]
         else:
             status = "UNAVAILABLE_OPTIONAL"
         namespace = mcp_tool_namespace(profile, server)
@@ -313,7 +421,7 @@ def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[s
                     "provider": provider.get("id"),
                     "kind": "mcp",
                     "status": status,
-                    "health": "HEALTHY" if probe["found"] else "UNAVAILABLE",
+                    "health": "HEALTHY" if status.startswith("AVAILABLE") else "UNAVAILABLE",
                     "lane": provider.get("lane"),
                     "locality": provider.get("locality", "local"),
                     "executable_surfaces": [namespace] if namespace else [],
@@ -457,13 +565,7 @@ def render_project_mcp(root: Path, profile: dict[str, Any], canon_root: Path) ->
     for name, item in managed.items():
         if not item["enabled"]:
             continue
-        transport = item.get("transport") or {}
-        rendered = {"command": transport.get("command", "")}
-        if transport.get("args"):
-            rendered["args"] = list(transport["args"])
-        if transport.get("env"):
-            rendered["env"] = dict(transport["env"])
-        entries[name] = rendered
+        entries[name] = _mcp_transport_entry(item)
 
     document[server_key] = dict(sorted(entries.items()))
     body = json.dumps(document, indent=2, sort_keys=True) + "\n"
@@ -471,7 +573,11 @@ def render_project_mcp(root: Path, profile: dict[str, Any], canon_root: Path) ->
 
 
 def _mcp_transport_entry(item: dict[str, Any]) -> dict[str, Any]:
+    """Render one server the way an MCP client reads it: a command it starts, or a url it calls."""
     transport = item.get("transport") or {}
+    url = str(transport.get("url", "")).strip()
+    if url:
+        return {"type": str(transport.get("type") or "http"), "url": url}
     rendered: dict[str, Any] = {"command": transport.get("command", "")}
     if transport.get("args"):
         rendered["args"] = list(transport["args"])
@@ -2089,6 +2195,26 @@ def route_work(project_value: str, request_value: str, host_override: str | None
     }
 
 
+def execute_acquire(project_value: str, packet_value: str, owner: str | None, apply: bool, host_override: str | None = None) -> dict[str, Any]:
+    """Take the leases and isolation a work packet declares, as one transaction."""
+    root, _ = project_root(project_value)
+    profile = active_profile(root, host_override)
+    packet_path = Path(packet_value).expanduser().resolve()
+    packet = load_json(packet_path)
+    result = executor.acquire(root, packet, owner or str(profile["id"]), apply=apply)
+    return {**result, "packet": str(packet_path), "host": profile["id"]}
+
+
+def execute_release(project_value: str, work_order: str, outcome: str, apply: bool) -> dict[str, Any]:
+    root, _ = project_root(project_value)
+    return executor.release(root, work_order, outcome, apply=apply)
+
+
+def execute_status(project_value: str) -> dict[str, Any]:
+    root, _ = project_root(project_value)
+    return executor.status(root)
+
+
 def emit(data: dict[str, Any], output: str | None) -> None:
     rendered = json.dumps(data, indent=2, sort_keys=True)
     print(rendered)
@@ -2107,6 +2233,7 @@ def mcp_amend(
     command: str | None = None,
     args: list[str] | None = None,
     scope: str = "project",
+    url: str | None = None,
 ) -> dict[str, Any]:
     """Add, remove, enable or disable one of this project's typed tool routes."""
     path = project_mcp_path(root)
@@ -2120,12 +2247,24 @@ def mcp_amend(
     if action == "add":
         if index is not None:
             raise fail(f"{server_id!r} is already declared; use enable or remove", reason=ERROR_REASON["MCP_ALREADY_DECLARED"], code=EXIT_USAGE)
-        if server_id not in catalog and not command:
-            raise fail(f"{server_id!r} is not in the catalog, so --command is required", reason=ERROR_REASON["MCP_MISSING_TRANSPORT"], code=EXIT_USAGE)
-        if not command:
-            raise fail("--command is required to declare how the server starts", reason=ERROR_REASON["MCP_MISSING_TRANSPORT"], code=EXIT_USAGE)
-        entry: dict[str, Any] = {"id": server_id, "enabled": True, "transport": {"command": command}}
-        if args:
+        default_url = str((catalog.get(server_id, {}).get("transport_default") or {}).get("url", "")).strip()
+        endpoint = (url or "").strip() or ("" if command else default_url)
+        if not command and not endpoint:
+            raise fail(
+                f"Declare how {server_id!r} is reached: --command for a server Forge starts, "
+                "--url for one that is already listening",
+                reason=ERROR_REASON["MCP_MISSING_TRANSPORT"],
+                code=EXIT_USAGE,
+            )
+        if command and endpoint:
+            raise fail(
+                f"{server_id!r} cannot be both started and connected to; pass --command or --url, not both",
+                reason=ERROR_REASON["MCP_MISSING_TRANSPORT"],
+                code=EXIT_USAGE,
+            )
+        transport: dict[str, Any] = {"type": "http", "url": endpoint} if endpoint else {"command": command}
+        entry: dict[str, Any] = {"id": server_id, "enabled": True, "transport": transport}
+        if args and command:
             entry["transport"]["args"] = list(args)
         if scope != "project":
             entry["scope"] = scope
@@ -2166,10 +2305,11 @@ def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
     declared = resolve_project_servers(root)
     declared_ids = {item["id"] for item in declared}
     surface = profile.get("mcp", {}).get("project_surface")
+    catalog = {str(row.get("id")): row for row in mcp_providers()}
     routes = []
     for item in declared:
         server = str(item.get("server", ""))
-        probe = probe_mcp_server(root, profile, server)
+        probe = probe_mcp_server(root, profile, server, catalog.get(str(item["id"])))
         routes.append(
             {
                 "provider": item["id"],
@@ -2187,6 +2327,9 @@ def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
                 "subagent_visible": probe["subagent_visible"],
                 "found": probe["found"],
                 "found_in_scope": probe["scope"],
+                "endpoint": probe.get("endpoint"),
+                "live": probe.get("live"),
+                "status": probe["status"],
                 "fallbacks": item.get("fallbacks", []),
                 "note": probe.get("note") or probe.get("reason"),
             }
@@ -2259,6 +2402,7 @@ def build_parser() -> argparse.ArgumentParser:
         if action == "add":
             amend.add_argument("--command", dest="server_command", help="Executable that starts the server")
             amend.add_argument("--arg", action="append", dest="args", help="Repeatable argument")
+            amend.add_argument("--url", help="Endpoint of a server that is already listening, such as Unreal's editor-hosted route")
             amend.add_argument(
                 "--scope", choices=["project", "user", "both"], default="project",
                 help="project: this game's session sees it. user/both: agents it spawns see it too, via a consented machine-wide write.",
@@ -2272,6 +2416,24 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--kind", required=True, choices=sorted(SCHEMA_FILES))
     validate.add_argument("--input", required=True)
     validate.add_argument("--output")
+    execution = sub.add_parser("exec", help="Hold leases and isolation for a work packet, transactionally")
+    execution_sub = execution.add_subparsers(dest="exec_command", required=True)
+    acquire_parser = execution_sub.add_parser("acquire", help="Take every lease and isolation the packet declares")
+    acquire_parser.add_argument("--project", required=True)
+    acquire_parser.add_argument("--packet", required=True)
+    acquire_parser.add_argument("--owner", help="Who holds the lease; defaults to the assigned host")
+    acquire_parser.add_argument("--host")
+    acquire_parser.add_argument("--apply", action="store_true")
+    acquire_parser.add_argument("--output")
+    release_parser = execution_sub.add_parser("release", help="Release a work order's leases and tear down isolation")
+    release_parser.add_argument("--project", required=True)
+    release_parser.add_argument("--work-order", dest="work_order", required=True)
+    release_parser.add_argument("--outcome", required=True, choices=["passed", "failed"])
+    release_parser.add_argument("--apply", action="store_true")
+    release_parser.add_argument("--output")
+    exec_status_parser = execution_sub.add_parser("status", help="Report held leases and stale ones awaiting recovery")
+    exec_status_parser.add_argument("--project", required=True)
+    exec_status_parser.add_argument("--output")
     lifecycle = sub.add_parser("lifecycle")
     lifecycle.add_argument("--project", required=True)
     lifecycle.add_argument("--event", default="status", choices=["status"])
@@ -2313,6 +2475,7 @@ def main(argv: list[str] | None = None) -> int:
                     command=getattr(args, "server_command", None),
                     args=getattr(args, "args", None),
                     scope=getattr(args, "scope", "project"),
+                    url=getattr(args, "url", None),
                 )
         elif args.command == "gsd-sync":
             root, _ = project_root(args.project)
@@ -2327,12 +2490,26 @@ def main(argv: list[str] | None = None) -> int:
                 result = host_set(args.project, args.host, apply=bool(args.apply))
         elif args.command == "route":
             result = route_work(args.project, args.request, args.host)
+        elif args.command == "exec":
+            if args.exec_command == "acquire":
+                result = execute_acquire(args.project, args.packet, args.owner, apply=bool(args.apply), host_override=args.host)
+            elif args.exec_command == "release":
+                result = execute_release(args.project, args.work_order, args.outcome, apply=bool(args.apply))
+            else:
+                result = execute_status(args.project)
         elif args.command == "lifecycle":
             result = lifecycle_state(args.project, args.event)
         else:
             result = validate_payload(args.kind, args.input)
         command_path = " ".join(
-            part for part in (args.command, getattr(args, "host_command", None), getattr(args, "mcp_command", None)) if part
+            part
+            for part in (
+                args.command,
+                getattr(args, "host_command", None),
+                getattr(args, "mcp_command", None),
+                getattr(args, "exec_command", None),
+            )
+            if part
         )
         carries_verdict = "ok" in result
         if command_path in VERDICT_COMMANDS and not carries_verdict:
@@ -2354,6 +2531,10 @@ def main(argv: list[str] | None = None) -> int:
         if command_path in VERDICT_COMMANDS:
             return EXIT_OK if result["ok"] else EXIT_CONTRACT
         return EXIT_OK
+    except executor.ExecutorError as exc:
+        translated = fail(str(exc), reason=exc.reason, code=EXIT_CONTRACT, **exc.extra)
+        print(json.dumps({**translated.payload(), "command": args.command}), file=sys.stderr)
+        return translated.code
     except ForgeExit as exc:
         print(json.dumps({**exc.payload(), "command": args.command}), file=sys.stderr)
         return exc.code

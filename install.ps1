@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'Lifecycle', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
+    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'Exec', 'Lifecycle', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
     [string]$Mode = 'Plugin',
     [ArgumentCompleter({
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -31,6 +31,13 @@ param(
     [string[]]$McpArg = @(),
     [ValidateSet('project', 'user', 'both')]
     [string]$McpScope,
+    [ValidateSet('acquire', 'release', 'status')]
+    [string]$ExecAction,
+    [string]$PacketPath,
+    [string]$WorkOrder,
+    [string]$Owner,
+    [ValidateSet('passed', 'failed')]
+    [string]$Outcome,
     [switch]$Apply,
     [string]$OutputPath
 )
@@ -206,6 +213,34 @@ if ($Mode -eq 'Mcp') {
             'Write declared servers into the machine-wide MCP configuration'
         } else {
             "Amend this project's typed tool routes"
+        }
+        if ($PSCmdlet.ShouldProcess($ProjectPath, $operation)) { $arguments += '--apply' }
+    }
+    if ($OutputPath) { $arguments += @('--output', $OutputPath) }
+    & python @arguments
+    exit $LASTEXITCODE
+}
+
+if ($Mode -eq 'Exec') {
+    if (-not $ProjectPath) { throw '-ProjectPath is required for Exec mode.' }
+    if (-not $ExecAction) { throw '-ExecAction is required for Exec mode. One of: acquire, release, status.' }
+    $arguments = @($forgeScript, 'exec', $ExecAction, '--project', $ProjectPath)
+    if ($ExecAction -eq 'acquire') {
+        if (-not $PacketPath) { throw '-PacketPath is required to acquire; the packet declares the leases and isolation.' }
+        $arguments += @('--packet', $PacketPath)
+        if ($Owner) { $arguments += @('--owner', $Owner) }
+        if ($PSBoundParameters.ContainsKey('RuntimeHost')) { $arguments += @('--host', $RuntimeHost) }
+    }
+    if ($ExecAction -eq 'release') {
+        if (-not $WorkOrder) { throw '-WorkOrder is required to release.' }
+        if (-not $Outcome) { throw '-Outcome is required to release. One of: passed, failed.' }
+        $arguments += @('--work-order', $WorkOrder, '--outcome', $Outcome)
+    }
+    if ($Apply -and $ExecAction -ne 'status') {
+        $operation = if ($ExecAction -eq 'acquire') {
+            'Take lane leases and establish worktree or LFS isolation'
+        } else {
+            'Release lane leases and tear down isolation'
         }
         if ($PSCmdlet.ShouldProcess($ProjectPath, $operation)) { $arguments += '--apply' }
     }

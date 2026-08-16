@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Isolation is enforced by the runtime, not by workflow compliance
+
+- Add `scripts/forge_executor.py` and the `forge.py exec acquire|release|status` verbs. Leases, Git worktrees and `git lfs lock` were described in `forge-route-work` and `directives.md` and implemented nowhere: the words "lease", "worktree" and "lfs" did not appear in `forge.py`, and `.forge/state/leases.json` shipped an `exclusive_groups` map nothing read or wrote. A guarantee that depends on an agent following prose is not a guarantee.
+- `exec acquire` resolves the base revision, refuses a lane already held or held in the same exclusive group, creates the worktree, takes each LFS lock, and rolls back every completed step when a later one fails. A lock it cannot take never becomes a lease it appears to hold.
+- The ledger is written atomically under a cross-process mutex, so two workers racing one lane produce a holder and a refusal rather than two writers. A test races two real processes and asserts exactly one wins with `lease_conflict`.
+- `exec acquire` expires leases past `expires_at` before checking conflicts, so a crashed session blocks its lane until expiry rather than forever.
+- `forge-route-work` steps 8, 9 and 15 call the executor instead of instructing the agent to take isolation by hand. Step 8 declares isolation, step 9 establishes it, and nothing else may.
+
+### Unreal's first-party MCP is the shipped route
+
+- Point `unreal-native-mcp` at Unreal Engine's own Unreal MCP plugin (`ModelContextProtocol` plus `AllToolsets`, Experimental since 5.8), which advertises itself as `unreal-mcp` — the server id the registry already named. The editor hosts it; Forge never starts it.
+- Support http transports. The renderer emitted `command`/`args`/`env` only, so an editor-hosted endpoint could not be expressed at all. `mcp add` now takes `--url`, and refuses a declaration naming both a command and a url.
+- A new project's `.forge/mcp.json` declares that route instead of shipping `servers: []`, so the layer that decides whether Unreal work is possible is no longer left for the user to choose.
+- Add the `mcp-http-handshake` probe kind: it sends a real MCP `initialize` to the declared endpoint. Passing earns `AVAILABLE_VERIFIED`, which a configuration file alone never did. Failing marks the route `UNAVAILABLE_OPTIONAL`, so work degrades to `ue.editor-closed-or-human` instead of dispatching into a closed editor.
+
 ### Resume as a first-class verb
 
 - Add `forge-resume-work`, fronting `gsd-resume-work`. Resuming was previously reachable only as `forge-handoff --resume`, which hid a daily command behind a flag on a verb named for pausing. `forge-handoff` now pauses only, and smart-entry's `gsd-resume-work` emission translates to `/forge-resume-work`.

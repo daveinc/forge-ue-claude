@@ -16,6 +16,7 @@ IGNORED_PARTS = {".git", ".tmp", "__pycache__"}
 
 COMMENT_FREE_SOURCES = (
     PLUGIN / "scripts" / "forge.py",
+    PLUGIN / "scripts" / "forge_executor.py",
     ROOT / "scripts" / "validate_repo.py",
     ROOT / "tests" / "test_forge.py",
     ROOT / "install.ps1",
@@ -246,8 +247,26 @@ def main() -> int:
         fail("Project MCP template must declare schema forge.project-mcp/v1", failures)
     if not isinstance(project_mcp.get("servers"), list):
         fail("Project MCP template must declare a servers array", failures)
-    elif project_mcp["servers"]:
-        fail("Project MCP template must ship empty; a project declares its own routes", failures)
+    else:
+        for entry in project_mcp["servers"]:
+            entry_id = str(entry.get("id", ""))
+            row = next((item for item in mcp_providers if str(item.get("id")) == entry_id), None)
+            if row is None:
+                fail(
+                    f"Project MCP template declares {entry_id!r}, which the MCP registry does not know. "
+                    "A shipped default must be a catalog route every project can resolve.",
+                    failures,
+                )
+                continue
+            transport = entry.get("transport") or {}
+            if not transport.get("url") and not transport.get("command"):
+                fail(f"Project MCP template entry {entry_id!r} declares no transport url or command", failures)
+            if transport.get("url") and row.get("probe") != "mcp-http-handshake":
+                fail(
+                    f"Project MCP template entry {entry_id!r} ships a url, so its registry probe must be "
+                    "mcp-http-handshake; a shipped endpoint has to be verifiable rather than assumed",
+                    failures,
+                )
 
     for host in hosts:
         host_id = host.get("id")

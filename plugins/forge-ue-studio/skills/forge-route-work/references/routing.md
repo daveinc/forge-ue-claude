@@ -17,6 +17,8 @@ Primary lanes include project-exclusive Unreal mutation, native live MCP, live P
 
 For concurrent text or code mutation, start each worker from the same clean immutable revision in a dedicated Git worktree and branch. Merge only after packet verification. Git worktrees do not make Unreal binary packages mergeable: use Git LFS locks or a project-exclusive lease for those assets. Reviewers receive a read-only artifact or diff and must not reuse the builder workspace.
 
+`forge.py exec acquire` establishes all of that, and nothing else may. It holds the ledger under a cross-process mutex while it checks the exclusive groups in `.forge/state/leases.json`, so two workers racing one lane produce a holder and a refusal rather than two writers. It rolls back on partial failure, so a lock it could not take never becomes a lease it appears to hold. A refusal is a routing input, not an obstacle to work around.
+
 Every packet declares immutable revision, referrals, write scope, lane leases, context budget, output contract, verification and invalidation hashes. Every result separates observations from inference and lists touched artifacts, evidence, residual risk and next action.
 
 The work order is resolved against `.forge/state/packet-registry.json` before provider scoring. A route request with an unknown ID fails closed. An alias resolves to its canonical ID and does not create a new packet identity.

@@ -10,7 +10,8 @@
     "Lane ids carry a lane. prefix. Capability ids never do, so a lane and a capability cannot collide in the same namespace."
   ],
   "probe_kinds": {
-    "mcp-server-declared": "The server id appears in an MCP client configuration the host declares in hosts/registry.json mcp.config_paths. Read-only: it inspects configuration and never starts, installs, or contacts a server."
+    "mcp-server-declared": "The server id appears in an MCP client configuration the host declares in hosts/registry.json mcp.config_paths. Read-only: it inspects configuration and never starts, installs, or contacts a server.",
+    "mcp-http-handshake": "The server answers an MCP initialize request at its declared http endpoint. Contacts a server already running on this machine; never starts, installs, or writes anything. A pass is evidence the route is live, so it earns AVAILABLE_VERIFIED where a declaration alone earns only AVAILABLE_UNVERIFIED."
   },
   "lanes": {
     "lane.ue-editor": "Live Unreal editor session. Exclusive: native typed calls, live scripting, editor-closed commandlets and human editor work all contend for it.",
@@ -21,6 +22,8 @@
       "id": "unreal-native-mcp",
       "server": "unreal-mcp",
       "kind": "mcp",
+      "vendor": "epic-games",
+      "implementation": "Unreal Engine's first-party Unreal MCP plugin (ModelContextProtocol), Experimental since 5.8. The editor hosts the server; Forge never starts it.",
       "capabilities": [
         "ue.live.typed",
         "ue.pie",
@@ -32,7 +35,20 @@
       "requires_host_provides": [
         "mcp-client"
       ],
-      "probe": "mcp-server-declared",
+      "requires_engine": {
+        "min_version": "5.8",
+        "uproject_plugins": [
+          "ModelContextProtocol",
+          "AllToolsets"
+        ],
+        "note": "ModelContextProtocol serves the endpoint; without AllToolsets it advertises no tools. The editor must be open for the route to answer."
+      },
+      "transport_default": {
+        "type": "http",
+        "url": "http://127.0.0.1:8000/mcp"
+      },
+      "tool_surface": "Discovery mode by default: list_toolsets, describe_toolset and call_tool stand in for the full tool set, so the schema stays small. Treat named tools as discovered at runtime, never as a fixed contract.",
+      "probe": "mcp-http-handshake",
       "fallbacks": [
         "ue.editor-closed-or-human"
       ],

@@ -47,6 +47,14 @@ Adopt a project directory — an empty one is fine:
 .\install.ps1 -Mode Install -ProjectPath "D:\Unreal Projects\MyGame" -Apply
 ```
 
+A new project declares Unreal's first-party MCP route at `http://127.0.0.1:8000/mcp`. To bind it, enable the **Unreal MCP** (`ModelContextProtocol`) and **AllToolsets** plugins in your `.uproject`, keep the editor open, and check the route:
+
+```powershell
+.\install.ps1 -Mode McpStatus -ProjectPath "D:\Unreal Projects\MyGame"
+```
+
+`AVAILABLE_VERIFIED` means the endpoint answered an MCP handshake. Anything else means Unreal work degrades to the editor-closed or human route.
+
 Then open a **fresh session in that directory** and say:
 
 ```text
@@ -105,7 +113,11 @@ python -m unittest discover -s tests -v
 
 Verified by the included tests: manifest/skill/schema structure, host registry and prerequisite contract, host-surface rendering and byte-identical swap round-trip, cross-host qualification staleness, verb translation and suppression of out-of-scope actions, GSD runtime-key sync across swaps, the bootstrap closure gate, resident/offload policy, typed tool routing and user-scope consent, result-contract validation, and idempotent overlay reapplication.
 
-Assumed until probed on a target workstation: actual Unreal/MCP/VibeUE/Blender/local-model capabilities and their performance rankings.
+Also verified against real Git: a lane lease refuses a second holder of the same lane or exclusive group, two racing processes produce one holder and one refusal, failed isolation leaves no lease behind, worktrees are created from the named revision and discarded on a failed outcome, and an expired lease is recovered rather than inherited.
+
+Assumed until probed on a target workstation: Unreal/VibeUE/Blender/local-model capabilities and their performance rankings. The Unreal MCP route is no longer one of them — `forge.py mcp-status` handshakes the editor's endpoint and reports `AVAILABLE_VERIFIED` only when it answers.
+
+Not covered by CI: nothing here launches Unreal. The tests run on `windows-latest` with no engine, so the Claude → MCP → editor → Blueprint → PIE path is proven on a workstation with the editor open, never by a green build.
 
 ## License
 

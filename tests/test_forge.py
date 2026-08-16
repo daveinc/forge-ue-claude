@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FORGE_PATH = ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge.py"
+EXECUTOR_PATH = ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge_executor.py"
 TEMP_ROOT = Path(tempfile.gettempdir()) / "forge-ue-studio-tests"
 TEMP_ROOT.mkdir(parents=True, exist_ok=True)
 SPEC = importlib.util.spec_from_file_location("forge_cli", FORGE_PATH)
@@ -1012,21 +1013,49 @@ class ProjectMcpTests(unittest.TestCase):
             forge.install_overlay(str(root), apply=True)
             yield root
 
-    def test_a_new_project_starts_with_an_amendable_declaration(self):
+    def test_a_new_project_ships_the_first_party_unreal_route(self):
+        """The Unreal layer is not left for the user to choose: the template declares it."""
         with self.game() as root:
             self.assertTrue((root / ".forge" / "mcp.json").is_file())
-            self.assertEqual(forge.resolve_project_servers(root), [])
+            declared = forge.resolve_project_servers(root)
+            self.assertEqual([item["id"] for item in declared], ["unreal-native-mcp"])
+            self.assertEqual(declared[0]["transport"]["type"], "http")
+            self.assertTrue(declared[0]["transport"]["url"].endswith("/mcp"))
 
     def test_declared_server_reaches_the_session_surface(self):
         with self.game() as root:
-            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx", args=["unreal-mcp"])
+            forge.mcp_amend(root, self.profile, "add", "blender-gateway", apply=True, command="uvx", args=["blender-mcp"])
             surface = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
-            self.assertIn("unreal-mcp", surface["mcpServers"])
-            self.assertEqual(surface["mcpServers"]["unreal-mcp"]["command"], "uvx")
+            self.assertIn("blender-mcp", surface["mcpServers"])
+            self.assertEqual(surface["mcpServers"]["blender-mcp"]["command"], "uvx")
+
+    def test_a_declared_route_whose_probe_fails_is_unavailable_not_unverified(self):
+        """Knowing a route is dead must degrade it to its fallback, not leave it dispatchable."""
+        with self.game() as root:
+            route = next(
+                item for item in forge.mcp_status(root, self.profile)["routes"]
+                if item["provider"] == "unreal-native-mcp"
+            )
+            self.assertTrue(route["declared_in_project"])
+            self.assertFalse(route["live"])
+            self.assertEqual(route["status"], "UNAVAILABLE_OPTIONAL")
+            contract = next(
+                item for item in forge.mcp_capability_contracts(root, self.profile)
+                if item["capability"] == "ue.live.typed"
+            )
+            self.assertEqual(contract["health"], "UNAVAILABLE")
+            self.assertEqual(contract["fallbacks"], ["ue.editor-closed-or-human"])
+
+    def test_an_editor_hosted_server_renders_as_a_url_forge_never_starts(self):
+        with self.game() as root:
+            surface = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
+            entry = surface["mcpServers"]["unreal-mcp"]
+            self.assertEqual(entry["type"], "http")
+            self.assertEqual(entry["url"], "http://127.0.0.1:8000/mcp")
+            self.assertNotIn("command", entry)
 
     def test_a_catalog_entry_inherits_its_routing_fields(self):
         with self.game() as root:
-            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
             resolved = forge.resolve_project_servers(root)[0]
             self.assertEqual(resolved["source"], "catalog")
             self.assertEqual(resolved["lane"], "lane.ue-editor")
@@ -1075,7 +1104,6 @@ class ProjectMcpTests(unittest.TestCase):
 
     def test_rendering_preserves_servers_forge_does_not_own(self):
         with self.game() as root:
-            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
             surface = root / ".mcp.json"
             document = json.loads(surface.read_text(encoding="utf-8"))
             document["mcpServers"]["hand-added"] = {"command": "node"}
@@ -1088,7 +1116,6 @@ class ProjectMcpTests(unittest.TestCase):
 
     def test_disabling_withdraws_only_that_server(self):
         with self.game() as root:
-            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
             forge.mcp_amend(root, self.profile, "add", "blender-gateway", apply=True, command="uvx")
             forge.mcp_amend(root, self.profile, "disable", "blender-gateway", apply=True)
             servers = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]
@@ -1098,34 +1125,35 @@ class ProjectMcpTests(unittest.TestCase):
     def test_dry_run_amend_writes_nothing(self):
         with self.game() as root:
             before = (root / ".forge" / "mcp.json").read_text(encoding="utf-8")
-            result = forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=False, command="uvx")
+            surface_before = (root / ".mcp.json").read_text(encoding="utf-8")
+            result = forge.mcp_amend(root, self.profile, "add", "blender-gateway", apply=False, command="uvx")
             self.assertEqual(result["mode"], "dry-run")
             self.assertEqual((root / ".forge" / "mcp.json").read_text(encoding="utf-8"), before)
-            self.assertFalse((root / ".mcp.json").exists())
+            self.assertEqual((root / ".mcp.json").read_text(encoding="utf-8"), surface_before)
 
     def test_an_unroutable_amendment_never_lands_on_disk(self):
         with self.game() as root:
             declaration = root / ".forge" / "mcp.json"
             before = declaration.read_text(encoding="utf-8")
+            surface_before = (root / ".mcp.json").read_text(encoding="utf-8")
             with self.assertRaises(forge.ForgeExit) as caught:
                 forge.mcp_amend(root, self.profile, "add", "some-new-tool", apply=True, command="node")
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["MCP_INCOMPLETE_DECLARATION"])
             self.assertEqual(declaration.read_text(encoding="utf-8"), before)
-            self.assertFalse((root / ".mcp.json").exists())
+            self.assertEqual((root / ".mcp.json").read_text(encoding="utf-8"), surface_before)
 
     def test_status_separates_the_declared_scope_from_where_the_probe_found_it(self):
         with self.game() as root:
-            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="both")
+            forge.mcp_amend(root, self.profile, "add", "blender-gateway", apply=True, command="uvx", scope="both")
             route = next(
                 item for item in forge.mcp_status(root, self.profile)["routes"]
-                if item["provider"] == "unreal-native-mcp"
+                if item["provider"] == "blender-gateway"
             )
             self.assertEqual(route["scope"], "both")
             self.assertEqual(route["found_in_scope"], "project")
 
     def test_status_reports_session_visibility_from_the_project(self):
         with self.game() as root:
-            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
             status = forge.mcp_status(root, self.profile)
             route = next(item for item in status["routes"] if item["provider"] == "unreal-native-mcp")
             self.assertTrue(route["declared_in_project"])
@@ -1137,7 +1165,6 @@ class ProjectMcpTests(unittest.TestCase):
         """A hand-edited surface is a LOCAL_VARIANT like any rendered file, and
         status reports the lost server by probing rather than diffing."""
         with self.game() as root:
-            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
             surface_path = str((root / ".mcp.json").resolve())
             checks = {c["path"]: c for c in forge.verify_overlay(str(root), "claude")["checks"]}
             tracked = next(c for path, c in checks.items() if Path(path).name == ".mcp.json")
@@ -1157,7 +1184,6 @@ class ProjectMcpTests(unittest.TestCase):
 
     def test_a_host_without_a_project_surface_renders_nothing(self):
         with self.game() as root:
-            forge.mcp_amend(root, self.profile, "add", "unreal-native-mcp", apply=True, command="uvx")
             self.assertIsNone(forge.render_project_mcp(root, forge.host_profile("codex"), root))
 
 
@@ -1199,16 +1225,20 @@ class FailureContractTests(unittest.TestCase):
         self.assertEqual(payload["command"], "host")
 
     def test_every_declared_reason_is_reachable_from_a_call_site(self):
-        source = FORGE_PATH.read_text(encoding="utf-8")
+        """Reasons the executor owns are raised in its own module, so both are scanned."""
+        source = FORGE_PATH.read_text(encoding="utf-8") + EXECUTOR_PATH.read_text(encoding="utf-8")
         declared = set(forge.ERROR_REASON)
-        used = {key for key in declared if f'ERROR_REASON["{key}"]' in source}
+        used = {
+            key for key in declared
+            if f'ERROR_REASON["{key}"]' in source or f'ERROR_REASONS["{key}"]' in source
+        }
         self.assertEqual(sorted(declared - used), [])
 
     def test_no_declared_failure_still_raises_a_bare_value_error(self):
-        """The one permitted site guards the ERROR_REASON enum itself."""
-        source = FORGE_PATH.read_text(encoding="utf-8")
-        sites = re.findall(r"raise ValueError\(", source)
-        self.assertEqual(len(sites), 1, "only the ERROR_REASON self-check may raise ValueError")
+        """One permitted site per module, guarding that module's reason enum."""
+        for path in (FORGE_PATH, EXECUTOR_PATH):
+            sites = re.findall(r"raise ValueError\(", path.read_text(encoding="utf-8"))
+            self.assertEqual(len(sites), 1, f"only the reason self-check may raise ValueError in {path.name}")
 
     def test_logic_never_calls_sys_exit(self):
         """Checked structurally: a textual scan would match the prose explaining
@@ -1353,7 +1383,7 @@ class UserScopeMcpTests(unittest.TestCase):
 
     def test_project_scope_stays_out_of_user_scope(self):
         with self.game() as (root, profile, user_file):
-            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="project")
+            forge.mcp_amend(root, profile, "add", "blender-gateway", apply=True, command="uvx", scope="project")
             plan = forge.sync_user_mcp(root, profile, apply=False)
             self.assertEqual(plan["wanted"], [])
             self.assertEqual(plan["planned"], [])
@@ -1361,20 +1391,21 @@ class UserScopeMcpTests(unittest.TestCase):
 
     def test_user_scope_only_stays_out_of_the_project_surface(self):
         with self.game() as (root, profile, _):
-            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
-            self.assertIsNone(forge.render_project_mcp(root, profile, root))
+            forge.mcp_amend(root, profile, "add", "blender-gateway", apply=True, command="uvx", scope="user")
+            rendered = forge.render_project_mcp(root, profile, root)
+            self.assertNotIn("blender-mcp", json.loads(rendered[1].decode("utf-8"))["mcpServers"])
 
     def test_both_reaches_each_surface(self):
         with self.game() as (root, profile, user_file):
-            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="both")
+            forge.mcp_amend(root, profile, "add", "blender-gateway", apply=True, command="uvx", scope="both")
             project = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
-            self.assertIn("unreal-mcp", project["mcpServers"])
+            self.assertIn("blender-mcp", project["mcpServers"])
             forge.sync_user_mcp(root, profile, apply=True)
-            self.assertIn("unreal-mcp", json.loads(user_file.read_text(encoding="utf-8"))["mcpServers"])
+            self.assertIn("blender-mcp", json.loads(user_file.read_text(encoding="utf-8"))["mcpServers"])
 
     def test_sync_is_a_plan_until_asked(self):
         with self.game() as (root, profile, user_file):
-            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            forge.mcp_amend(root, profile, "add", "blender-gateway", apply=True, command="uvx", scope="user")
             plan = forge.sync_user_mcp(root, profile, apply=False)
             self.assertEqual(plan["mode"], "dry-run")
             self.assertFalse(plan["applied"])
@@ -1388,18 +1419,18 @@ class UserScopeMcpTests(unittest.TestCase):
                 "projects": {"/elsewhere": {"history": ["a", "b"]}},
                 "mcpServers": {"someone-elses": {"command": "node"}},
             }), encoding="utf-8")
-            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            forge.mcp_amend(root, profile, "add", "blender-gateway", apply=True, command="uvx", scope="user")
             forge.sync_user_mcp(root, profile, apply=True)
             after = json.loads(user_file.read_text(encoding="utf-8"))
             self.assertEqual(after["numStartups"], 42)
             self.assertEqual(after["projects"], {"/elsewhere": {"history": ["a", "b"]}})
             self.assertIn("someone-elses", after["mcpServers"])
-            self.assertIn("unreal-mcp", after["mcpServers"])
+            self.assertIn("blender-mcp", after["mcpServers"])
 
     def test_applying_backs_up_and_records_consent(self):
         with self.game() as (root, profile, user_file):
             user_file.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
-            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            forge.mcp_amend(root, profile, "add", "blender-gateway", apply=True, command="uvx", scope="user")
             result = forge.sync_user_mcp(root, profile, apply=True)
             self.assertTrue(Path(result["backup"]).is_file())
             ledger = json.loads((root / ".forge" / "capabilities" / "consent-ledger.json").read_text(encoding="utf-8"))
@@ -1407,31 +1438,31 @@ class UserScopeMcpTests(unittest.TestCase):
 
     def test_withdrawing_reclaims_only_an_unmodified_entry(self):
         with self.game() as (root, profile, user_file):
-            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            forge.mcp_amend(root, profile, "add", "blender-gateway", apply=True, command="uvx", scope="user")
             forge.sync_user_mcp(root, profile, apply=True)
-            forge.mcp_amend(root, profile, "disable", "unreal-native-mcp", apply=True)
+            forge.mcp_amend(root, profile, "disable", "blender-gateway", apply=True)
             forge.sync_user_mcp(root, profile, apply=True)
-            self.assertNotIn("unreal-mcp", json.loads(user_file.read_text(encoding="utf-8"))["mcpServers"])
+            self.assertNotIn("blender-mcp", json.loads(user_file.read_text(encoding="utf-8"))["mcpServers"])
 
     def test_a_hand_edited_entry_is_reported_not_reclaimed(self):
         with self.game() as (root, profile, user_file):
-            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            forge.mcp_amend(root, profile, "add", "blender-gateway", apply=True, command="uvx", scope="user")
             forge.sync_user_mcp(root, profile, apply=True)
             document = json.loads(user_file.read_text(encoding="utf-8"))
-            document["mcpServers"]["unreal-mcp"] = {"command": "my-own-wrapper"}
+            document["mcpServers"]["blender-mcp"] = {"command": "my-own-wrapper"}
             user_file.write_text(json.dumps(document), encoding="utf-8")
-            forge.mcp_amend(root, profile, "disable", "unreal-native-mcp", apply=True)
+            forge.mcp_amend(root, profile, "disable", "blender-gateway", apply=True)
             plan = forge.sync_user_mcp(root, profile, apply=False)
             retained = [c for c in plan["planned"] if c["action"] == "retain-modified"]
-            self.assertEqual([c["server"] for c in retained], ["unreal-mcp"])
+            self.assertEqual([c["server"] for c in retained], ["blender-mcp"])
             forge.sync_user_mcp(root, profile, apply=True)
             after = json.loads(user_file.read_text(encoding="utf-8"))
-            self.assertEqual(after["mcpServers"]["unreal-mcp"], {"command": "my-own-wrapper"})
+            self.assertEqual(after["mcpServers"]["blender-mcp"], {"command": "my-own-wrapper"})
 
     def test_an_unparseable_config_is_never_rewritten(self):
         with self.game() as (root, profile, user_file):
             user_file.write_text("{ this is not json", encoding="utf-8")
-            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            forge.mcp_amend(root, profile, "add", "blender-gateway", apply=True, command="uvx", scope="user")
             result = forge.sync_user_mcp(root, profile, apply=True)
             self.assertEqual(result["mode"], "blocked")
             self.assertFalse(result["applied"])
@@ -1439,7 +1470,7 @@ class UserScopeMcpTests(unittest.TestCase):
 
     def test_a_host_forge_may_not_write_reports_instead(self):
         with self.game(host="codex") as (root, profile, _):
-            forge.mcp_amend(root, profile, "add", "unreal-native-mcp", apply=True, command="uvx", scope="user")
+            forge.mcp_amend(root, profile, "add", "blender-gateway", apply=True, command="uvx", scope="user")
             result = forge.sync_user_mcp(root, profile, apply=True)
             self.assertEqual(result["mode"], "report-only")
             self.assertFalse(result["applied"])
@@ -1811,6 +1842,193 @@ class McpGateTests(unittest.TestCase):
         code, output = self._validate(mutate)
         self.assertEqual(code, 1)
         self.assertIn("catalog fallback", output)
+
+
+class ExecutorTests(unittest.TestCase):
+    """Isolation is a property of the runtime, not of an agent following instructions."""
+
+    @contextmanager
+    def game(self):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            for command in (
+                ["git", "init", "-b", "main"],
+                ["git", "config", "user.email", "forge@test.invalid"],
+                ["git", "config", "user.name", "Forge Test"],
+                ["git", "add", "-A"],
+                ["git", "commit", "-m", "base"],
+            ):
+                subprocess.run(command, cwd=str(root), capture_output=True, check=True)
+            yield root
+
+    def packet(self, work_order, lane, mode="project-exclusive", write_scope=None, **isolation):
+        return {
+            "work_order": work_order,
+            "leases": [lane],
+            "write_scope": write_scope if write_scope is not None else ["project-files"],
+            "isolation": {"mode": mode, "base_revision": "HEAD", **isolation},
+        }
+
+    def active_lanes(self, root):
+        return [
+            lease["lane"]
+            for lease in forge.executor.status(root)["active"]
+        ]
+
+    def test_two_workers_in_one_exclusive_group_cannot_both_hold(self):
+        """The group is declared in leases.json; the runtime, not the workflow, enforces it."""
+        with self.game() as root:
+            forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(root, self.packet("WO-2", "human-editor"), owner="worker-b", apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
+            self.assertEqual(caught.exception.extra["conflicts"][0]["work_order"], "WO-1")
+            self.assertEqual(self.active_lanes(root), ["ue-live-native-mcp"])
+
+    def test_lanes_outside_the_group_still_run_concurrently(self):
+        with self.game() as root:
+            forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
+            forge.executor.acquire(
+                root,
+                self.packet("WO-2", "lane.dcc-authoring", write_scope=["dcc-workspace"]),
+                owner="worker-b",
+                apply=True,
+            )
+            self.assertEqual(sorted(self.active_lanes(root)), ["lane.dcc-authoring", "ue-live-native-mcp"])
+
+    def test_a_second_holder_of_the_same_lane_is_refused(self):
+        with self.game() as root:
+            forge.executor.acquire(root, self.packet("WO-1", "ue-live-python"), owner="worker-a", apply=True)
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(root, self.packet("WO-2", "ue-live-python"), owner="worker-b", apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
+
+    def test_an_expired_lease_is_recovered_rather_than_inherited(self):
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
+            )
+            result = forge.executor.acquire(
+                root, self.packet("WO-2", "ue-live-native-mcp"), owner="worker-b", apply=True
+            )
+            self.assertEqual(len(result["recovered_stale"]), 1)
+            self.assertEqual(self.active_lanes(root), ["ue-live-native-mcp"])
+            self.assertEqual(forge.executor.status(root)["active"][0]["work_order"], "WO-2")
+
+    def test_a_worktree_is_created_from_the_named_revision(self):
+        with self.game() as root:
+            result = forge.executor.acquire(
+                root,
+                self.packet("WO-1", "project-files", mode="git-worktree", branch="forge/WO-1"),
+                owner="worker-a",
+                apply=True,
+            )
+            self.assertTrue((root / result["workspace"]).is_dir())
+            self.assertEqual(result["base_revision"], result["leases"][0]["isolation"]["base_revision"])
+
+    def test_failed_isolation_leaves_no_lease_behind(self):
+        """Rollback is the point: a half-entered transaction is worse than a refusal."""
+        with self.game() as root:
+            packet = self.packet("WO-1", "project-files", mode="git-worktree")
+            packet["isolation"]["base_revision"] = "no-such-revision"
+            with self.assertRaises(forge.executor.ExecutorError):
+                forge.executor.acquire(root, packet, owner="worker-a", apply=True)
+            self.assertEqual(self.active_lanes(root), [])
+
+    def test_a_lock_that_cannot_be_taken_never_becomes_a_held_lease(self):
+        """No LFS remote here, so the lock fails. The lease must fail with it."""
+        with self.game() as root:
+            packet = self.packet(
+                "WO-1", "generated-assets", mode="lfs-lock", lock_targets=["Content/Maps/Main.umap"]
+            )
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(root, packet, owner="worker-a", apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ISOLATION_FAILED"])
+            self.assertEqual(self.active_lanes(root), [])
+
+    def test_release_frees_the_lane_for_the_next_worker(self):
+        with self.game() as root:
+            forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
+            forge.executor.release(root, "WO-1", outcome="passed", apply=True)
+            self.assertEqual(self.active_lanes(root), [])
+            forge.executor.acquire(root, self.packet("WO-2", "human-editor"), owner="worker-b", apply=True)
+            self.assertEqual(self.active_lanes(root), ["human-editor"])
+
+    def test_a_failed_outcome_discards_the_workspace_a_passed_one_keeps_it(self):
+        with self.game() as root:
+            kept = forge.executor.acquire(
+                root, self.packet("WO-1", "project-files", mode="git-worktree"), owner="worker-a", apply=True
+            )
+            forge.executor.release(root, "WO-1", outcome="passed", apply=True)
+            self.assertTrue((root / kept["workspace"]).is_dir())
+
+            discarded = forge.executor.acquire(
+                root,
+                self.packet("WO-2", "project-files", mode="git-worktree", workspace=".forge/workspaces/WO-2"),
+                owner="worker-b",
+                apply=True,
+            )
+            forge.executor.release(root, "WO-2", outcome="failed", apply=True)
+            self.assertFalse((root / discarded["workspace"]).exists())
+
+    def test_releasing_something_never_held_is_refused(self):
+        with self.game() as root:
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.release(root, "WO-never", outcome="passed", apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_UNKNOWN"])
+
+    def test_a_dry_run_reports_the_plan_and_holds_nothing(self):
+        with self.game() as root:
+            result = forge.executor.acquire(
+                root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=False
+            )
+            self.assertEqual(result["mode"], "dry-run")
+            self.assertTrue(any(step["step"] == "acquire-lease" for step in result["plan"]))
+            self.assertEqual(self.active_lanes(root), [])
+
+    def test_a_dry_run_still_reports_a_conflict_before_anything_is_taken(self):
+        with self.game() as root:
+            forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(root, self.packet("WO-2", "human-editor"), owner="worker-b", apply=False)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
+
+    def test_a_packet_that_mutates_without_naming_a_lease_is_refused(self):
+        with self.game() as root:
+            packet = self.packet("WO-1", "ue-live-native-mcp")
+            packet["leases"] = []
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(root, packet, owner="worker-a", apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["PACKET_INVALID"])
+
+    def test_two_processes_racing_the_same_lane_produce_exactly_one_holder(self):
+        """The ledger is guarded by a real mutex, so the race has one winner, not two."""
+        with self.game() as root:
+            packets = []
+            for name in ("WO-A", "WO-B"):
+                path = root / f"{name}.json"
+                path.write_text(json.dumps(self.packet(name, "ue-live-native-mcp")), encoding="utf-8")
+                packets.append(path)
+            running = [
+                subprocess.Popen(
+                    [sys.executable, str(FORGE_PATH), "exec", "acquire", "--project", str(root),
+                     "--packet", str(path), "--owner", path.stem, "--apply"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                for path in packets
+            ]
+            results = []
+            for process in running:
+                _, errors = process.communicate()
+                results.append((process.returncode, errors.decode("utf-8", "replace")))
+            codes = sorted(code for code, _ in results)
+            self.assertEqual(codes, [0, forge.EXIT_CONTRACT])
+            loser = next(errors for code, errors in results if code == forge.EXIT_CONTRACT)
+            self.assertEqual(json.loads(loser)["reason"], forge.ERROR_REASON["LEASE_CONFLICT"])
+            self.assertEqual(self.active_lanes(root), ["ue-live-native-mcp"])
 
 
 if __name__ == "__main__":
