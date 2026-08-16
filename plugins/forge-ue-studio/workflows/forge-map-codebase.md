@@ -2,7 +2,7 @@
 
 ## CORE — GSD
 
-1. Contain GSD's codebase mappers.
+1. Run GSD's codebase mappers.
 
 ## POST — Forge
 

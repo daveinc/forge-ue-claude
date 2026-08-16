@@ -6,7 +6,7 @@
 
 ## CORE — GSD
 
-1. Contain the matching GSD workflow for the requested mode: `--new`, `--complete`, `--audit`, or `--summary`.
+1. Run the matching GSD workflow for the requested mode: `--new`, `--complete`, `--audit`, or `--summary`.
 
 ## POST — Forge
 

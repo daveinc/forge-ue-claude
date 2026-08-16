@@ -6,7 +6,7 @@
 
 ## CORE — GSD
 
-1. Contain GSD's onboarding.
+1. Run GSD's onboarding.
 
 ## POST — Forge
 

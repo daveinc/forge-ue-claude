@@ -12,7 +12,7 @@ description: Add, insert, remove, or edit phases in the roadmap
 <objective>
 Change the plan of record.
 
-Delegation: contain. Orchestrator role: load the packet registry, contain GSD's phase CRUD, then verify no canonical packet ID was replaced.
+Delegation: run. Orchestrator role: load the packet registry, run GSD's phase CRUD, then verify no canonical packet ID was replaced.
 </objective>
 
 <flags>

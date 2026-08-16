@@ -16,7 +16,6 @@ Spell a skill the way your host expects: `/forge-next` in Claude Code, `$forge-n
 | `forge-mvp-phase` | Reducing a phase to the thinnest playable loop, and splitting it if it is too big. |
 | `forge-discuss-phase` | Settling gameplay and art decisions for a phase before a plan exists. Modes: `--assumptions` (codebase-first, best on an existing project), `--power` (batch all questions), `--list-assumptions`. |
 | `forge-plan-phase` | Turning a discussed phase into plans that declare asset interfaces, lanes, and mutation risk. `--dependencies` detects file overlap between phases and feeds the lane leases. |
-| `forge-execute-phase` | Running approved plans under the Unreal write-lock and lane leases. |
 | `forge-verify-work` | Validating completed work through UAT plus in-engine evidence. |
 | `forge-progress` | Checking phase state, execution coverage, and the next action. |
 | `forge-phase` | Adding, inserting, removing, or editing phases in the roadmap. |
@@ -37,7 +36,7 @@ Spell a skill the way your host expects: `/forge-next` in Claude Code, `$forge-n
 | Skill | Use it when |
 |---|---|
 | `forge-visual-production` | Concept boards, character/world direction, asset breakdowns, meshes, rigs, animation, materials, or Unreal art integration. |
-| `forge-route-work` | Compiling and dispatching bounded work packets across available studio lanes. |
+| `forge-route-work` | Compiling and dispatching bounded work packets across available studio lanes, and running an approved phase under the Unreal write-lock and lane leases. |
 | `forge-capability-admin` | Registering, consenting to, testing, activating, or invalidating an optional tool or model route. |
 | `forge-research` | Teaching Forge about a new MCP, API, CLI, model, documentation set, or project corpus. |
 
@@ -75,7 +74,7 @@ A full phase then runs:
 ```text
 forge-spec-phase   (optional, when the goal is contested)
 forge-discuss-phase  ->  forge-plan-phase  ->  forge-plan-convergence
-                     ->  forge-execute-phase  ->  forge-review
+                     ->  forge-route-work     ->  forge-review
                      ->  forge-verify-work  ->  forge-progress
 ```
 

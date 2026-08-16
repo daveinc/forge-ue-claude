@@ -12,7 +12,7 @@ description: Report phase state, execution coverage, and the next action
 <objective>
 Report where the project stands.
 
-Delegation: contain. Orchestrator role: contain GSD's progress reporting, then add Forge's execution-coverage and capability-staleness views. Never mutates phase state.
+Delegation: run. Orchestrator role: run GSD's progress reporting, then add Forge's execution-coverage and capability-staleness views. Never mutates phase state.
 </objective>
 
 <execution_context>

@@ -10,7 +10,7 @@
 
 ## CORE — GSD
 
-1. Contain one workflow per requested mode: no flag runs `review.md` against the active phase plan, `--code` runs `code-review.md` against source changed during the phase, `--security` runs `secure-phase.md` against the plan's threat model, `--audit` runs `audit-uat.md` across phases. Give each subagent the scope, acceptance criteria, and artifacts only.
+1. Run one workflow per requested mode: no flag runs `review.md` against the active phase plan, `--code` runs `code-review.md` against source changed during the phase, `--security` runs `secure-phase.md` against the plan's threat model, `--audit` runs `audit-uat.md` across phases. Load each workflow from disk and give it the scope, acceptance criteria, and artifacts only.
 2. Require a structured result from each: findings with severity, the evidence behind each, and an explicit verdict. Merge multiple modes into one verdict.
 
 ## POST — Forge

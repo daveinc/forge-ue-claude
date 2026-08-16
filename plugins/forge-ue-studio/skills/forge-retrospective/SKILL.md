@@ -12,7 +12,7 @@ description: Run read-only failure forensics and extract evidence-backed learnin
 <objective>
 Explain what happened before changing it, then preserve only defensible learning.
 
-Delegation: native for forensics, contain for extraction. Orchestrator role: freeze repair, ground every anomaly in evidence, then quarantine new records.
+Delegation: native for forensics, run for extraction. Orchestrator role: freeze repair, ground every anomaly in evidence, then quarantine new records.
 </objective>
 
 <execution_context>

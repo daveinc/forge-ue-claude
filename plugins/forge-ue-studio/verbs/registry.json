@@ -10,12 +10,12 @@
     },
     "via": {
       "command": "GSD installs a skill of this name; smart-entry can emit it, so translation matters.",
-      "workflow": "No GSD command of this name exists \u2014 the workflow is reached through a parent skill or internally. Forge fronts the workflow file directly under containment."
+      "workflow": "No GSD command of this name exists — the workflow is reached through a parent skill or internally. Forge fronts the workflow file directly under containment."
     }
   },
   "delegation_modes": {
-    "contain": "Forge spawns a subagent that reads and follows the stock GSD workflow on disk and returns a structured result. The transcript stays inside the subagent, so a routed action is always a Forge verb carrying Forge's gates.",
-    "relay": "The workflow is interactive and cannot be black-boxed. Forge relays each question in game-dev framing and passes answers back down, translating any action identifier it surfaces.",
+    "run": "Forge loads the stock GSD workflow from disk and runs it end to end in this session, with Forge's PRE before and POST after. GSD's own typed agents still spawn as its workflow directs.",
+    "relay": "The workflow is interactive. Forge relays each question in game-dev framing and passes answers back down, translating any action identifier it surfaces.",
     "native": "Forge owns the behaviour outright. No GSD workflow is involved."
   },
   "verbs": [
@@ -50,17 +50,17 @@
       "forge": "forge-plan-phase",
       "gsd": "gsd-plan-phase",
       "gsd_workflow": "plan-phase.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Plans must declare asset interfaces, required lanes, and mutation risk for routing.",
       "disposition": "front",
       "via": "command"
     },
     {
-      "forge": "forge-execute-phase",
+      "forge": "forge-route-work",
       "gsd": "gsd-execute-phase",
       "gsd_workflow": "execute-phase.md",
-      "delegation": "contain",
-      "adaptation": "Acquires the Unreal project write-lock and lane leases before dispatch; releases them after.",
+      "delegation": "run",
+      "adaptation": "Runs under the Unreal project write-lock and lane leases that route-work already holds, and records the route each capability actually took.",
       "disposition": "front",
       "via": "command"
     },
@@ -77,7 +77,7 @@
       "forge": "forge-progress",
       "gsd": "gsd-progress",
       "gsd_workflow": "progress.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Adds execution-coverage and capability-staleness reporting.",
       "disposition": "front",
       "via": "command"
@@ -86,7 +86,7 @@
       "forge": "forge-phase",
       "gsd": "gsd-phase",
       "gsd_workflow": "add-phase.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Canonical packet IDs must be preserved across phase CRUD.",
       "disposition": "front",
       "via": "command"
@@ -95,7 +95,7 @@
       "forge": "forge-milestone",
       "gsd": "gsd-complete-milestone",
       "gsd_workflow": "complete-milestone.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Folds new/complete/audit/summary into one verb-based skill.",
       "disposition": "front",
       "via": "command"
@@ -104,7 +104,7 @@
       "forge": "forge-onboard",
       "gsd": "gsd-onboard",
       "gsd_workflow": "onboard.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Maps Content/, Blueprints, and C++ modules, not only source.",
       "disposition": "front",
       "via": "command"
@@ -113,7 +113,7 @@
       "forge": "forge-ingest-docs",
       "gsd": "gsd-ingest-docs",
       "gsd_workflow": "ingest-docs.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Design documents feed the GDD decision ledger.",
       "disposition": "front",
       "via": "command"
@@ -122,7 +122,7 @@
       "forge": "forge-review",
       "gsd": "gsd-review",
       "gsd_workflow": "review.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Verb-based: plan, code, security, and audit modes fan out to the matching GSD workflow, then grade against Forge's acceptance registry.",
       "disposition": "front",
       "via": "command"
@@ -131,7 +131,7 @@
       "forge": "forge-review",
       "gsd": "gsd-code-review",
       "gsd_workflow": "code-review.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-review --code.",
       "disposition": "front",
       "via": "command"
@@ -140,7 +140,7 @@
       "forge": "forge-review",
       "gsd": "gsd-secure-phase",
       "gsd_workflow": "secure-phase.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-review --security.",
       "disposition": "front",
       "via": "command"
@@ -149,7 +149,7 @@
       "forge": "forge-review",
       "gsd": "gsd-audit-uat",
       "gsd_workflow": "audit-uat.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-review --audit.",
       "disposition": "front",
       "via": "command"
@@ -167,7 +167,7 @@
       "forge": "forge-quality-gate",
       "gsd": "gsd-validate-phase",
       "gsd_workflow": "validate-phase.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Nyquist validation feeds Forge acceptance suites.",
       "disposition": "front",
       "via": "command"
@@ -176,7 +176,7 @@
       "forge": "forge-quality-gate",
       "gsd": "gsd-add-tests",
       "gsd_workflow": "add-tests.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-quality-gate --tests.",
       "disposition": "front",
       "via": "command"
@@ -194,7 +194,7 @@
       "forge": "forge-retrospective",
       "gsd": "gsd-extract-learnings",
       "gsd_workflow": "extract-learnings.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-retrospective --promote.",
       "disposition": "front",
       "via": "command"
@@ -212,7 +212,7 @@
       "forge": "forge-handoff",
       "gsd": "gsd-pause-work",
       "gsd_workflow": "pause-work.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Persists lane leases and editor state alongside context.",
       "disposition": "front",
       "via": "command"
@@ -221,7 +221,7 @@
       "forge": "forge-resume-work",
       "gsd": "gsd-resume-work",
       "gsd_workflow": "resume-project.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reclaims lane leases and editor state, and re-probes qualification after a host change.",
       "disposition": "front",
       "via": "command"
@@ -239,7 +239,7 @@
       "forge": "forge-map-codebase",
       "gsd": "gsd-map-codebase",
       "gsd_workflow": "map-codebase.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Unreal-aware codebase mapping.",
       "disposition": "front",
       "via": "command"
@@ -248,7 +248,7 @@
       "forge": "forge-docs-update",
       "gsd": "gsd-docs-update",
       "gsd_workflow": "docs-update.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "None beyond vocabulary.",
       "disposition": "front",
       "via": "command"
@@ -275,7 +275,7 @@
       "forge": "forge-ship",
       "gsd": "gsd-pr-branch",
       "gsd_workflow": "pr-branch.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-ship --pr.",
       "disposition": "front",
       "via": "command"
@@ -284,7 +284,7 @@
       "forge": "forge-undo",
       "gsd": "gsd-undo",
       "gsd_workflow": "undo.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Must respect the binary-asset lock before reverting Unreal content.",
       "disposition": "front",
       "via": "command"
@@ -293,7 +293,7 @@
       "forge": "forge-milestone",
       "gsd": "gsd-new-milestone",
       "gsd_workflow": "new-milestone.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-milestone --new.",
       "disposition": "front",
       "via": "command"
@@ -302,7 +302,7 @@
       "forge": "forge-milestone",
       "gsd": "gsd-audit-milestone",
       "gsd_workflow": "audit-milestone.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-milestone --audit.",
       "disposition": "front",
       "via": "command"
@@ -311,7 +311,7 @@
       "forge": "forge-milestone",
       "gsd": "gsd-milestone-summary",
       "gsd_workflow": "milestone-summary.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-milestone --summary.",
       "disposition": "front",
       "via": "command"
@@ -320,7 +320,7 @@
       "forge": "forge-review",
       "gsd": "gsd-audit-fix",
       "gsd_workflow": "audit-fix.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-review --audit --fix.",
       "disposition": "front",
       "via": "command"
@@ -515,7 +515,7 @@
       "forge": "forge-phase",
       "gsd": "gsd-insert-phase",
       "gsd_workflow": "insert-phase.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-phase --insert; owns decimal phase-ID arithmetic.",
       "disposition": "front",
       "via": "workflow"
@@ -524,7 +524,7 @@
       "forge": "forge-phase",
       "gsd": "gsd-remove-phase",
       "gsd_workflow": "remove-phase.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-phase --remove; renumbers dependent phases.",
       "disposition": "front",
       "via": "workflow"
@@ -533,7 +533,7 @@
       "forge": "forge-phase",
       "gsd": "gsd-edit-phase",
       "gsd_workflow": "edit-phase.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-phase --edit.",
       "disposition": "front",
       "via": "workflow"
@@ -551,7 +551,7 @@
       "forge": "forge-milestone",
       "gsd": "gsd-plan-milestone-gaps",
       "gsd_workflow": "plan-milestone-gaps.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-milestone --plan-gaps. Closes the loop from forge-milestone --audit, which produces the gaps this consumes.",
       "disposition": "front",
       "via": "workflow"
@@ -560,7 +560,7 @@
       "forge": "forge-plan-phase",
       "gsd": "gsd-analyze-dependencies",
       "gsd_workflow": "analyze-dependencies.md",
-      "delegation": "contain",
+      "delegation": "run",
       "adaptation": "Reached through forge-plan-phase --dependencies. File-overlap and semantic dependency detection feeds Forge's lane leases and the Unreal write-lock, not only merge-conflict avoidance.",
       "disposition": "front",
       "via": "workflow"

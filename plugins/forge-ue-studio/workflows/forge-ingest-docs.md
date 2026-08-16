@@ -6,7 +6,7 @@
 
 ## CORE — GSD
 
-1. Contain GSD's document ingestion, including its conflict detection.
+1. Run GSD's document ingestion, including its conflict detection.
 
 ## POST — Forge
 

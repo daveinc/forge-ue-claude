@@ -10,9 +10,9 @@ description: Generate or update project documentation verified against the codeb
 </invocation>
 
 <objective>
-Refresh documentation after implementation lands.
+Regenerate documentation *from* implemented code, after it lands. The codebase is the input and the docs are the output.
 
-Delegation: contain. Orchestrator role: contain GSD's doc writers and verifier, then reconcile the GDD ledger and asset-interface registry.
+Delegation: run. Orchestrator role: run GSD's doc writers and verifier, then reconcile the GDD ledger and asset-interface registry.
 </objective>
 
 <execution_context>

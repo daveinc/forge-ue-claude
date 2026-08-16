@@ -2,7 +2,7 @@
 
 ## CORE — GSD
 
-1. Contain GSD's doc writers and verifier.
+1. Run GSD's doc writers and verifier.
 
 ## POST — Forge
 

@@ -12,7 +12,7 @@ description: Start, complete, audit, or summarise a milestone
 <objective>
 Run the boundary between releases or vertical slices.
 
-Delegation: contain. Orchestrator role: confirm every phase verified, contain the matching GSD workflow, then carry unresolved items forward.
+Delegation: run. Orchestrator role: confirm every phase verified, run the matching GSD workflow, then carry unresolved items forward.
 </objective>
 
 <flags>

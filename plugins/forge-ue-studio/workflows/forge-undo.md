@@ -7,7 +7,7 @@
 
 ## CORE — GSD
 
-1. Contain GSD's undo, which owns the phase manifest and dependency checks.
+1. Run GSD's undo, which owns the phase manifest and dependency checks.
 
 ## POST — Forge
 

@@ -10,9 +10,9 @@ description: Ingest existing design documents into planning state
 </invocation>
 
 <objective>
-Turn existing design documents into project memory.
+Turn existing design documents *into* planning state. The documents are the input and project memory is the output — the opposite direction to `forge-docs-update`.
 
-Delegation: contain. Orchestrator role: locate sources, contain GSD's ingestion including conflict detection, then fold decisions into the GDD ledger.
+Delegation: run. Orchestrator role: locate sources, run GSD's ingestion including conflict detection, then fold decisions into the GDD ledger.
 </objective>
 
 <execution_context>

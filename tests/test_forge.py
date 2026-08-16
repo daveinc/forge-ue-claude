@@ -675,8 +675,8 @@ class ForgeInstallerTests(unittest.TestCase):
     def test_gsd_commands_are_translated_into_forge_vocabulary(self):
         claude = forge.host_profile("claude")
         codex = forge.host_profile("codex")
-        self.assertEqual(forge.normalize_gsd_command("gsd-execute-phase", claude), "/forge-execute-phase")
-        self.assertEqual(forge.normalize_gsd_command("gsd-execute-phase", codex), "$forge-execute-phase")
+        self.assertEqual(forge.normalize_gsd_command("gsd-execute-phase", claude), "/forge-route-work")
+        self.assertEqual(forge.normalize_gsd_command("gsd-execute-phase", codex), "$forge-route-work")
         self.assertEqual(forge.normalize_gsd_command("/gsd:progress --next", claude), "/forge-progress --next")
         self.assertEqual(forge.normalize_gsd_command("$gsd-onboard", claude), "/forge-onboard")
         self.assertEqual(forge.normalize_gsd_command("forge-next", codex), "$forge-next")
@@ -712,7 +712,7 @@ class ForgeInstallerTests(unittest.TestCase):
             }
             result = forge.forge_next(str(project), gsd)
             commands = [action["command"] for action in result["actions"]]
-            self.assertEqual(commands, ["/forge-execute-phase 2", "/forge-verify-work", "/forge-onboard"])
+            self.assertEqual(commands, ["/forge-route-work 2", "/forge-verify-work", "/forge-onboard"])
             for command in commands:
                 self.assertNotIn("gsd-", command)
 
@@ -736,7 +736,7 @@ class ForgeInstallerTests(unittest.TestCase):
                 },
             }
             result = forge.forge_next(str(project), gsd)
-            self.assertEqual([a["command"] for a in result["actions"]], ["/forge-execute-phase"])
+            self.assertEqual([a["command"] for a in result["actions"]], ["/forge-route-work"])
             self.assertEqual(len(result["suppressed_actions"]), 2)
             for item in result["suppressed_actions"]:
                 self.assertTrue(item["reason"])

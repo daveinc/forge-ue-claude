@@ -58,7 +58,7 @@ The discuss → plan → execute → verify sequence. Forge must not fork this; 
 | `gsd-new-project` | `forge-init` | **Have** | Forge does game inception, then delegates project memory. |
 | `gsd-discuss-phase` | `forge-discuss-phase` | **Adapt** | Needs GDD decision-ledger framing, art/gameplay interface questions. |
 | `gsd-plan-phase` | `forge-plan-phase` | **Adapt** | Must emit asset-interface and lane declarations alongside tasks. |
-| `gsd-execute-phase` | `forge-execute-phase` | **Adapt** | Must respect the Unreal project write-lock and lane leases. |
+| `gsd-execute-phase` | `forge-route-work` | **Adapt** | Runs under the write-lock and lane leases route-work already holds. |
 | `gsd-verify-work` | `forge-verify-work` | **Adapt** | Needs in-engine evidence (PIE, frame captures), not just tests. |
 | `gsd-progress` | `forge-progress` | **Wrap** | |
 | `gsd-phase` | `forge-phase` | **Wrap** | Phase CRUD; decimal insertion is fiddly — do not rewrite. |
@@ -140,7 +140,7 @@ These are Forge's reason to exist and need no GSD equivalent: capability discove
 
 1. **Land `forge-review` first.** It is the explicitly requested one, it is self-contained, and it proves the wrap-and-adapt pattern before committing to the rest.
 2. **Wrap Tier 1** so no `gsd-` string is ever shown to a user. Forge Next already re-spells commands per host; extend it to re-spell GSD actions as their Forge equivalents.
-3. **Adapt the four game-critical skills:** `forge-execute-phase` (write-lock), `forge-verify-work` (in-engine evidence), `forge-debug` (Unreal traces), `forge-ship` (cook/package).
+3. **Adapt the four game-critical skills:** `forge-route-work` (write-lock), `forge-verify-work` (in-engine evidence), `forge-debug` (Unreal traces), `forge-ship` (cook/package).
 4. **Then decide on vendoring.** Steps 1–3 deliver the full `forge-*` vocabulary while GSD is still underneath. Vendoring becomes a mechanical follow-up rather than a prerequisite.
 
 ## Measured: how much engine can you actually shed?
@@ -219,7 +219,7 @@ Workspaces, todos, seeds, `thread`, `stats`, `profile-user`, `inbox`, `import`, 
 
 ### One collision to watch
 
-`execute-phase/steps/` contains `per-plan-worktree-gate` and `worktree-recovery-policy`, while `forge-execute-phase` acquires lane leases and the Unreal write-lock in PRE. Both want to manage isolation for the same lane. The delegation contract records the division — Forge holds the lease, GSD manages isolation within it — but this is unproven until that verb runs for real.
+`execute-phase/steps/` contains `per-plan-worktree-gate` and `worktree-recovery-policy`, while `forge-route-work` holds lane leases and the Unreal write-lock around GSD's executor. Both want to manage isolation for the same lane. The delegation contract records the division — Forge holds the lease, GSD manages isolation within it — but this is unproven until it runs for real.
 
 ## Remaining open question
 

@@ -2,7 +2,7 @@
 
 ## CORE — GSD
 
-1. Contain GSD's progress reporting. `.planning` is authoritative for phase status.
+1. Run GSD's progress reporting. `.planning` is authoritative for phase status.
 
 ## POST — Forge
 

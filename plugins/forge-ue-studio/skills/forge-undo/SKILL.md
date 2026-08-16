@@ -12,7 +12,7 @@ description: Roll back a phase or plan when execution went wrong
 <objective>
 Revert committed work safely.
 
-Delegation: contain. Orchestrator role: check locks and dependants, contain GSD's undo, then confirm the project still opens.
+Delegation: run. Orchestrator role: check locks and dependants, run GSD's undo, then confirm the project still opens.
 </objective>
 
 <execution_context>

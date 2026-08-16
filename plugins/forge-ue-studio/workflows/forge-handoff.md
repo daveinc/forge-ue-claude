@@ -2,7 +2,7 @@
 
 ## CORE — GSD
 
-1. Contain GSD's pause workflow.
+1. Run GSD's pause workflow.
 
 ## POST — Forge
 

@@ -12,7 +12,7 @@ description: Pause work before a context reset without losing state
 <objective>
 Persist everything the next session needs.
 
-Delegation: contain. Orchestrator role: contain GSD's pause workflow, then persist leases, editor state, and the producing host.
+Delegation: run. Orchestrator role: run GSD's pause workflow, then persist leases, editor state, and the producing host.
 </objective>
 
 <execution_context>

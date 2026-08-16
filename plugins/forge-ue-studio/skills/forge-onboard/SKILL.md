@@ -12,7 +12,7 @@ description: Onboard an existing Unreal project into Forge and GSD planning
 <objective>
 Adopt a codebase that has no planning state.
 
-Delegation: contain. Orchestrator role: establish capability routes first, contain GSD's onboarding, then extend the map into Unreal-specific structure.
+Delegation: run. Orchestrator role: establish capability routes first, run GSD's onboarding, then extend the map into Unreal-specific structure.
 </objective>
 
 <execution_context>

@@ -6,7 +6,7 @@
 
 ## CORE — GSD
 
-1. Contain GSD's phase CRUD. It owns phase-ID arithmetic, including decimal insertion and milestone-scoped edits.
+1. Run GSD's phase CRUD. It owns phase-ID arithmetic, including decimal insertion and milestone-scoped edits.
 
 ## POST — Forge
 

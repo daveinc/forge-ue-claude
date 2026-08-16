@@ -12,7 +12,7 @@ description: Review a plan, code, security mitigations, or outstanding UAT again
 <objective>
 One review verb with four modes, each graded against Forge's own standards.
 
-Delegation: contain. Orchestrator role: pick an independent reviewer, contain the matching GSD workflow, then grade findings against the acceptance registry.
+Delegation: run. Orchestrator role: pick an independent reviewer, run the matching GSD workflow, then grade findings against the acceptance registry.
 </objective>
 
 <flags>

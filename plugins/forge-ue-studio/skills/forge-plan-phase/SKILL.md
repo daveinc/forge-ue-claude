@@ -12,7 +12,7 @@ description: Create a phase plan declaring asset interfaces, required lanes, and
 <objective>
 Turn a discussed phase into executable plans.
 
-Delegation: contain. Orchestrator role: apply Forge preconditions, contain GSD's planner, then reject any plan that cannot be routed safely.
+Delegation: run. Orchestrator role: apply Forge preconditions, run GSD's planner, then reject any plan that cannot be routed safely.
 </objective>
 
 <flags>

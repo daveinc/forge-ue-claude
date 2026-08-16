@@ -12,7 +12,7 @@ description: Resume interrupted work from persisted state
 <objective>
 Restart work from files after a context reset, fresh session, or handoff.
 
-Delegation: contain. Orchestrator role: route through Forge Next, reclaim leases, contain GSD's resume workflow, then hand back to the recommended action.
+Delegation: run. Orchestrator role: route through Forge Next, reclaim leases, run GSD's resume workflow, then hand back to the recommended action.
 </objective>
 
 <execution_context>

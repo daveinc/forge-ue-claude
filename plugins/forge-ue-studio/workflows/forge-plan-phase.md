@@ -7,7 +7,7 @@
 
 ## CORE — GSD
 
-1. Contain GSD's planner. Require every returned plan to carry `required_lanes`, `mutation_risk`, and any asset interface it produces or consumes.
+1. Run GSD's planner. Require every returned plan to carry `required_lanes`, `mutation_risk`, and any asset interface it produces or consumes.
 
 ## POST — Forge
 

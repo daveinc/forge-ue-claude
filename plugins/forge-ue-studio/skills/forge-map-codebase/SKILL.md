@@ -12,7 +12,7 @@ description: Analyse an Unreal codebase and produce structured planning intel
 <objective>
 Map unfamiliar or inherited code before planning against it.
 
-Delegation: contain. Orchestrator role: contain GSD's mappers, then add Unreal-specific structure.
+Delegation: run. Orchestrator role: run GSD's mappers, then add Unreal-specific structure.
 </objective>
 
 <execution_context>

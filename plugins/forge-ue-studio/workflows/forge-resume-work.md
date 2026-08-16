@@ -8,7 +8,7 @@
 
 ## CORE — GSD
 
-1. Contain GSD's resume workflow. It owns phase state and decides where work restarts.
+1. Run GSD's resume workflow. It owns phase state and decides where work restarts.
 
 ## POST — Forge
 

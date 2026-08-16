@@ -12,7 +12,7 @@ description: Design acceptance coverage, review attempts independently, and refu
 <objective>
 Require fresh evidence before accepting work.
 
-Delegation: contain for validation and test generation, native for grading. Orchestrator role: select test layers, run fresh verification, and return the attempt-result contract.
+Delegation: run for validation and test generation, native for grading. Orchestrator role: select test layers, run fresh verification, and return the attempt-result contract.
 </objective>
 
 <execution_context>

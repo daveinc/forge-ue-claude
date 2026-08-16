@@ -398,7 +398,7 @@ def main() -> int:
         declared_gsd = {
             str(item["gsd_workflow"])
             for item in verbs_for_skill(registry_verbs, name)
-            if item.get("delegation") in {"contain", "relay"} and item.get("gsd_workflow")
+            if item.get("delegation") in {"run", "relay"} and item.get("gsd_workflow")
         }
         for extra in sorted(loaded_gsd - declared_gsd):
             fail(f"Skill {name!r} loads GSD workflow {extra!r}, which the verb registry does not map to it", failures)

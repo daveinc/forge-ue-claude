@@ -89,7 +89,7 @@ The Forge verbs you will use daily:
 |---|---|
 | `forge-next` | Entering or resuming any project. The front door. |
 | `forge-init` | Starting a new game from nothing. |
-| `forge-discuss-phase` → `forge-plan-phase` → `forge-execute-phase` | Running a phase. |
+| `forge-discuss-phase` → `forge-plan-phase` → `forge-route-work` | Running a phase. |
 | `forge-verify-work` | Validating finished work with in-engine evidence. |
 | `forge-resume-work` | Returning to work that was interrupted or paused. |
 | `forge-doctor` | Asking what is actually available, changing nothing. |

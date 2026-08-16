@@ -14,17 +14,17 @@ The first clause is narrower than it looks. A verb Forge routes is spelled as a 
 
 Declared per verb in `verbs/registry.json`.
 
-### `contain` — default
+### `run` — default
 
-Spawn a subagent. Instruct it to read and follow the stock GSD workflow at `<gsd-core>/workflows/<file>`, calling `gsd_run` verbs as that workflow directs. Require a **structured result**, not prose.
+Load the stock GSD workflow from `<gsd-core>/workflows/<file>` and run it end to end in this session, calling `gsd_run` verbs as that workflow directs. Require a **structured result**, not prose. GSD's own typed agents still spawn as its workflow directs — Forge adds no agent of its own.
 
-The subagent's transcript stays inside the subagent. That is what makes containment work: the workflow's own command strings never become the action Forge routes, so a routed action always carries Forge's PRE and POST.
+The workflow's own command strings never become the action Forge routes, so a routed action always carries Forge's PRE and POST.
 
-Ask the subagent for an action **identifier** (`execute-phase`), never a command string (`/gsd-execute-phase`). Forge renders the command itself.
+Take an action **identifier** (`execute-phase`) from the workflow, never a command string (`/gsd-execute-phase`). Forge renders the command itself.
 
 ### `relay` — interactive workflows
 
-Some workflows must reach the user — `discuss-phase` above all. Containment would swallow the questions.
+Some workflows must reach the user — `discuss-phase` above all. Running one end to end would swallow the questions.
 
 Relay instead: surface each question, reframe it in game-dev terms, pass the answer back down. Forge controls presentation at every turn. This is more plumbing and it is where Forge adds the most value, because GSD's generic prompts are the least suited to a game project.
 
@@ -37,7 +37,7 @@ Forge owns the behaviour outright; no GSD workflow is involved. Used where Forge
 ```
 PRE    Forge   capability qualification, Unreal write-lock / lane lease,
                canonical packet ID, game-dev framing of the request
-CORE   GSD     the stock workflow, unmodified, via contain or relay
+CORE   GSD     the stock workflow, unmodified, via run or relay
 POST   Forge   acceptance registry, evidence contract, in-engine verification,
                then present the outcome in Forge vocabulary
 ```
@@ -59,11 +59,9 @@ Examples of internal chaining Forge must never interfere with:
 | `execute-phase/steps/*` — drift, isolation, worktree, post-merge, regression gates | `execute-phase.md` | nested |
 | `discuss-phase/modes/*` — advisor, analyze, power, batch, chain | `discuss-phase.md` | nested |
 
-**These are not Forge's business and must not be registered, translated, or suppressed.** A contained subagent reads GSD's files directly, so the whole chain executes as upstream intended. The verb registry governs only two things: which Forge verbs exist, and how GSD's *terminal* action list from `smart-entry` is presented. It has no reach inside a running workflow.
+**These are not Forge's business and must not be registered, translated, or suppressed.** Forge runs GSD's workflow from disk, so the whole chain executes as upstream intended. The verb registry governs only two things: which Forge verbs exist, and how GSD's *terminal* action list from `smart-entry` is presented. It has no reach inside a running workflow.
 
 A `drop` disposition therefore does **not** disable a GSD workflow. It only means "Forge does not offer this as a command you type." The workflow still runs whenever GSD's own chain reaches it.
-
-One consequence to respect: `execute-phase` has its own worktree and isolation gates. Forge's `forge-execute-phase` acquires the Unreal write-lock and lane leases in PRE, so do not also let the contained agent negotiate worktrees for the same lane — Forge holds the lease, GSD manages isolation within it.
 
 ## Never do these
 
