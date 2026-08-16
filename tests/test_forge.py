@@ -8,10 +8,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import uuid
 from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -1844,6 +1847,115 @@ class McpGateTests(unittest.TestCase):
         self.assertIn("catalog fallback", output)
 
 
+GIT_LFS_PRESENT = subprocess.run(
+    ["git", "lfs", "version"], capture_output=True
+).returncode == 0
+
+
+class RecordingHandler(BaseHTTPRequestHandler):
+    """Base for the local servers the probes actually talk to."""
+
+    def log_message(self, *args):
+        pass
+
+    def read_request(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            return json.loads(self.rfile.read(length) or b"{}")
+        except (json.JSONDecodeError, ValueError):
+            return {}
+
+    def respond(self, code, payload, content_type="application/json"):
+        body = payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class LfsLockHandler(RecordingHandler):
+    """The Git LFS locking API, enough of it that `git lfs lock` is a real lock."""
+
+    locks = {}
+
+    def do_POST(self):
+        request = self.read_request()
+        if self.path.endswith("/locks/verify"):
+            self.respond(200, {"ours": list(self.locks.values()), "theirs": []})
+        elif self.path.endswith("/unlock"):
+            lock_id = self.path.rstrip("/").split("/")[-2]
+            removed = self.locks.pop(lock_id, None)
+            self.respond(200, {"lock": removed} if removed else {"message": "no such lock"})
+        elif self.path.endswith("/locks"):
+            path = request.get("path")
+            held = next((lock for lock in self.locks.values() if lock["path"] == path), None)
+            if held:
+                self.respond(409, {"lock": held, "message": "already locked by another writer"})
+                return
+            lock = {
+                "id": uuid.uuid4().hex[:8],
+                "path": path,
+                "locked_at": "2026-01-01T00:00:00Z",
+                "owner": {"name": "forge-test"},
+            }
+            self.locks[lock["id"]] = lock
+            self.respond(201, {"lock": lock})
+        else:
+            self.respond(404, {"message": "no route"})
+
+    def do_GET(self):
+        query = parse_qs(urlparse(self.path).query)
+        matched = list(self.locks.values())
+        if "path" in query:
+            matched = [lock for lock in matched if lock["path"] in query["path"]]
+        if "id" in query:
+            matched = [lock for lock in matched if lock["id"] in query["id"]]
+        self.respond(200, {"locks": matched})
+
+
+class McpHandler(RecordingHandler):
+    """An endpoint that answers an MCP initialize the way a live server does."""
+
+    behaviour = "json"
+
+    def do_POST(self):
+        request = self.read_request()
+        if self.behaviour == "http-error":
+            self.respond(503, {"error": "editor busy"})
+            return
+        if self.behaviour == "not-mcp":
+            self.respond(200, b"<html>a web server, not an MCP server</html>", content_type="text/html")
+            return
+        result = {
+            "jsonrpc": "2.0",
+            "id": request.get("id", 1),
+            "result": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "unreal-mcp", "version": "5.8.0"},
+            },
+        }
+        if self.behaviour == "sse":
+            body = f"event: message\ndata: {json.dumps(result)}\n\n".encode("utf-8")
+            self.respond(200, body, content_type="text/event-stream")
+            return
+        self.respond(200, result)
+
+
+@contextmanager
+def local_server(handler_class):
+    server = HTTPServer(("127.0.0.1", 0), handler_class)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 class ExecutorTests(unittest.TestCase):
     """Isolation is a property of the runtime, not of an agent following instructions."""
 
@@ -1979,6 +2091,14 @@ class ExecutorTests(unittest.TestCase):
                 forge.executor.release(root, "WO-never", outcome="passed", apply=True)
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_UNKNOWN"])
 
+    def test_a_preview_and_a_result_carry_the_same_fields(self):
+        """A consumer reading a dry run must not hit a missing key on the real thing."""
+        with self.game() as root:
+            forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
+            preview = forge.executor.release(root, "WO-1", outcome="passed", apply=False)
+            applied = forge.executor.release(root, "WO-1", outcome="passed", apply=True)
+            self.assertEqual(sorted(preview), sorted(applied))
+
     def test_a_dry_run_reports_the_plan_and_holds_nothing(self):
         with self.game() as root:
             result = forge.executor.acquire(
@@ -2029,6 +2149,252 @@ class ExecutorTests(unittest.TestCase):
             loser = next(errors for code, errors in results if code == forge.EXIT_CONTRACT)
             self.assertEqual(json.loads(loser)["reason"], forge.ERROR_REASON["LEASE_CONFLICT"])
             self.assertEqual(self.active_lanes(root), ["ue-live-native-mcp"])
+
+
+@unittest.skipUnless(GIT_LFS_PRESENT, "git-lfs is not installed on this machine")
+class LfsLockTests(unittest.TestCase):
+    """Binary ownership is refused by git, not by convention, so git has to be in the test."""
+
+    def setUp(self):
+        LfsLockHandler.locks = {}
+
+    @contextmanager
+    def game(self):
+        with local_server(LfsLockHandler) as url:
+            with workspace_tempdir() as temp:
+                root = temp / "MyGame"
+                root.mkdir()
+                forge.install_overlay(str(root), apply=True)
+                (root / "Content").mkdir()
+                (root / "Content" / "Main.umap").write_bytes(b"a binary package")
+                for command in (
+                    ["git", "init", "-q", "-b", "main"],
+                    ["git", "config", "user.email", "forge@test.invalid"],
+                    ["git", "config", "user.name", "Forge Test"],
+                    ["git", "config", "lfs.url", url],
+                    ["git", "add", "-A"],
+                    ["git", "commit", "-qm", "base"],
+                ):
+                    subprocess.run(command, cwd=str(root), capture_output=True, check=True)
+                yield root
+
+    def packet(self, work_order, targets):
+        return {
+            "work_order": work_order,
+            "leases": ["generated-assets"],
+            "write_scope": list(targets),
+            "isolation": {"mode": "lfs-lock", "base_revision": "HEAD", "lock_targets": list(targets)},
+        }
+
+    def held_paths(self):
+        return sorted(lock["path"] for lock in LfsLockHandler.locks.values())
+
+    def test_acquiring_takes_a_real_lock_on_the_server(self):
+        with self.game() as root:
+            result = forge.executor.acquire(
+                root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
+            )
+            self.assertEqual(result["locked"], ["Content/Main.umap"])
+            self.assertEqual(self.held_paths(), ["Content/Main.umap"])
+            self.assertEqual(forge.executor.status(root)["active"][0]["status"], "ACTIVE")
+
+    def test_a_lock_another_writer_holds_refuses_the_lease(self):
+        """The point of a lock: refusal comes from git, across machines Forge cannot see."""
+        with self.game() as root:
+            LfsLockHandler.locks["other"] = {
+                "id": "other",
+                "path": "Content/Main.umap",
+                "locked_at": "2026-01-01T00:00:00Z",
+                "owner": {"name": "someone-else"},
+            }
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(
+                    root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
+                )
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ISOLATION_FAILED"])
+            self.assertEqual(forge.executor.status(root)["active"], [])
+            self.assertEqual(self.held_paths(), ["Content/Main.umap"])
+
+    def test_a_partial_lock_set_is_rolled_back_completely(self):
+        """The second path is already locked, so the first must not stay locked either."""
+        with self.game() as root:
+            (root / "Content" / "Second.umap").write_bytes(b"another package")
+            LfsLockHandler.locks["other"] = {
+                "id": "other",
+                "path": "Content/Second.umap",
+                "locked_at": "2026-01-01T00:00:00Z",
+                "owner": {"name": "someone-else"},
+            }
+            with self.assertRaises(forge.executor.ExecutorError):
+                forge.executor.acquire(
+                    root,
+                    self.packet("WO-MAPS", ["Content/Main.umap", "Content/Second.umap"]),
+                    owner="worker-a",
+                    apply=True,
+                )
+            self.assertEqual(self.held_paths(), ["Content/Second.umap"])
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_a_rollback_that_cannot_undo_a_lock_says_so(self):
+        """Silence here would mean a lock held on the server that Forge no longer tracks."""
+        with self.game() as root:
+            (root / "Content" / "Second.umap").write_bytes(b"another package")
+            subprocess.run(["git", "add", "-A"], cwd=str(root), capture_output=True, check=True)
+            subprocess.run(["git", "commit", "-qm", "second"], cwd=str(root), capture_output=True, check=True)
+            LfsLockHandler.locks["other"] = {
+                "id": "other",
+                "path": "Content/Second.umap",
+                "locked_at": "2026-01-01T00:00:00Z",
+                "owner": {"name": "someone-else"},
+            }
+            original = forge.executor.git
+
+            def failing_unlock(target_root, *args, **kwargs):
+                if args[:2] == ("lfs", "unlock"):
+                    return subprocess.CompletedProcess(args, 1, "", "lfs server unreachable")
+                return original(target_root, *args, **kwargs)
+
+            forge.executor.git = failing_unlock
+            try:
+                with self.assertRaises(forge.executor.ExecutorError) as caught:
+                    forge.executor.acquire(
+                        root,
+                        self.packet("WO-MAPS", ["Content/Main.umap", "Content/Second.umap"]),
+                        owner="worker-a",
+                        apply=True,
+                    )
+            finally:
+                forge.executor.git = original
+            leaked = caught.exception.extra["rollback_incomplete"]
+            self.assertEqual(len(leaked), 1)
+            self.assertIn("Content/Main.umap", leaked[0])
+            self.assertIn("rollback_note", caught.exception.extra)
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_releasing_gives_the_lock_back(self):
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
+            )
+            result = forge.executor.release(root, "WO-MAP", outcome="passed", apply=True)
+            self.assertEqual(result["unlocked"], ["Content/Main.umap"])
+            self.assertEqual(result["unlock_failures"], [])
+            self.assertEqual(self.held_paths(), [])
+
+    def test_a_lock_that_will_not_release_is_reported_not_swallowed(self):
+        """The lane frees, the path does not. Saying so is the whole job."""
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
+            )
+            LfsLockHandler.locks.clear()
+            subprocess.run(
+                ["git", "config", "lfs.url", "http://127.0.0.1:1"], cwd=str(root), capture_output=True, check=True
+            )
+            result = forge.executor.release(root, "WO-MAP", outcome="failed", apply=True)
+            self.assertEqual(result["unlocked"], [])
+            self.assertEqual([item["target"] for item in result["unlock_failures"]], ["Content/Main.umap"])
+            self.assertIn("still held", result["note"])
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_the_lock_is_released_after_a_lease_is_freed_and_can_be_retaken(self):
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
+            )
+            forge.executor.release(root, "WO-MAP", outcome="passed", apply=True)
+            forge.executor.acquire(
+                root, self.packet("WO-MAP-2", ["Content/Main.umap"]), owner="worker-b", apply=True
+            )
+            self.assertEqual(self.held_paths(), ["Content/Main.umap"])
+
+
+class McpHandshakeTests(unittest.TestCase):
+    """A route is verified by an answer from a running server, never by a config file."""
+
+    def setUp(self):
+        McpHandler.behaviour = "json"
+        self.profile = forge.host_profile("claude")
+
+    @contextmanager
+    def game(self, url):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            path = root / ".forge" / "mcp.json"
+            document = json.loads(path.read_text(encoding="utf-8"))
+            for entry in document["servers"]:
+                if entry["id"] == "unreal-native-mcp":
+                    entry["transport"] = {"type": "http", "url": f"{url}/mcp"}
+            path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+            rendered = forge.render_project_mcp(root, self.profile, root)
+            (root / ".mcp.json").write_bytes(rendered[1])
+            yield root
+
+    def route(self, root):
+        return next(
+            item for item in forge.mcp_status(root, self.profile)["routes"]
+            if item["provider"] == "unreal-native-mcp"
+        )
+
+    def contract(self, root):
+        return next(
+            item for item in forge.mcp_capability_contracts(root, self.profile)
+            if item["capability"] == "ue.live.typed"
+        )
+
+    def test_a_server_that_answers_initialize_is_verified(self):
+        with local_server(McpHandler) as url:
+            with self.game(url) as root:
+                route = self.route(root)
+                self.assertTrue(route["live"])
+                self.assertEqual(route["status"], "AVAILABLE_VERIFIED")
+                self.assertEqual(self.contract(root)["status"], "AVAILABLE_VERIFIED")
+                self.assertEqual(self.contract(root)["health"], "HEALTHY")
+
+    def test_an_event_stream_answer_is_verified_too(self):
+        """The first-party server speaks HTTP and SSE, so the SSE framing must count."""
+        McpHandler.behaviour = "sse"
+        with local_server(McpHandler) as url:
+            with self.game(url) as root:
+                self.assertEqual(self.route(root)["status"], "AVAILABLE_VERIFIED")
+
+    def test_a_server_that_errors_is_unavailable_not_verified(self):
+        McpHandler.behaviour = "http-error"
+        with local_server(McpHandler) as url:
+            with self.game(url) as root:
+                route = self.route(root)
+                self.assertFalse(route["live"])
+                self.assertEqual(route["status"], "UNAVAILABLE_OPTIONAL")
+                self.assertEqual(self.contract(root)["health"], "UNAVAILABLE")
+
+    def test_something_listening_that_is_not_mcp_is_not_a_route(self):
+        """A port answering is not a server speaking. Only the handshake decides."""
+        McpHandler.behaviour = "not-mcp"
+        with local_server(McpHandler) as url:
+            with self.game(url) as root:
+                route = self.route(root)
+                self.assertFalse(route["live"])
+                self.assertEqual(route["status"], "UNAVAILABLE_OPTIONAL")
+
+    def test_nothing_listening_leaves_the_declared_route_unavailable(self):
+        with self.game("http://127.0.0.1:1") as root:
+            route = self.route(root)
+            self.assertFalse(route["live"])
+            self.assertTrue(route["declared_in_project"])
+            self.assertEqual(route["status"], "UNAVAILABLE_OPTIONAL")
+
+    def test_a_live_server_the_host_cannot_see_is_reported_as_undeclared(self):
+        with local_server(McpHandler) as url:
+            with self.game(url) as root:
+                (root / ".mcp.json").write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+                probe = forge.probe_mcp_server(
+                    root, self.profile, "unreal-mcp", forge.mcp_providers()[0]
+                )
+                self.assertTrue(probe["live"])
+                self.assertFalse(probe["found"])
+                self.assertIn("no configuration the host reads declares it", probe["note"])
 
 
 if __name__ == "__main__":

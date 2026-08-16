@@ -9,6 +9,8 @@
 - The ledger is written atomically under a cross-process mutex, so two workers racing one lane produce a holder and a refusal rather than two writers. A test races two real processes and asserts exactly one wins with `lease_conflict`.
 - `exec acquire` expires leases past `expires_at` before checking conflicts, so a crashed session blocks its lane until expiry rather than forever.
 - `forge-route-work` steps 8, 9 and 15 call the executor instead of instructing the agent to take isolation by hand. Step 8 declares isolation, step 9 establishes it, and nothing else may.
+- Test the LFS path against real `git lfs` by running a Git LFS locking server in the suite. A path another writer holds is refused by git, a partly-locked set is unlocked again on rollback, and `release` reports the paths it could not unlock instead of freeing the lane silently and leaving them held.
+- Report incomplete rollback. An undo step that fails now attaches `rollback_incomplete` to the failure, because a lock left behind that Forge is no longer tracking is worse than the error that caused it.
 
 ### Unreal's first-party MCP is the shipped route
 
@@ -16,6 +18,7 @@
 - Support http transports. The renderer emitted `command`/`args`/`env` only, so an editor-hosted endpoint could not be expressed at all. `mcp add` now takes `--url`, and refuses a declaration naming both a command and a url.
 - A new project's `.forge/mcp.json` declares that route instead of shipping `servers: []`, so the layer that decides whether Unreal work is possible is no longer left for the user to choose.
 - Add the `mcp-http-handshake` probe kind: it sends a real MCP `initialize` to the declared endpoint. Passing earns `AVAILABLE_VERIFIED`, which a configuration file alone never did. Failing marks the route `UNAVAILABLE_OPTIONAL`, so work degrades to `ue.editor-closed-or-human` instead of dispatching into a closed editor.
+- Test that path against a server that answers `initialize`, over JSON and over the SSE framing the first-party plugin uses. A port that is listening without speaking MCP does not earn a route, and a live server the host's configuration does not declare is reported as undeclared rather than as available.
 
 ### Resume as a first-class verb
 

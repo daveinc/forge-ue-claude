@@ -369,15 +369,26 @@ def acquire(
             "leases": [],
         }
 
-    undo: list[Callable[[], None]] = [lambda: _release_ids(root, [item["lease_id"] for item in granted], "BROKEN", "rolled back after isolation failed")]
+    undo: list[Callable[[], str | None]] = [
+        lambda: _release_ids(root, [item["lease_id"] for item in granted], "BROKEN", "rolled back after isolation failed") and None
+    ]
     try:
         _establish_isolation(root, intent, revision or intent["base_revision"], undo)
-    except ExecutorError:
+    except ExecutorError as exc:
+        leaked: list[str] = []
         for step in reversed(undo):
             try:
-                step()
-            except ExecutorError:
-                continue
+                detail = step()
+            except ExecutorError as undo_failure:
+                detail = str(undo_failure)
+            if detail:
+                leaked.append(detail)
+        if leaked:
+            exc.extra["rollback_incomplete"] = leaked
+            exc.extra["rollback_note"] = (
+                "Rollback could not undo every step. What is listed here is still held and Forge is no "
+                "longer tracking it; release it by hand before another writer needs it."
+            )
         raise
 
     return {
@@ -398,16 +409,31 @@ def acquire(
     }
 
 
-def _establish_isolation(root: Path, intent: dict[str, Any], revision: str, undo: list[Callable[[], None]]) -> None:
+def _establish_isolation(root: Path, intent: dict[str, Any], revision: str, undo: list[Callable[[], str | None]]) -> None:
     if intent["mode"] == "git-worktree":
         workspace = intent["workspace"]
         branch = intent["branch"]
         git_checked(root, "worktree", "add", "-b", branch, workspace, revision, reason=ERROR_REASONS["ISOLATION_FAILED"])
-        undo.append(lambda: _remove_worktree(root, workspace, branch))
+        undo.append(lambda: _undo_worktree(root, workspace, branch))
     if intent["mode"] == "lfs-lock":
         for target in intent["lock_targets"]:
             git_checked(root, "lfs", "lock", target, reason=ERROR_REASONS["ISOLATION_FAILED"])
-            undo.append(lambda held=target: git(root, "lfs", "unlock", held))
+            undo.append(lambda held=target: _undo_lock(root, held))
+
+
+def _undo_lock(root: Path, target: str) -> str | None:
+    completed = git(root, "lfs", "unlock", target)
+    if completed.returncode == 0:
+        return None
+    return f"lfs lock on {target!r} could not be released: {(completed.stderr or completed.stdout or '').strip()}"
+
+
+def _undo_worktree(root: Path, workspace: str, branch: str) -> str | None:
+    completed = git(root, "worktree", "remove", "--force", workspace)
+    git(root, "branch", "-D", branch)
+    if completed.returncode == 0:
+        return None
+    return f"worktree {workspace!r} could not be removed: {(completed.stderr or completed.stdout or '').strip()}"
 
 
 def _remove_worktree(root: Path, workspace: str, branch: str) -> None:
@@ -461,13 +487,25 @@ def release(root: Path, work_order: str, outcome: str, apply: bool) -> dict[str,
             "outcome": outcome,
             "isolation_mode": mode,
             "workspace_retained": mode == "git-worktree" and not discards_workspace,
+            "workspace": str(isolation.get("workspace")) if mode == "git-worktree" and not discards_workspace else None,
             "plan": teardown,
             "released": [],
+            "unlocked": [],
+            "unlock_failures": [],
+            "note": None,
         }
 
+    unlocked: list[str] = []
+    unlock_failures: list[dict[str, str]] = []
     if mode == "lfs-lock":
         for target in isolation.get("lock_targets", []):
-            git(root, "lfs", "unlock", str(target))
+            completed = git(root, "lfs", "unlock", str(target))
+            if completed.returncode == 0:
+                unlocked.append(str(target))
+            else:
+                unlock_failures.append(
+                    {"target": str(target), "detail": (completed.stderr or completed.stdout or "").strip()}
+                )
     if discards_workspace:
         _remove_worktree(root, str(isolation.get("workspace")), str(isolation.get("branch")))
     released = _release_ids(
@@ -487,6 +525,14 @@ def release(root: Path, work_order: str, outcome: str, apply: bool) -> dict[str,
         "workspace": str(isolation.get("workspace")) if mode == "git-worktree" and not discards_workspace else None,
         "plan": teardown,
         "released": released,
+        "unlocked": unlocked,
+        "unlock_failures": unlock_failures,
+        "note": (
+            f"{len(unlock_failures)} lock(s) could not be released and are still held on the LFS server; "
+            "the lane is free but those paths are not. Unlock them before another writer needs them."
+            if unlock_failures
+            else None
+        ),
     }
 
 

@@ -115,7 +115,11 @@ Verified by the included tests: manifest/skill/schema structure, host registry a
 
 Also verified against real Git: a lane lease refuses a second holder of the same lane or exclusive group, two racing processes produce one holder and one refusal, failed isolation leaves no lease behind, worktrees are created from the named revision and discarded on a failed outcome, and an expired lease is recovered rather than inherited.
 
-Assumed until probed on a target workstation: Unreal/VibeUE/Blender/local-model capabilities and their performance rankings. The Unreal MCP route is no longer one of them — `forge.py mcp-status` handshakes the editor's endpoint and reports `AVAILABLE_VERIFIED` only when it answers.
+Verified against real `git lfs`: the tests run a Git LFS locking server, so `exec acquire` takes an actual lock, a path another writer already holds is refused by git rather than by Forge, a partly-locked set is unlocked again on rollback, and a lock that cannot be released is reported instead of swallowed.
+
+Verified against a real MCP endpoint: the tests run a server that answers `initialize` over both JSON and SSE framing. A route earns `AVAILABLE_VERIFIED` only from an answer, an endpoint that errors or that is listening without speaking MCP earns `UNAVAILABLE_OPTIONAL`, and a live server the host's configuration does not declare is reported as undeclared rather than as available.
+
+Assumed until probed on a target workstation: Unreal/VibeUE/Blender/local-model capabilities and their performance rankings. The MCP verification path is tested against a stand-in server, so what a workstation adds is proof that Epic's own plugin answers it.
 
 Not covered by CI: nothing here launches Unreal. The tests run on `windows-latest` with no engine, so the Claude → MCP → editor → Blueprint → PIE path is proven on a workstation with the editor open, never by a green build.
 

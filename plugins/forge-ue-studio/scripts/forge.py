@@ -307,11 +307,13 @@ def probe_mcp_endpoint(url: str, timeout: float = 3.0) -> dict[str, Any]:
                 "detail": "initialize returned an MCP result" if speaks_mcp else "endpoint answered but did not return an MCP result",
             }
     except urllib.error.HTTPError as exc:
+        code = exc.code
+        exc.close()
         return {
             "reachable": True,
             "speaks_mcp": False,
-            "code": exc.code,
-            "detail": f"endpoint answered HTTP {exc.code}; something is listening but it did not complete an MCP initialize",
+            "code": code,
+            "detail": f"endpoint answered HTTP {code}; something is listening but it did not complete an MCP initialize",
         }
     except (urllib.error.URLError, OSError, ValueError) as exc:
         return {"reachable": False, "speaks_mcp": False, "code": None, "detail": f"no endpoint answered at {url}: {exc}"}
