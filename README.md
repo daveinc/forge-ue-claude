@@ -49,7 +49,14 @@ Adopt a project directory — an empty one is fine:
 
 A new project declares Unreal's first-party MCP route at `http://127.0.0.1:8000/mcp`. To bind it, enable the **Unreal MCP** (`ModelContextProtocol`) and **AllToolsets** plugins in your `.uproject`, and keep the editor open.
 
-Enabling the plugin is necessary and not sufficient: the server only listens when it is told to. `ShouldAutoStartServer()` honours `-ModelContextProtocolStartServer` on the command line, then falls back to the `bAutoStartServer` setting, **which is off by default**. Launch the editor with that switch, set `bAutoStartServer`, or run `ModelContextProtocol.StartServer` in the editor console. Then check the route:
+Two things beyond enabling the plugins decide whether that route ever binds, and both are read at **editor startup** — changing either takes effect only after a restart:
+
+| Setting | Default | Why the route stays silent without it |
+|---|---|---|
+| `bAutoStartServer` | `False` | Enabling the plugin does not make the server listen. Launch with `-ModelContextProtocolStartServer`, set this to `True`, or run `ModelContextProtocol.StartServer` in the editor console. |
+| `ServerPortNumber` | `8000` | If your project moved it, Forge is probing the wrong endpoint and an open editor reads exactly like a closed one. |
+
+Both live in `Config/DefaultEditorPerProjectUserSettings.ini` (or `Saved/Config/<Platform>/…`, which wins) under `[/Script/ModelContextProtocolEngine.ModelContextProtocolSettings]`. Forge reads them: when the handshake fails it compares the configured port and path against the endpoint it probed and **names the mismatch first**, because a moved port is the one cause that looks identical to every other. Then check the route:
 
 ```powershell
 .\install.ps1 -Mode McpStatus -ProjectPath "D:\Unreal Projects\MyGame"

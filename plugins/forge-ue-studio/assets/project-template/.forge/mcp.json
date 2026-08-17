@@ -15,7 +15,7 @@
         "type": "http",
         "url": "http://127.0.0.1:8000/mcp"
       },
-      "note": "Unreal Engine's first-party Unreal MCP plugin, Experimental since 5.8. Enable ModelContextProtocol and AllToolsets in the .uproject and keep the editor open. Enabling them is necessary and not sufficient: the server only listens when asked, so launch with -ModelContextProtocolStartServer, set bAutoStartServer, or run ModelContextProtocol.StartServer in the editor console. `forge.py route-status` handshakes this endpoint and reports AVAILABLE_VERIFIED only when it answers; until then the route degrades to its declared fallback. Change the url here if the editor serves on another port."
+      "note": "Unreal Engine's first-party Unreal MCP plugin, Experimental since 5.8. Enable ModelContextProtocol and AllToolsets in the .uproject and keep the editor open. Two further settings decide whether this url ever answers, both under [/Script/ModelContextProtocolEngine.ModelContextProtocolSettings] in Config/DefaultEditorPerProjectUserSettings.ini: bAutoStartServer (default False, so the server does not listen unless launched with -ModelContextProtocolStartServer or started with ModelContextProtocol.StartServer) and ServerPortNumber (default 8000). Change the url here if the project moved the port; `forge.py route-status` compares the two and names the mismatch. Both settings are read at editor startup, so changing either needs a restart."
     }
   ]
 }

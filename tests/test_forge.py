@@ -3296,6 +3296,97 @@ class CommandSurfaceTests(unittest.TestCase):
             self.assertEqual([p.name for p in before if before[p] != after[p]], [])
 
 
+class UnrealMcpSettingsTests(unittest.TestCase):
+    """Forge probes an endpoint the project declares; the editor serves one its own
+    settings declare. A project that moved the port used to read exactly like a
+    project whose editor was closed."""
+
+    @contextmanager
+    def game(self):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            yield root
+
+    def write_settings(self, root, relative, body):
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "[/Script/ModelContextProtocolEngine.ModelContextProtocolSettings]\n" + body,
+            encoding="utf-8",
+        )
+
+    def test_a_project_declaring_nothing_reads_as_the_engine_defaults(self):
+        with self.game() as root:
+            settings = forge.unreal_mcp_settings(root)
+            self.assertFalse(settings["declared_by_project"])
+            self.assertEqual(settings["port"], 8000)
+            self.assertFalse(settings["auto_start"], "bAutoStartServer is off unless a project turns it on")
+
+    def test_the_project_default_config_is_read(self):
+        with self.game() as root:
+            self.write_settings(
+                root, "Config/DefaultEditorPerProjectUserSettings.ini",
+                "ServerUrlPath=/mcp\nServerPortNumber=8800\nbAutoStartServer=True\n",
+            )
+            settings = forge.unreal_mcp_settings(root)
+            self.assertEqual(settings["port"], 8800)
+            self.assertTrue(settings["auto_start"])
+
+    def test_the_saved_per_user_file_wins_over_the_project_default(self):
+        """Unreal layers these, and the saved file is what the editor actually ran with."""
+        with self.game() as root:
+            self.write_settings(root, "Config/DefaultEditorPerProjectUserSettings.ini", "ServerPortNumber=8800\n")
+            self.write_settings(
+                root, "Saved/Config/WindowsEditor/EditorPerProjectUserSettings.ini", "ServerPortNumber=9100\n"
+            )
+            self.assertEqual(forge.unreal_mcp_settings(root)["port"], 9100)
+
+    def test_a_moved_port_is_named_rather_than_read_as_a_closed_editor(self):
+        with self.game() as root:
+            self.write_settings(root, "Config/DefaultEditorPerProjectUserSettings.ini", "ServerPortNumber=8800\n")
+            disagreement = forge.endpoint_disagreement(root, "http://127.0.0.1:8000/mcp")
+            self.assertIsNotNone(disagreement)
+            self.assertTrue(disagreement["port_differs"])
+            self.assertIn("8800", disagreement["configured"])
+            self.assertIn("restarted", disagreement["detail"])
+
+    def test_a_moved_url_path_is_caught_too(self):
+        with self.game() as root:
+            self.write_settings(root, "Config/DefaultEditorPerProjectUserSettings.ini", "ServerUrlPath=/unreal-mcp\n")
+            disagreement = forge.endpoint_disagreement(root, "http://127.0.0.1:8000/mcp")
+            self.assertIsNotNone(disagreement)
+            self.assertTrue(disagreement["path_differs"])
+
+    def test_agreement_reports_nothing(self):
+        with self.game() as root:
+            self.write_settings(root, "Config/DefaultEditorPerProjectUserSettings.ini", "ServerPortNumber=8000\n")
+            self.assertIsNone(forge.endpoint_disagreement(root, "http://127.0.0.1:8000/mcp"))
+
+    def test_unreal_array_prefixes_and_comments_do_not_break_the_parse(self):
+        with self.game() as root:
+            self.write_settings(
+                root, "Config/DefaultEditorPerProjectUserSettings.ini",
+                "; a comment\n+ServerPortNumber=8800\n\n[/Script/Other.Thing]\nServerPortNumber=1234\n",
+            )
+            self.assertEqual(forge.unreal_mcp_settings(root)["port"], 8800,
+                             "a later section must not leak into this one")
+
+    def test_a_failed_handshake_names_the_port_before_anything_else(self):
+        """The port is checked first because it is the one cause that looks like every other."""
+        with self.game() as root:
+            self.write_settings(root, "Config/DefaultEditorPerProjectUserSettings.ini", "ServerPortNumber=8800\n")
+            row = next(item for item in forge.mcp_status(root, forge.host_profile("claude"))["routes"]
+                       if item["provider"] == "unreal-native-mcp")
+            self.assertEqual(row["status"], "UNAVAILABLE_OPTIONAL")
+            self.assertIn("THE PORT", row["note"])
+            self.assertIn("restart", row["note"])
+            self.assertEqual(row["engine_settings"]["port"], 8800)
+            self.assertTrue(row["endpoint_disagreement"]["port_differs"],
+                            "an agent must be able to read this without parsing the prose")
+
+
 class StateVersionTests(unittest.TestCase):
     """`.forge` carries months of decisions, so upgrading Forge over it is a real operation."""
 

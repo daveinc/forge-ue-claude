@@ -181,7 +181,14 @@ try {
             $waited = [int]((Get-Date) - $ownedAt).TotalSeconds
             Add-Result "mcp-handshake" "PASS" "a real editor answered an MCP initialize ${waited}s after the process was detected"
         } else {
-            Add-Result "mcp-handshake" "NOT_PROVEN" "no MCP answer within the window. Enabling the plugin is not enough: the server only listens when -ModelContextProtocolStartServer is passed or bAutoStartServer is set, and the port must match .forge/mcp.json"
+            $why = Invoke-Forge @("route-status", "--project", ".")
+            $row = Get-Route $why "unreal-native-mcp"
+            $reason = if ($row.endpoint_disagreement) {
+                $row.endpoint_disagreement.detail
+            } else {
+                "no MCP answer within the window. The server only listens when -ModelContextProtocolStartServer is passed, bAutoStartServer is set, or ModelContextProtocol.StartServer is run, and both settings are read at startup so a change needs a restart"
+            }
+            Add-Result "mcp-handshake" "NOT_PROVEN" $reason
         }
 
         $status = Invoke-Forge @("route-status", "--project", ".")

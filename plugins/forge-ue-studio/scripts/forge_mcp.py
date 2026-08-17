@@ -9,6 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import forge_executor as executor
@@ -267,12 +268,31 @@ def _apply_handshake(root: Path, result: dict[str, Any], provider: dict[str, Any
     if result["found"]:
         enriched["status"] = "UNAVAILABLE_OPTIONAL"
         enriched["reason"] = f"declared to the host but did not answer an MCP initialize at {url}"
+        settings = unreal_mcp_settings(root)
+        mismatch = endpoint_disagreement(root, url)
+        enriched["engine_settings"] = settings
+        enriched["endpoint_disagreement"] = mismatch
+        checks = [
+            "the editor is open on this project",
+            "ModelContextProtocol and AllToolsets are enabled in the .uproject",
+        ]
+        if mismatch:
+            checks.insert(0, f"THE PORT: {mismatch['detail']}")
+        elif settings["declared_by_project"] and not settings["auto_start"]:
+            checks.append(
+                "the server was started: this project sets bAutoStartServer=False, so it does not listen unless "
+                "launched with -ModelContextProtocolStartServer or started with ModelContextProtocol.StartServer"
+            )
+        else:
+            checks.append(
+                "the server was started: enabling the plugin does not make it listen. Launch with "
+                "-ModelContextProtocolStartServer, set bAutoStartServer, or run ModelContextProtocol.StartServer"
+            )
         enriched["note"] = (
             f"{handshake['detail']}. A route with a live probe that fails is unavailable, not unverified, "
-            "so work degrades to the declared fallback instead of dispatching into nothing. For Unreal's "
-            "first-party server the editor must be open with the ModelContextProtocol and AllToolsets plugins "
-            "enabled, and the server must have been started: it only listens when launched with "
-            "-ModelContextProtocolStartServer, when bAutoStartServer is set, or after ModelContextProtocol.StartServer."
+            "so work degrades to the declared fallback instead of dispatching into nothing. Check, in order: "
+            + "; ".join(f"({index}) {item}" for index, item in enumerate(checks, start=1))
+            + ". Both settings are read at editor startup, so changing either takes effect only after a restart."
         )
         return enriched
     if live:
@@ -284,6 +304,97 @@ def _apply_handshake(root: Path, result: dict[str, Any], provider: dict[str, Any
 
 
 EDITOR_PROCESS_NAMES = ("unrealeditor", "ue4editor", "ue5editor")
+
+
+MCP_SETTINGS_SECTION = "/Script/ModelContextProtocolEngine.ModelContextProtocolSettings"
+
+
+MCP_SETTINGS_DEFAULTS = MappingProxyType({"ServerPortNumber": "8000", "ServerUrlPath": "/mcp", "bAutoStartServer": "False"})
+
+
+def _ini_section(path: Path, section: str) -> dict[str, str]:
+    """One INI section as keys, tolerant of Unreal's array prefixes and comments."""
+    values: dict[str, str] = {}
+    inside = False
+    try:
+        lines = path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            inside = stripped[1:-1] == section
+            continue
+        if not inside or not stripped or stripped.startswith((";", "#")) or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        values[key.strip().lstrip("+-.!")] = value.strip()
+    return values
+
+
+def unreal_mcp_settings(root: Path) -> dict[str, Any]:
+    """What the project's own config says the editor's MCP server will do.
+
+    Forge probes an endpoint the project declares, and the editor serves one its
+    settings declare. Nothing tied the two together, so a project that moved the
+    port read exactly like a project whose editor was closed: a silent endpoint
+    and no reason given. This reads the settings so the two can be compared.
+
+    Layered the way Unreal layers them: the project default first, then the
+    per-user saved file, which wins.
+    """
+    sources: list[str] = []
+    values = dict(MCP_SETTINGS_DEFAULTS)
+    ordered = [root / "Config" / "DefaultEditorPerProjectUserSettings.ini"]
+    ordered.extend(sorted(root.glob("Saved/Config/*/EditorPerProjectUserSettings.ini")))
+    for path in ordered:
+        if not path.is_file():
+            continue
+        found = _ini_section(path, MCP_SETTINGS_SECTION)
+        if found:
+            values.update(found)
+            sources.append(str(path))
+    try:
+        port = int(values.get("ServerPortNumber", 8000))
+    except ValueError:
+        port = None
+    return {
+        "declared_by_project": bool(sources),
+        "sources": sources,
+        "port": port,
+        "url_path": values.get("ServerUrlPath", "/mcp"),
+        "auto_start": str(values.get("bAutoStartServer", "False")).strip().lower() in {"true", "1"},
+        "note": "settings are read at editor startup, so a change to either takes effect only after a restart",
+    }
+
+
+def endpoint_disagreement(root: Path, url: str | None) -> dict[str, Any] | None:
+    """Whether the endpoint Forge probes is the one the editor was told to serve."""
+    if not url:
+        return None
+    settings = unreal_mcp_settings(root)
+    if settings["port"] is None:
+        return None
+    parsed = urllib.parse.urlparse(url)
+    probed_port = parsed.port
+    probed_path = parsed.path or "/"
+    port_differs = probed_port is not None and probed_port != settings["port"]
+    path_differs = probed_path.rstrip("/") != str(settings["url_path"]).rstrip("/")
+    if not (port_differs or path_differs):
+        return None
+    expected = f"{parsed.scheme}://{parsed.hostname}:{settings['port']}{settings['url_path']}"
+    return {
+        "probed": url,
+        "configured": expected,
+        "port_differs": port_differs,
+        "path_differs": path_differs,
+        "sources": settings["sources"],
+        "detail": (
+            f"Forge probes {url} but this project's Unreal settings serve {expected}. Point the transport url in "
+            ".forge/mcp.json at the configured endpoint, or change the project setting to match. Either way the "
+            "editor must be restarted, because these settings are read at startup."
+        ),
+    }
 
 
 def project_descriptors(root: Path) -> list[str]:
@@ -878,6 +989,8 @@ def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
                 "live": probe.get("live"),
                 "status": probe["status"],
                 "fallbacks": item.get("fallbacks", []),
+                "engine_settings": probe.get("engine_settings"),
+                "endpoint_disagreement": probe.get("endpoint_disagreement"),
                 "note": probe.get("note") or probe.get("reason"),
             }
         )

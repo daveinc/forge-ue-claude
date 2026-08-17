@@ -25,6 +25,8 @@
    python <forge-plugin-root>\scripts\forge.py route-status --project "<project>"
    ```
 
+   When Unreal's first-party route does not answer, read `endpoint_disagreement` and `engine_settings` on that row before concluding the editor is closed. A project that moved `ServerPortNumber` presents exactly as a project with no editor running: a silent endpoint. Forge names the mismatch when it finds one. Never diagnose this from the silence alone, and remember both `bAutoStartServer` and `ServerPortNumber` are read at editor startup, so any change to them needs a restart before it can be true.
+
    Report `session_visible` and `subagent_visible` separately. Report a route visible to the session but not to its spawned agents as project scope working as declared, with the declared fallback named. Name the remedy without performing it; widening a route to user scope belongs to `forge-capability-admin`. Never report a route as available because the server is installed.
 6. Report executable or plugin detection as `AVAILABLE_UNVERIFIED` until a safe end-to-end probe passes.
 7. Probe each accepted route with known-good and known-bad controls. Never expose or persist credential values.

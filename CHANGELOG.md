@@ -4,11 +4,18 @@ Every section below is dated from the tag that released it. One tag is not a rel
 
 ## 0.6.0 - 2026-08-17
 
+### A moved MCP port no longer reads as a closed editor
+
+- Forge probes the endpoint the project declares; the editor serves the one its own settings declare. Nothing tied the two together, so a project that moved `ServerPortNumber` presented **exactly** as a project with no editor running — a silent endpoint and no reason given. This was found on a real project configured for port 8800 while Forge probed 8000.
+- Forge now reads `[/Script/ModelContextProtocolEngine.ModelContextProtocolSettings]` from `Config/DefaultEditorPerProjectUserSettings.ini` and `Saved/Config/<Platform>/…`, layered the way Unreal layers them. A failed handshake reports `engine_settings` and `endpoint_disagreement` as structured fields, and its note **names the port mismatch first**, because it is the one cause that looks identical to every other.
+- Both `bAutoStartServer` and `ServerPortNumber` are read at editor startup, so changing either takes effect only after a restart. Every place that tells someone to change them now says so — a setting changed in a running editor is not yet true, which is its own way to spend an afternoon on a route that "should" work.
+
 ### Proven against UE 5.8, and the guidance corrected by what that proved
 
 - The acceptance driver was run against a real UE 5.8 editor: **11 passed, 0 failed.** `ue.live.typed` reached `AVAILABLE_VERIFIED` against Epic's own plugin — the claim a stand-in server can never settle — the two editor lanes swapped as the editor opened and closed, and a commandlet ran against the closed project and reported 266 assets from its result file.
 - It also settled the case this release exists for: **the editor was detected as holding the project 16 seconds before its MCP server finished binding its port.** For those 16 seconds an open editor answered nothing, which is what the old "no MCP answer means the project is free" rule would have read as an invitation to run a commandlet into it.
 - Enabling the plugins is **not** enough to bind the route, and every place Forge said otherwise was wrong. `ShouldAutoStartServer()` honours `-ModelContextProtocolStartServer`, then falls back to `bAutoStartServer`, which is off by default. `README.md`, the project template's `mcp.json`, `route-registry.json` and the probe's own failure note now say so and name the three ways to start it, instead of leaving a correctly-configured editor unexplained.
+- What that run did **not** establish is which change bound the route: the launch flag, the row-lookup fix and a hand-edited settings change all landed across the same set of runs. The corrected guidance rests on the engine source, where the default is unambiguous, not on the run. Recording this because a passing result whose cause is unknown is a weaker thing than it looks.
 
 ### A real engine can now be driven, and what remains unproven says so
 
