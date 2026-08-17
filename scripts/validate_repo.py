@@ -713,6 +713,18 @@ def main() -> int:
         for token in neutrality_violations(text, banned):
             fail(f"Canon leaks host-specific token {token!r}: {path.relative_to(ROOT)}", failures)
 
+    declared_versions = {}
+    project_version = re.search(r'^version = "([^"]+)"', (ROOT / "pyproject.toml").read_text(encoding="utf-8-sig"), re.MULTILINE)
+    declared_versions["pyproject.toml"] = project_version.group(1) if project_version else None
+    for manifest_dir in (".claude-plugin", ".codex-plugin"):
+        manifest_path = PLUGIN / manifest_dir / "plugin.json"
+        declared_versions[f"{manifest_dir}/plugin.json"] = parsed.get(manifest_path, {}).get("version")
+    released = re.search(r"^## (\d+\.\d+\.\d+)", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8-sig"), re.MULTILINE)
+    declared_versions["CHANGELOG.md"] = released.group(1) if released else None
+    if len(set(declared_versions.values())) != 1:
+        stated = ", ".join(f"{name} says {version!r}" for name, version in sorted(declared_versions.items()))
+        fail(f"The declared version differs between the files that declare it: {stated}", failures)
+
     for path in repository_files("*"):
         if path.is_file() and path.suffix.lower() in {".md", ".json", ".py", ".toml", ".yml", ".yaml", ".ps1"}:
             placeholder = "[" + "TODO:"

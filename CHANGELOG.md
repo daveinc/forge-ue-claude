@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+Every section below is dated from the tag that released it. One tag is not a release: `v0.1.0` pins the exact tree an external architecture review read, so that its assessment can be reproduced. The work it marks shipped in 0.2.0, and there is no 0.1.0 section for it — the `0.1.0` heading at the bottom is the original release of 2026-08-14.
+
+## 0.5.0 - 2026-08-17
 
 ### Every verb is reachable from a workflow, and a guard keeps it that way
 
@@ -13,6 +15,12 @@
 - `mcp enable` is documented beside `disable`, and the pair is explained: disabling keeps the declaration, so re-adopting a route is `enable` rather than a second `add`.
 - `mcp-status` stays deliberately unreachable, recorded with its reason: it is the retained spelling of `route-status`, and promoting both would offer one route under two names.
 
+### The version this repo declares is the version it is
+
+- Three files declare a version and all three said `0.2.0` while five tags existed through `v0.4.0` and the changelog held everything since 2026-08-14 under `Unreleased`. Anyone installing the plugin read `0.2.0` for three releases.
+- `CHANGELOG.md` is cut into the releases that actually happened, each dated from its tag. Two were never written down and are recovered from their commits: `0.3.1`, the profile verb that failed on every invocation, and the operator agent's reach over the routes `0.4.1` made servable.
+- `validate_repo.py` now fails when `pyproject.toml`, either `plugin.json`, and the newest `CHANGELOG.md` heading do not all state the same version. Declarations that drifted apart once will drift again.
+
 ### A routing decision is state the executor reads, not a file an agent carries
 
 - `exec acquire --route` was optional, so the workflow telling the agent to pass it was compliance, not enforcement. It was worse than optional: **`forge.py route` was invoked by no workflow at all**. Step 10 of `forge-route-work` said "save the decision from step 6 and pass it", and step 6 never ran the command that produces a decision. There was no documented path that created the file the flag consumes, so in practice every packet was taken on trust.
@@ -22,6 +30,8 @@
 - A packet naming a registered alias resolved its decision and then failed that decision's own work-order check, because `route_conflicts` compared the raw id. The registry treats aliases as display compatibility, so one may not read as a different work order; the canonical id is what is compared now.
 - The atomic-replace-under-mutex write that guarded the lease ledger is now `write_state_atomically`, and `StateMutex` takes the ledger it guards, so the decision ledger gets the same protection rather than a second implementation of it.
 
+## 0.4.1 - 2026-08-17
+
 ### Routing decides what a packet must hold, and acquiring checks it
 
 - `route_work` scored eligibility from `detected.json`, whose provider statuses come from survey's plugin-name heuristics, so it could refuse a route the live probe had just verified. It now resolves every required capability through the route contracts and overlays their status. A capability no route serves is not an error: the resident host or an engine prerequisite answers it, and the payload says so rather than failing closed.
@@ -29,6 +39,13 @@
 - `exec acquire --route <decision>` refuses a packet that declares fewer leases than routing resolved, weaker isolation than it requires, or any lane while tool access is degraded. Acquiring the weaker thing is worse than refusing, because no lease can detect afterwards that the work ran outside the protection routing decided it needed.
 - A lease whose lane belongs to no exclusive group excluded nothing and said nothing. `exec acquire` and `exec status` now name the group each lease joined and list the lanes that joined none, so a misspelled lane reads as a misspelling rather than as protection.
 - Project-local routes must spell their lane with the `lane.` prefix the registry's own rules require. A lane spelled any other way is not the lane the ledger enforces.
+
+### The operator agent can reach the routes it is meant to operate
+
+- Declaring the two new Unreal routes made three capabilities servable that no agent declared, and `forge-route-work` step 7 dispatches a capability only to an agent declaring it — routable and undispatchable at once. `unreal-operator` now declares all six UE capabilities, and its description and instructions are written around peer routes rather than a live editor with a fallback.
+- The validator fails when a capability some route serves is declared by no agent, so a route can no longer be added without an agent that can be given the work.
+
+## 0.4.0 - 2026-08-17
 
 ### All three Unreal routes exist, and the verb that reports them says so
 
@@ -61,12 +78,23 @@
 - Greenfield now offers `forge-doctor` as its alternative, which is a different action. The unfronted GSD path is not lost: `gsd_snapshot` already lists `/gsd:new-project` untranslated, which is where a user who wants stock GSD should find it.
 - A test renders every action block's commands through the same translation the payload uses and fails when two ids land on one verb.
 
+## 0.3.1 - 2026-08-17
+
+### The profile verb worked again, and every verb got exercised
+
+- `forge.py profile` failed on **every** invocation since the result contract landed in `bfc7630`: `write_profile` never returned a `schema` key and the contract assertion rejected the payload. It hid because `install_overlay` calls `write_profile` directly, bypassing `main()`, so the only path that exercised it was the one that skipped the check.
+- `CommandSurfaceTests` drives every leaf command the parser declares through `main()`, and fails when a declared command has no invocation. A verb cannot be shipped unexercised, so that class of rot cannot recur.
+
+## 0.3.0 - 2026-08-16
+
 ### One module per concern, cut where the code already separated
 
 - Split `forge.py` into ten modules. It had grown to 2,558 lines carrying the failure contract, host registry, MCP routes, GSD front, capability survey, lifecycle, installer, routing and the CLI, so every one of those concerns was read and edited through the same file.
 - The cut follows the call graph rather than a guess. Three names had to move first: `capability` was used only by the MCP layer and the survey that defined it, and the overlay's path helpers were used by both the host renderer and the installer, so both belong to `forge_core`. `host_set`, `host_status` and `host_list` are called only by the CLI and sat between the host registry and the GSD sync that depends on it, so they became `forge_runtime`. With those moved the layering is acyclic, and a test asserts it stays that way.
 - `forge.py` keeps every public name, so `forge.<verb>` resolves exactly as before and the split changes no behaviour. A test walks each module with `symtable` and fails on any name a module references but never defines or imports, which is the check that would otherwise wait for a rare path to raise `NameError`.
 - `forge_executor.py` imports nothing from the rest, and a test holds it there. The transactional core does not depend on the layers above it.
+
+## 0.2.0 - 2026-08-16
 
 ### Isolation is enforced by the runtime, not by workflow compliance
 
