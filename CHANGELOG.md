@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Routing decides what a packet must hold, and acquiring checks it
+
+- `route_work` scored eligibility from `detected.json`, whose provider statuses come from survey's plugin-name heuristics, so it could refuse a route the live probe had just verified. It now resolves every required capability through the route contracts and overlays their status. A capability no route serves is not an error: the resident host or an engine prerequisite answers it, and the payload says so rather than failing closed.
+- The decision names what it implies — `lanes`, `leases`, `isolation_mode`, and a `tool_access` row per capability. The mapping from capability to lease existed in the registry and reached nobody; a packet author had to transcribe it. `lane_warnings` reports a route implying a lane the request never declared, and a declared lane no bound route serves.
+- `exec acquire --route <decision>` refuses a packet that declares fewer leases than routing resolved, weaker isolation than it requires, or any lane while tool access is degraded. Acquiring the weaker thing is worse than refusing, because no lease can detect afterwards that the work ran outside the protection routing decided it needed.
+- A lease whose lane belongs to no exclusive group excluded nothing and said nothing. `exec acquire` and `exec status` now name the group each lease joined and list the lanes that joined none, so a misspelled lane reads as a misspelling rather than as protection.
+- Project-local routes must spell their lane with the `lane.` prefix the registry's own rules require. A lane spelled any other way is not the lane the ledger enforces.
+
 ### All three Unreal routes exist, and the verb that reports them says so
 
 - Declare VibeUE's live-Python route, the third of the three `COUNTERPLAN.md` separates. It shares `lane.ue-editor` with the first-party typed route because it runs inside the same editor process, and takes the `ue-live-python` lease the super-lock already declared. Declaring the route does not install it: it stays uncommitted until a project declares the server and the probe finds it, which is what "not a Forge prerequisite" means.

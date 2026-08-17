@@ -121,7 +121,7 @@ from forge_lifecycle import (
     lifecycle_state,
 )
 from forge_install import install_overlay, profile_registry, stable_profile, verify_overlay, write_profile
-from forge_routing import route_work
+from forge_routing import ISOLATION_STRENGTH, resolve_tool_access, route_conflicts, route_work, strictest_isolation
 from forge_runtime import host_list, host_set, host_status
 
 
@@ -135,14 +135,39 @@ VERDICT_COMMANDS = frozenset(
 )
 
 
-def execute_acquire(project_value: str, packet_value: str, owner: str | None, apply: bool, host_override: str | None = None) -> dict[str, Any]:
-    """Take the leases and isolation a work packet declares, as one transaction."""
+def execute_acquire(
+    project_value: str,
+    packet_value: str,
+    owner: str | None,
+    apply: bool,
+    host_override: str | None = None,
+    route_value: str | None = None,
+) -> dict[str, Any]:
+    """Take the leases and isolation a work packet declares, as one transaction.
+
+    Given the decision that authorised the work, refuse a packet that holds less
+    than routing resolved it needs, rather than acquiring the weaker thing.
+    """
     root, _ = project_root(project_value)
     profile = active_profile(root, host_override)
     packet_path = Path(packet_value).expanduser().resolve()
     packet = load_json(packet_path)
+    route_path = Path(route_value).expanduser().resolve() if route_value else None
+    if route_path is not None:
+        decision = load_json(route_path)
+        conflicts = route_conflicts(packet, decision)
+        if conflicts:
+            raise fail(
+                f"Packet and routing decision disagree on {len(conflicts)} point(s); acquiring would hold less "
+                "than routing required",
+                reason=ERROR_REASON["ROUTE_PACKET_MISMATCH"],
+                code=EXIT_CONTRACT,
+                conflicts=conflicts,
+                packet=str(packet_path),
+                route=str(route_path),
+            )
     result = executor.acquire(root, packet, owner or str(profile["id"]), apply=apply)
-    return {**result, "packet": str(packet_path), "host": profile["id"]}
+    return {**result, "packet": str(packet_path), "route": str(route_path) if route_path else None, "host": profile["id"]}
 
 
 def execute_release(project_value: str, work_order: str, outcome: str, apply: bool) -> dict[str, Any]:
@@ -238,6 +263,7 @@ def build_parser() -> argparse.ArgumentParser:
     acquire_parser = execution_sub.add_parser("acquire", help="Take every lease and isolation the packet declares")
     acquire_parser.add_argument("--project", required=True)
     acquire_parser.add_argument("--packet", required=True)
+    acquire_parser.add_argument("--route", dest="route", help="Routing decision that authorised this work; refuses a packet holding less than it requires")
     acquire_parser.add_argument("--owner", help="Who holds the lease; defaults to the assigned host")
     acquire_parser.add_argument("--host")
     acquire_parser.add_argument("--apply", action="store_true")
@@ -309,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
             result = route_work(args.project, args.request, args.host)
         elif args.command == "exec":
             if args.exec_command == "acquire":
-                result = execute_acquire(args.project, args.packet, args.owner, apply=bool(args.apply), host_override=args.host)
+                result = execute_acquire(args.project, args.packet, args.owner, apply=bool(args.apply), host_override=args.host, route_value=getattr(args, "route", None))
             elif args.exec_command == "release":
                 result = execute_release(args.project, args.work_order, args.outcome, apply=bool(args.apply))
             else:

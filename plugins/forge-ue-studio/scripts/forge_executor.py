@@ -333,6 +333,7 @@ def acquire(
             {
                 "lease_id": f"lease-{uuid.uuid4().hex[:12]}",
                 "lane": lane,
+                "exclusive_group": exclusive_group_of(document, lane),
                 "owner": owner,
                 "work_order": intent["work_order"],
                 "write_scope": intent["write_scope"] or [intent["work_order"]],
@@ -355,6 +356,15 @@ def acquire(
         elif recovered:
             write_lease_state(root, document)
 
+    ungrouped = sorted({item["lane"] for item in granted if not item["exclusive_group"]})
+    ungrouped_note = (
+        f"{', '.join(ungrouped)} belong to no exclusive group in leases.json, so each excludes only its own "
+        "lane and nothing else contends with it. Check the spelling against the route registry before relying "
+        "on it for protection."
+        if ungrouped
+        else None
+    )
+
     if not apply:
         return {
             "schema": "forge.execution-acquire/v1",
@@ -367,6 +377,8 @@ def acquire(
             "conflicts": [],
             "plan": _plan(intent, owner, None),
             "leases": [],
+            "ungrouped_lanes": ungrouped,
+            "ungrouped_note": ungrouped_note,
         }
 
     undo: list[Callable[[], str | None]] = [
@@ -406,6 +418,8 @@ def acquire(
         "conflicts": [],
         "plan": _plan(intent, owner, revision),
         "leases": granted,
+        "ungrouped_lanes": ungrouped,
+        "ungrouped_note": ungrouped_note,
     }
 
 
@@ -549,6 +563,10 @@ def status(root: Path) -> dict[str, Any]:
         "schema": "forge.execution-status/v1",
         "project": str(root),
         "active": active,
+        "lane_groups": {
+            str(lease.get("lane")): exclusive_group_of(document, str(lease.get("lane")))
+            for lease in active
+        },
         "expired_awaiting_recovery": [lease.get("lease_id") for lease in recoverable],
         "exclusive_groups": document.get("exclusive_groups", {}),
         "state_path": str(lease_state_path(root)),

@@ -2532,6 +2532,167 @@ class EditorClosedRouteTests(unittest.TestCase):
             self.assertFalse(live and closed, "one project cannot offer both editor lanes at once")
 
 
+class RoutedAcquisitionTests(unittest.TestCase):
+    """Routing resolves what the work needs; acquiring may not hold less than that."""
+
+    def setUp(self):
+        self.profile = forge.host_profile("claude")
+
+    @contextmanager
+    def game(self, engine_present=True):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            for command in (
+                ["git", "init", "-q", "-b", "main"],
+                ["git", "config", "user.email", "forge@test.invalid"],
+                ["git", "config", "user.name", "Forge Test"],
+                ["git", "add", "-A"],
+                ["git", "commit", "-qm", "base"],
+            ):
+                subprocess.run(command, cwd=str(root), capture_output=True, check=True)
+            (root / "request.json").write_text(
+                json.dumps({
+                    "work_order": "FI-UNREAL", "task_class": "engine-operation", "complexity": "medium",
+                    "bounded": True, "required_capabilities": ["ue.python.commandlet"],
+                    "required_lanes": ["lane.ue-editor-closed"], "mutation_risk": "project-write",
+                }),
+                encoding="utf-8",
+            )
+            original = os.environ.get("PATH", "")
+            if engine_present:
+                shim = temp / "engine"
+                shim.mkdir()
+                (shim / "UnrealEditor-Cmd.cmd").write_text("@echo off\r\necho stub\r\n", encoding="utf-8")
+                os.environ["PATH"] = f"{shim}{os.pathsep}{original}"
+            try:
+                yield root
+            finally:
+                os.environ["PATH"] = original
+
+    def decision(self, root):
+        return forge.route_work(str(root), str(root / "request.json"))
+
+    def packet(self, root, name, **overrides):
+        body = {
+            "work_order": "FI-UNREAL",
+            "leases": ["ue-editor-closed-api"],
+            "write_scope": ["Content"],
+            "isolation": {"mode": "project-exclusive", "base_revision": "HEAD"},
+        }
+        body.update(overrides)
+        path = root / name
+        path.write_text(json.dumps(body), encoding="utf-8")
+        return path
+
+    def test_routing_names_the_lane_lease_and_isolation_the_work_needs(self):
+        with self.game() as root:
+            decision = self.decision(root)
+            self.assertEqual(decision["lanes"], ["lane.ue-editor-closed"])
+            self.assertEqual(decision["leases"], ["ue-editor-closed-api"])
+            self.assertEqual(decision["isolation_mode"], "project-exclusive")
+            self.assertFalse(decision["tool_access_degraded"])
+            self.assertEqual(decision["lane_warnings"], [])
+
+    def test_routing_reads_the_live_contract_not_a_stale_snapshot(self):
+        """The probe decides, so an absent engine degrades the route to its fallback."""
+        with self.game(engine_present=False) as root:
+            decision = self.decision(root)
+            self.assertTrue(decision["tool_access_degraded"])
+            self.assertEqual(decision["leases"], [])
+            self.assertEqual(
+                decision["degraded_capabilities"][0]["take_fallback"], ["ue.native-mcp-or-cpp-uat"]
+            )
+            self.assertIn("no bound route serves", decision["lane_warnings"][0])
+
+    def test_a_capability_no_route_serves_resolves_to_the_resident(self):
+        with self.game() as root:
+            contracts = {c["capability"]: c for c in forge.mcp_capability_contracts(root, self.profile)}
+            resolved = forge.resolve_tool_access(contracts, {"ue.build"})[0]
+            self.assertFalse(resolved["routed"])
+            self.assertTrue(resolved["bound"])
+            self.assertEqual(resolved["provider"], forge.RESIDENT_PROVIDER)
+
+    def test_a_packet_missing_the_lease_routing_requires_is_refused(self):
+        with self.game() as root:
+            decision = self.decision(root)
+            packet = json.loads(self.packet(root, "p.json", leases=[]).read_text(encoding="utf-8"))
+            conflicts = forge.route_conflicts(packet, decision)
+            self.assertTrue(any("does not declare" in item for item in conflicts))
+
+    def test_a_packet_weaker_than_routing_requires_is_refused(self):
+        with self.game() as root:
+            decision = self.decision(root)
+            packet = json.loads(
+                self.packet(root, "p.json", isolation={"mode": "git-worktree", "base_revision": "HEAD"})
+                .read_text(encoding="utf-8")
+            )
+            conflicts = forge.route_conflicts(packet, decision)
+            self.assertTrue(any("weaker" in item for item in conflicts))
+
+    def test_a_degraded_route_refuses_acquisition_rather_than_taking_the_lane(self):
+        with self.game(engine_present=False) as root:
+            decision = self.decision(root)
+            packet = json.loads(self.packet(root, "p.json").read_text(encoding="utf-8"))
+            conflicts = forge.route_conflicts(packet, decision)
+            self.assertTrue(any("degraded" in item for item in conflicts))
+
+    def test_exec_acquire_refuses_the_mismatch_through_the_cli(self):
+        with self.game() as root:
+            route_path = root / "route.json"
+            route_path.write_text(json.dumps(self.decision(root)), encoding="utf-8")
+            packet_path = self.packet(root, "under.json", leases=[])
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.execute_acquire(str(root), str(packet_path), None, apply=True, route_value=str(route_path))
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_PACKET_MISMATCH"])
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_a_packet_that_matches_routing_acquires(self):
+        with self.game() as root:
+            route_path = root / "route.json"
+            route_path.write_text(json.dumps(self.decision(root)), encoding="utf-8")
+            packet_path = self.packet(root, "ok.json")
+            result = forge.execute_acquire(
+                str(root), str(packet_path), None, apply=True, route_value=str(route_path)
+            )
+            self.assertEqual(result["leases"][0]["lane"], "ue-editor-closed-api")
+            self.assertEqual(result["route"], str(route_path))
+
+    def test_a_lease_in_no_exclusive_group_is_reported_not_silent(self):
+        """A typo'd lane still leases, but it protects nothing, so it must be visible."""
+        with self.game() as root:
+            packet_path = self.packet(root, "typo.json", leases=["ue-editor-closed-api-typo"])
+            preview = forge.execute_acquire(str(root), str(packet_path), None, apply=False)
+            self.assertEqual(preview["ungrouped_lanes"], ["ue-editor-closed-api-typo"])
+            self.assertIn("no exclusive group", preview["ungrouped_note"])
+
+    def test_a_known_lane_names_the_group_it_joined(self):
+        with self.game() as root:
+            result = forge.execute_acquire(str(root), str(self.packet(root, "ok.json")), None, apply=True)
+            self.assertEqual(result["leases"][0]["exclusive_group"], "unreal-project-super-lock")
+            self.assertEqual(result["ungrouped_lanes"], [])
+            status = forge.executor.status(root)
+            self.assertEqual(status["lane_groups"]["ue-editor-closed-api"], "unreal-project-super-lock")
+
+    def test_a_project_local_route_must_spell_its_lane_as_a_lane(self):
+        with self.game() as root:
+            path = root / ".forge" / "mcp.json"
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["servers"] = [{
+                "id": "some-tool", "enabled": True, "transport": {"command": "node"},
+                "server": "some-tool", "capabilities": ["audio.mix"], "lane": "audio-authoring",
+                "isolation_mode": "git-worktree", "fallbacks": ["human-audio-pass"],
+            }]
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.resolve_project_servers(root)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["MCP_INCOMPLETE_DECLARATION"])
+            document["servers"][0]["lane"] = "lane.audio-authoring"
+            path.write_text(json.dumps(document), encoding="utf-8")
+            self.assertEqual(forge.resolve_project_servers(root)[0]["lane"], "lane.audio-authoring")
+
+
 class ProfileStabilityTests(unittest.TestCase):
     """The detected profile describes the machine, so how the path was typed cannot change it."""
 

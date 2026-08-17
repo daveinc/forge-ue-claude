@@ -364,6 +364,8 @@ def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[s
                     "provider": provider.get("id"),
                     "kind": "mcp",
                     "status": status,
+                    "lease": provider.get("lease"),
+                    "isolation_mode": provider.get("isolation_mode"),
                     "health": "HEALTHY" if status.startswith("AVAILABLE") else "UNAVAILABLE",
                     "lane": provider.get("lane"),
                     "locality": provider.get("locality", "local"),
@@ -399,6 +401,8 @@ def _process_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, An
                     "provider": provider.get("id"),
                     "kind": "process",
                     "status": status,
+                    "lease": provider.get("lease"),
+                    "isolation_mode": provider.get("isolation_mode"),
                     "health": "HEALTHY" if status.startswith("AVAILABLE") else "UNAVAILABLE",
                     "lane": provider.get("lane"),
                     "locality": provider.get("locality", "local"),
@@ -463,6 +467,14 @@ def resolve_declared_servers(document: dict[str, Any]) -> list[dict[str, Any]]:
                 raise fail(
                     f"Project MCP entry {entry_id!r} is not in the catalog and must declare "
                     f"{', '.join(sorted(missing))} so routing can resolve it.",
+                    reason=ERROR_REASON["MCP_INCOMPLETE_DECLARATION"],
+                )
+            lane = str(entry.get("lane", ""))
+            if not lane.startswith("lane."):
+                raise fail(
+                    f"Project MCP entry {entry_id!r} names lane {lane!r}. Lane ids carry a 'lane.' prefix so a "
+                    "lane and a capability cannot collide in one namespace; a lane spelled any other way is not "
+                    "the lane the lease ledger enforces.",
                     reason=ERROR_REASON["MCP_INCOMPLETE_DECLARATION"],
                 )
             merged = {field: entry.get(field) for field in inherited}

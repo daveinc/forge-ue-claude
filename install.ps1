@@ -34,6 +34,7 @@ param(
     [ValidateSet('acquire', 'release', 'status')]
     [string]$ExecAction,
     [string]$PacketPath,
+    [string]$RoutePath,
     [string]$WorkOrder,
     [string]$Owner,
     [ValidateSet('passed', 'failed')]
@@ -228,6 +229,7 @@ if ($Mode -eq 'Exec') {
     if ($ExecAction -eq 'acquire') {
         if (-not $PacketPath) { throw '-PacketPath is required to acquire; the packet declares the leases and isolation.' }
         $arguments += @('--packet', $PacketPath)
+        if ($RoutePath) { $arguments += @('--route', $RoutePath) }
         if ($Owner) { $arguments += @('--owner', $Owner) }
         if ($PSBoundParameters.ContainsKey('RuntimeHost')) { $arguments += @('--host', $RuntimeHost) }
     }

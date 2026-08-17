@@ -57,6 +57,7 @@ ERROR_REASON = MappingProxyType(
         "MCP_NO_DECLARATION_FILE": "mcp_no_declaration_file",
         "AGENT_INVALID": "agent_invalid",
         "OVERLAY_MISSING": "overlay_missing",
+        "ROUTE_PACKET_MISMATCH": "route_packet_mismatch",
         "USAGE": "usage",
         "UNKNOWN": "unknown",
         **executor.ERROR_REASONS,
