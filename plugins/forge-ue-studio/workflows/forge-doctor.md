@@ -17,6 +17,8 @@
    ```
 
    It reports every canon file that is missing or has drifted from the template. Drift is not automatically wrong — a project may have amended canon deliberately — but an unexplained difference makes every capability answer below suspect, since they are read from these files. Report what drifted and why; re-apply through `forge-bootstrap`, never by hand.
+
+   Read `state_version` in the same payload. `CURRENT` is the normal answer. `MIGRATABLE` means `.forge` predates this Forge and the listed migrations apply; carry them out before trusting the state. `NEWER` means this `.forge` was written by a newer Forge and **this build must not operate on it** — the verdict is already `ok: false`. Upgrade Forge instead, because state this build cannot read is state it would silently drop, and `.forge` is where months of decisions live.
 5. Probe every declared typed tool route:
 
    ```powershell

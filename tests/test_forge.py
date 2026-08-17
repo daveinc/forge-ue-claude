@@ -3296,6 +3296,67 @@ class CommandSurfaceTests(unittest.TestCase):
             self.assertEqual([p.name for p in before if before[p] != after[p]], [])
 
 
+class StateVersionTests(unittest.TestCase):
+    """`.forge` carries months of decisions, so upgrading Forge over it is a real operation."""
+
+    @contextmanager
+    def game(self):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            yield root
+
+    def set_state_version(self, root, version):
+        path = root / ".forge" / "state" / "install-state.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["schema_version"] = version
+        path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+
+    def test_the_shipped_template_states_the_version_this_build_supports(self):
+        """The number in the template and the number in the code were never tied together."""
+        template = json.loads(
+            (ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state" /
+             "install-state.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(template["schema_version"], forge.STATE_SCHEMA_VERSION)
+
+    def test_a_fresh_overlay_reads_as_current(self):
+        with self.game() as root:
+            self.assertEqual(forge.state_version(root)["status"], "CURRENT")
+            self.assertTrue(forge.verify_overlay(str(root))["ok"])
+
+    def test_older_state_is_migratable_and_says_what_changed(self):
+        with self.game() as root:
+            self.set_state_version(root, 1)
+            state = forge.state_version(root)
+            self.assertEqual(state["status"], "MIGRATABLE")
+            self.assertEqual(state["found"], 1)
+            self.assertTrue(state["migrations"])
+            self.assertTrue(forge.verify_overlay(str(root))["ok"], "migratable state is not a failure")
+
+    def test_newer_state_is_refused_rather_than_guessed_at(self):
+        """A newer .forge knows things this build does not, and would be silently dropped."""
+        with self.game() as root:
+            self.set_state_version(root, forge.STATE_SCHEMA_VERSION + 1)
+            state = forge.state_version(root)
+            self.assertEqual(state["status"], "NEWER")
+            self.assertIn("Upgrade Forge", state["detail"])
+            self.assertFalse(forge.verify_overlay(str(root))["ok"])
+
+    def test_an_unapplied_overlay_reports_absent_rather_than_a_version(self):
+        with workspace_tempdir() as temp:
+            root = temp / "Bare"
+            root.mkdir()
+            self.assertEqual(forge.state_version(root)["status"], "ABSENT")
+
+    def test_every_migration_step_below_the_current_version_is_documented(self):
+        """A version bump with no migration note leaves an upgrade nobody can perform."""
+        documented = set(forge.STATE_MIGRATIONS)
+        expected = set(range(1, forge.STATE_SCHEMA_VERSION))
+        self.assertEqual(sorted(expected - documented), [])
+
+
 class DispatchAdmissionTests(unittest.TestCase):
     """Admission is one decision. Nothing is acquired unless every check passed,
     and nothing is recorded unless it was acquired."""

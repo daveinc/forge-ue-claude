@@ -1,0 +1,48 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate repository
+        run: python scripts/validate_repo.py
+      - name: Run tests
+        run: python -m unittest discover -s tests
+      - name: Check the tag matches the declared version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          declared=$(python -c "import re,pathlib; print(re.search(r'^version = \"([^\"]+)\"', pathlib.Path('pyproject.toml').read_text(), re.M).group(1))")
+          if [ "$tag" != "$declared" ]; then
+            echo "tag $GITHUB_REF_NAME does not match the declared version $declared"
+            exit 1
+          fi
+      - name: Extract this version's changelog section
+        shell: bash
+        run: |
+          python - <<'PY' > release-notes.md
+          import os, pathlib, re
+          version = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          match = re.search(rf"^## {re.escape(version)}[^\n]*\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+          print((match.group(1).strip() if match else f"See CHANGELOG.md for {version}."))
+          PY
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md

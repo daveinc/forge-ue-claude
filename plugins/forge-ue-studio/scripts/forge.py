@@ -123,7 +123,16 @@ from forge_lifecycle import (
     forge_next,
     lifecycle_state,
 )
-from forge_install import install_overlay, profile_registry, stable_profile, verify_overlay, write_profile
+from forge_install import (
+    STATE_MIGRATIONS,
+    STATE_SCHEMA_VERSION,
+    install_overlay,
+    profile_registry,
+    stable_profile,
+    state_version,
+    verify_overlay,
+    write_profile,
+)
 from forge_routing import (
     DEFAULT_FRESHNESS_MINUTES,
     ISOLATION_STRENGTH,

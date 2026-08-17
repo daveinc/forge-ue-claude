@@ -4,6 +4,21 @@ Every section below is dated from the tag that released it. One tag is not a rel
 
 ## 0.6.0 - 2026-08-17
 
+### `.forge` state has a version that means something
+
+- `install-state.json` shipped `schema_version: 2` and **nothing read it** — a version number with no migration path behind it, on the one directory that accumulates months of a project's decisions. Upgrading Forge over an existing game was therefore an untested operation.
+- `forge.py verify` now reports `state_version` as `CURRENT`, `MIGRATABLE` (older, with the migration notes that apply) or `NEWER`. `NEWER` fails the verdict: a `.forge` written by a later Forge knows things this build does not, and operating on it would silently drop them. Upgrade Forge instead. `forge-doctor` reads this before trusting anything else in the overlay.
+- A guard requires every version below the current one to carry a migration note, so a bump cannot leave an upgrade nobody can perform, and another ties the number in the shipped template to the number in the code — they were never connected.
+
+### Tagged versions become published releases
+
+- Seven tags existed and none of them published anything. `.github/workflows/release.yml` cuts a GitHub Release from a `v*.*.*` tag, using that version's own `CHANGELOG.md` section as the body, and refuses to publish when the tag and `pyproject.toml` disagree or the suite is not green.
+
+### Forge is a permission model, not a sandbox, and `SECURITY.md` now says so
+
+- The control plane is carefully permission-aware — dry-run first, back up what is replaced, preserve unrelated entries, record consent, never change the machine implicitly. None of that is a security boundary, and the distinction matters most to anyone considering running Forge unattended, so it is stated rather than left to be inferred.
+- `SECURITY.md` names what Forge contains and what it does not (process isolation, filesystem confinement, egress control, privilege separation), and gives the OS-level containment an autonomous production line needs. `unreal-operator`'s tool surface is deliberately **not** narrowed: it needs `Bash` to run commandlets and `Write` to author them, and `Bash` alone already reaches anything the account can reach — dropping the others would reduce the apparent surface without reducing the real authority.
+
 ### Admission is one decision, not four steps with seams between them
 
 - Validating a packet, proving its routes were reachable, taking its leases and recording the transition were four commands an agent walked between. Each gap was somewhere a check could be skipped and the next step still reached, so the guarantee held only while the agent followed the workflow. Routing could also return `selected: resident` while a required capability had no viable route, leaving the final capability resolution to the agent.

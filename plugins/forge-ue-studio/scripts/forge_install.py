@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from forge_core import (
@@ -158,6 +159,55 @@ def install_overlay(project_value: str, apply: bool, host_override: str | None =
     }
 
 
+STATE_SCHEMA_VERSION = 2
+
+
+STATE_MIGRATIONS = MappingProxyType(
+    {
+        1: "2: install-state gained the capability ledger, qualification registry and phase activation pointers. "
+           "Re-run `install --apply`, which writes them without touching recorded decisions.",
+    }
+)
+
+
+def state_version(root: Path) -> dict[str, Any]:
+    """What `.forge` claims to be, against what this build can operate on.
+
+    A project accumulates months of decisions in `.forge`, so upgrading the
+    orchestration layer over it is a real operation. State older than this build
+    is migratable. State newer is not: it was written by a Forge that knows
+    things this one does not, and guessing at it corrupts the record.
+    """
+    path = root / ".forge" / "state" / "install-state.json"
+    if not path.is_file():
+        return {
+            "found": None,
+            "supported": STATE_SCHEMA_VERSION,
+            "status": "ABSENT",
+            "detail": f"{path} does not exist; the overlay has not been applied",
+            "migrations": [],
+        }
+    found = int(load_json(path).get("schema_version", 0))
+    if found == STATE_SCHEMA_VERSION:
+        return {
+            "found": found, "supported": STATE_SCHEMA_VERSION, "status": "CURRENT",
+            "detail": "the state on disk matches this build", "migrations": [],
+        }
+    if found > STATE_SCHEMA_VERSION:
+        return {
+            "found": found, "supported": STATE_SCHEMA_VERSION, "status": "NEWER",
+            "detail": f"this .forge was written by a newer Forge (state v{found}; this build supports "
+                      f"v{STATE_SCHEMA_VERSION}). Upgrade Forge rather than operating on state it cannot read, "
+                      "because what it does not understand it would silently drop",
+            "migrations": [],
+        }
+    return {
+        "found": found, "supported": STATE_SCHEMA_VERSION, "status": "MIGRATABLE",
+        "detail": f"state v{found} predates this build (v{STATE_SCHEMA_VERSION})",
+        "migrations": [STATE_MIGRATIONS[step] for step in sorted(STATE_MIGRATIONS) if step >= found],
+    }
+
+
 def verify_overlay(project_value: str, host_override: str | None = None) -> dict[str, Any]:
     root, uproject = project_root(project_value)
     profile = active_profile(root, host_override)
@@ -179,6 +229,7 @@ def verify_overlay(project_value: str, host_override: str | None = None) -> dict
         else:
             status = "LOCAL_VARIANT"
         checks.append({"path": str(destination), "status": status, "kind": "host-rendered"})
+    state = state_version(root)
     return {
         "schema": "forge.overlay-verify/v1",
         "project": str(root.resolve()),
@@ -186,5 +237,6 @@ def verify_overlay(project_value: str, host_override: str | None = None) -> dict
         "project_stage": "unreal-project" if uproject else "pre-project",
         "host": profile["id"],
         "checks": checks,
-        "ok": all(c["status"] != "MISSING" for c in checks),
+        "state_version": state,
+        "ok": all(c["status"] != "MISSING" for c in checks) and state["status"] != "NEWER",
     }
