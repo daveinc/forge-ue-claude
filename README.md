@@ -113,7 +113,9 @@ python -m unittest discover -s tests -v
 
 Verified by the included tests: manifest/skill/schema structure, host registry and prerequisite contract, host-surface rendering and byte-identical swap round-trip, cross-host qualification staleness, verb translation and suppression of out-of-scope actions, GSD runtime-key sync across swaps, the bootstrap closure gate, resident/offload policy, typed tool routing and user-scope consent, result-contract validation, and idempotent overlay reapplication.
 
-Also verified against real Git: a lane lease refuses a second holder of the same lane or exclusive group, two racing processes produce one holder and one refusal, failed isolation leaves no lease behind, worktrees are created from the named revision and discarded on a failed outcome, and an expired lease is recovered rather than inherited.
+Also verified against real Git: a lane lease refuses a second holder of the same lane or exclusive group, two racing processes produce one holder and one refusal, failed isolation leaves no lease behind, worktrees are created from the named revision and discarded on a failed outcome, and an expired lease is recovered only when its owning process is actually gone.
+
+Verified against real processes: a lease past its expiry whose owner is still running keeps its lane and is reported as overdue rather than freed, a recycled pid does not read as the original owner, and an Unreal editor holding a project is detected from the process table even when its MCP endpoint is silent.
 
 Verified against real `git lfs`: the tests run a Git LFS locking server, so `exec acquire` takes an actual lock, a path another writer already holds is refused by git rather than by Forge, a partly-locked set is unlocked again on rollback, and a lock that cannot be released is reported instead of swallowed.
 
@@ -121,7 +123,9 @@ Verified against a real MCP endpoint: the tests run a server that answers `initi
 
 Assumed until probed on a target workstation: Unreal/VibeUE/Blender/local-model capabilities and their performance rankings. The MCP verification path is tested against a stand-in server, so what a workstation adds is proof that Epic's own plugin answers it.
 
-Not covered by CI: nothing here launches Unreal. The tests run on `windows-latest` with no engine, so the Claude → MCP → editor → Blueprint → PIE path is proven on a workstation with the editor open, never by a green build.
+Not covered by the default CI: nothing on `windows-latest` launches Unreal, because there is no engine there. [`tests/unreal/run_unreal_acceptance.ps1`](tests/unreal/run_unreal_acceptance.ps1) closes that gap where an engine exists. It builds a throwaway project, drives a real editor through it, and asserts what only a live engine can settle: that the first-party MCP route answers a real `initialize`, that an open editor is detected as holding the project, that the live and editor-closed lanes swap as it opens and closes, and that a commandlet runs against the closed project and writes its result file. Run it on a workstation, or nightly through [`unreal-nightly.yml`](.github/workflows/unreal-nightly.yml) once a self-hosted runner labelled `unreal` exists and the repository variable `UNREAL_RUNNER` is set — until then that workflow skips cleanly rather than queuing forever.
+
+Still unproven, and reported as such by that driver rather than skipped: Blueprint creation, compilation and PIE through the live toolset. Those need the toolset's real call names, and this project does not write calls it has not seen a live handshake return.
 
 ## License
 

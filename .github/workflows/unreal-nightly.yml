@@ -1,0 +1,54 @@
+name: unreal-nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      engine_path:
+        description: "Engine root on the runner"
+        required: false
+        default: 'C:\Program Files\Epic Games\UE_5.8'
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ vars.UNREAL_RUNNER == 'true' }}
+    steps:
+      - name: Report whether an Unreal runner is configured
+        run: |
+          if [ "${{ vars.UNREAL_RUNNER }}" = "true" ]; then
+            echo "An Unreal runner is configured; the acceptance job will run."
+          else
+            echo "No Unreal runner configured, so the acceptance job is skipped."
+            echo "Nothing here launches Unreal until a self-hosted runner labelled"
+            echo "'unreal' exists and the repository variable UNREAL_RUNNER is set to true."
+          fi
+
+  acceptance:
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
+    runs-on: [self-hosted, windows, unreal]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate repository
+        run: python scripts/validate_repo.py
+      - name: Drive a real editor
+        shell: pwsh
+        run: |
+          ./tests/unreal/run_unreal_acceptance.ps1 -EnginePath "${{ github.event.inputs.engine_path || 'C:\Program Files\Epic Games\UE_5.8' }}"
+      - name: Publish the acceptance result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unreal-acceptance-result
+          path: tests/unreal/acceptance-result.json
+          if-no-files-found: warn

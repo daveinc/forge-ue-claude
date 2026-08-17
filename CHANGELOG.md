@@ -4,6 +4,13 @@ Every section below is dated from the tag that released it. One tag is not a rel
 
 ## 0.6.0 - 2026-08-17
 
+### A real engine can now be driven, and what remains unproven says so
+
+- CI tested the factory controller well and never started the factory machinery: MCP against a stand-in server, the commandlet against a stub binary. Both prove the plumbing; neither proves Unreal.
+- `tests/unreal/run_unreal_acceptance.ps1` builds a throwaway project, applies the overlay, launches a real editor and asserts what only a live engine can settle — the first-party MCP route answering a real `initialize`, an open editor detected as holding the project, the two editor lanes swapping as it opens and closes, and a commandlet running against the closed project and writing its result file. It runs on a workstation today; it does not need CI to be useful.
+- `unreal-nightly.yml` runs the same driver on a self-hosted runner labelled `unreal`, gated on a repository variable so it **skips cleanly** rather than queueing forever on a repo with no such runner.
+- Blueprint creation, compilation and PIE through the live toolset are reported `NOT_IMPLEMENTED` with the reason, rather than written on faith: they need the toolset's real call names, and this project does not write calls it has not seen a live handshake return. A stage that pretends to pass is worse than one that admits it has not run.
+
 ### `.forge` state has a version that means something
 
 - `install-state.json` shipped `schema_version: 2` and **nothing read it** — a version number with no migration path behind it, on the one directory that accumulates months of a project's decisions. Upgrading Forge over an existing game was therefore an untested operation.
