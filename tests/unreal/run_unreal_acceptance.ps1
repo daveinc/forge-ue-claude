@@ -209,8 +209,24 @@ try {
             Add-Result "lane-exclusivity-open" "FAIL" "both editor lanes reported available at once"
         }
 
-        Add-Result "blueprint-create-compile" "NOT_IMPLEMENTED" "needs the live toolset's real call names, which are discovered from the bound namespace rather than assumed"
-        Add-Result "pie-and-viewport-evidence" "NOT_IMPLEMENTED" "same: written only once the tool names are read off a live handshake"
+        if ($mcpSignal) {
+            $endpoint = if ($live.endpoint) { $live.endpoint } else { "http://127.0.0.1:8000/mcp" }
+            $raw = Invoke-Native -Exe "python" -NativeArgs @(
+                (Join-Path $PSScriptRoot "live_editor_stages.py"), "--url", $endpoint
+            ) -AllowFailure
+            try {
+                foreach ($item in ($raw | ConvertFrom-Json).stages) {
+                    Add-Result $item.stage $item.status $item.detail
+                }
+            } catch {
+                Add-Result "blueprint-create-compile" "FAIL" "live stage driver returned no usable result"
+                Add-Result "pie-and-viewport-evidence" "FAIL" "live stage driver returned no usable result"
+            }
+        } else {
+            $why = "the MCP route never bound, so nothing could be driven through it"
+            Add-Result "blueprint-create-compile" "NOT_PROVEN" $why
+            Add-Result "pie-and-viewport-evidence" "NOT_PROVEN" $why
+        }
 
         Write-Host "`n  closing the editor..." -ForegroundColor DarkGray
         $editor.CloseMainWindow() | Out-Null

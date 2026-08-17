@@ -132,9 +132,17 @@ Verified against a real MCP endpoint: the tests run a server that answers `initi
 
 Assumed until probed on a target workstation: Unreal/VibeUE/Blender/local-model capabilities and their performance rankings. The MCP verification path is tested against a stand-in server, so what a workstation adds is proof that Epic's own plugin answers it.
 
-Not covered by the default CI: nothing on `windows-latest` launches Unreal, because there is no engine there. [`tests/unreal/run_unreal_acceptance.ps1`](tests/unreal/run_unreal_acceptance.ps1) closes that gap where an engine exists. It builds a throwaway project, drives a real editor through it, and asserts what only a live engine can settle: that the first-party MCP route answers a real `initialize`, that an open editor is detected as holding the project, that the live and editor-closed lanes swap as it opens and closes, and that a commandlet runs against the closed project and writes its result file. Run it on a workstation, or nightly through [`unreal-nightly.yml`](.github/workflows/unreal-nightly.yml) once a self-hosted runner labelled `unreal` exists and the repository variable `UNREAL_RUNNER` is set — until then that workflow skips cleanly rather than queuing forever.
+Not covered by the default CI: nothing on `windows-latest` launches Unreal, because there is no engine there. [`tests/unreal/run_unreal_acceptance.ps1`](tests/unreal/run_unreal_acceptance.ps1) closes that gap where an engine exists. It builds a throwaway project and drives a real editor end to end:
 
-Still unproven, and reported as such by that driver rather than skipped: Blueprint creation, compilation and PIE through the live toolset. Those need the toolset's real call names, and this project does not write calls it has not seen a live handshake return.
+```
+clean fixture -> install Forge -> launch editor -> MCP initialize handshake ->
+create Blueprint -> compile it -> run PIE -> read actor state -> capture the viewport ->
+close the editor -> run a commandlet -> verify its result file
+```
+
+Every stage asserts something only a live engine can settle, and the run is green against UE 5.8: **13 passed, 0 failed, 0 unproven.** Run it on a workstation, or nightly through [`unreal-nightly.yml`](.github/workflows/unreal-nightly.yml) once a self-hosted runner labelled `unreal` exists and the repository variable `UNREAL_RUNNER` is set — until then that workflow skips cleanly rather than queuing forever.
+
+The Blueprint and PIE stages go through [`mcp_client.py`](tests/unreal/mcp_client.py), a small streamable-HTTP MCP client that lives with the tests rather than in the plugin, because Forge itself only ever performs `initialize` — a probe needs to know whether a route answers, not to drive it. Every tool name and argument shape in those stages was read off a live handshake, never inferred: `tools/list` returns only `list_toolsets`, `describe_toolset` and `call_tool`, and everything else is reached through `call_tool`. Two behaviours worth knowing before writing against this server: it answers on a keep-alive `text/event-stream` with no content length, which `urllib` reads as an empty body, and it applies **no schema defaults**, so a parameter marked optional must still be supplied.
 
 ## License
 
