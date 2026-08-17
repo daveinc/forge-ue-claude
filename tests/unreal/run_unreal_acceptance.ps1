@@ -47,22 +47,52 @@ function Add-Result {
     Write-Host ("  {0,-32} {1,-16} {2}" -f $Stage, $Status, $Detail) -ForegroundColor $colour
 }
 
+function Invoke-Native {
+    <#
+      Windows PowerShell turns a native command's stderr into ErrorRecords, and
+      under ErrorActionPreference Stop that makes any warning terminating -- git's
+      routine "LF will be replaced by CRLF" is enough to abort the run. Exit codes
+      decide success here; stderr is captured, not obeyed.
+    #>
+    param([string]$Exe, [string[]]$NativeArgs, [switch]$AllowFailure)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = (& $Exe @NativeArgs 2>&1 | Out-String)
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    if ($code -ne 0 -and -not $AllowFailure) {
+        throw "$Exe $($NativeArgs -join ' ') exited $code`n$output"
+    }
+    return $output
+}
+
 function Invoke-Forge {
     param([string[]]$ForgeArgs)
-    $raw = & python $forge @ForgeArgs 2>$null
+    $raw = Invoke-Native -Exe "python" -NativeArgs (@($forge) + $ForgeArgs) -AllowFailure
     if (-not $raw) { return $null }
     try { return ($raw | ConvertFrom-Json) } catch { return $null }
 }
 
+function Get-Route {
+    <# route-status rows key on `provider`, which is the registry id. #>
+    param($Status, [string]$Provider)
+    if (-not $Status -or -not $Status.routes) { return $null }
+    return ($Status.routes | Where-Object { $_.provider -eq $Provider } | Select-Object -First 1)
+}
+
 function Get-Ownership {
     param([string]$Project)
-    $script = @"
-import json, sys
+    $probe = @"
+import json, sys, pathlib
 sys.path.insert(0, r'$repoRoot\plugins\forge-ue-studio\scripts')
-import forge_mcp, pathlib
+import forge_mcp
 print(json.dumps(forge_mcp.live_editor_holds_project(pathlib.Path(r'$Project'))))
 "@
-    return (& python -c $script | ConvertFrom-Json)
+    $raw = Invoke-Native -Exe "python" -NativeArgs @("-c", $probe)
+    return ($raw | ConvertFrom-Json)
 }
 
 Write-Host "Forge Unreal acceptance" -ForegroundColor Cyan
@@ -95,12 +125,14 @@ try {
 
     Push-Location $projectDir
     try {
-        & git init -q -b main 2>$null
-        & git config user.email "forge@acceptance.invalid"
-        & git config user.name "Forge Acceptance"
+        Invoke-Native -Exe "git" -NativeArgs @("init", "-q", "-b", "main") | Out-Null
+        Invoke-Native -Exe "git" -NativeArgs @("config", "user.email", "forge@acceptance.invalid") | Out-Null
+        Invoke-Native -Exe "git" -NativeArgs @("config", "user.name", "Forge Acceptance") | Out-Null
+        Invoke-Native -Exe "git" -NativeArgs @("config", "core.autocrlf", "false") | Out-Null
         $install = Invoke-Forge @("install", "--project", ".", "--apply")
         if (-not $install) { throw "forge install did not return a payload" }
-        & git add -A 2>$null; & git commit -qm "fixture base" 2>$null
+        Invoke-Native -Exe "git" -NativeArgs @("add", "-A") | Out-Null
+        Invoke-Native -Exe "git" -NativeArgs @("commit", "-qm", "fixture base") | Out-Null
         Add-Result "forge-overlay" "PASS" "overlay applied and committed"
 
         $closedBefore = Get-Ownership $projectDir
@@ -111,14 +143,23 @@ try {
         }
 
         Write-Host "`n  launching the editor (this takes a while on first run)..." -ForegroundColor DarkGray
-        $editor = Start-Process -FilePath $editorExe -ArgumentList @("`"$uproject`"") -PassThru
+        # The MCP server does not listen unless it is asked to: ShouldAutoStartServer
+        # honours -ModelContextProtocolStartServer, then the bAutoStartServer setting,
+        # which is off by default. Enabling the plugin is necessary and not sufficient.
+        $editor = Start-Process -FilePath $editorExe -PassThru -ArgumentList @(
+            "`"$uproject`"", "-ModelContextProtocolStartServer"
+        )
+        # The process appears well before the MCP server finishes binding its port, so
+        # these are two waits and not one. Stopping at the first HELD would report the
+        # handshake as unproven whenever process inspection simply answered first.
         $deadline = (Get-Date).AddMinutes(10)
         $held = $null
+        $ownedAt = $null
         while ((Get-Date) -lt $deadline) {
             Start-Sleep -Seconds 15
             if ($editor.HasExited) { throw "the editor exited during startup" }
             $held = Get-Ownership $projectDir
-            if ($held.ownership -eq "HELD") { break }
+            if ($held.ownership -eq "HELD") { $ownedAt = Get-Date; break }
         }
 
         if ($held -and $held.ownership -eq "HELD") {
@@ -128,22 +169,34 @@ try {
             Add-Result "ownership-editor-open" "FAIL" "editor is open but ownership read $($held.ownership)"
         }
 
-        $mcpSignal = $held.evidence | Where-Object { $_.signal -eq "mcp-handshake" -and $_.conclusive }
+        $mcpSignal = $null
+        while ((Get-Date) -lt $deadline) {
+            $mcpSignal = $held.evidence | Where-Object { $_.signal -eq "mcp-handshake" -and $_.conclusive }
+            if ($mcpSignal) { break }
+            Start-Sleep -Seconds 15
+            if ($editor.HasExited) { break }
+            $held = Get-Ownership $projectDir
+        }
         if ($mcpSignal) {
-            Add-Result "mcp-handshake" "PASS" "a real editor answered an MCP initialize"
+            $waited = [int]((Get-Date) - $ownedAt).TotalSeconds
+            Add-Result "mcp-handshake" "PASS" "a real editor answered an MCP initialize ${waited}s after the process was detected"
         } else {
-            Add-Result "mcp-handshake" "NOT_PROVEN" "the editor did not answer MCP; enable ModelContextProtocol and AllToolsets, and confirm the endpoint in .forge/mcp.json"
+            Add-Result "mcp-handshake" "NOT_PROVEN" "no MCP answer within the window. Enabling the plugin is not enough: the server only listens when -ModelContextProtocolStartServer is passed or bAutoStartServer is set, and the port must match .forge/mcp.json"
         }
 
         $status = Invoke-Forge @("route-status", "--project", ".")
-        $live = $status.routes | Where-Object { $_.id -eq "unreal-native-mcp" }
-        $closed = $status.routes | Where-Object { $_.id -eq "unreal-python" }
-        if ($live.status -eq "AVAILABLE_VERIFIED") {
+        $live = Get-Route $status "unreal-native-mcp"
+        $closed = Get-Route $status "unreal-python"
+        if (-not $live) {
+            Add-Result "live-route-verified" "FAIL" "route-status returned no row for unreal-native-mcp"
+        } elseif ($live.status -eq "AVAILABLE_VERIFIED") {
             Add-Result "live-route-verified" "PASS" "ue.live.typed is AVAILABLE_VERIFIED against a real editor"
         } else {
-            Add-Result "live-route-verified" "NOT_PROVEN" "live route read $($live.status); this is the claim only a real editor can settle"
+            Add-Result "live-route-verified" "NOT_PROVEN" "live route read $($live.status): $($live.note)"
         }
-        if ($closed.status -notlike "AVAILABLE*") {
+        if (-not $closed) {
+            Add-Result "lane-exclusivity-open" "FAIL" "route-status returned no row for unreal-python"
+        } elseif ($closed.status -notlike "AVAILABLE*") {
             Add-Result "lane-exclusivity-open" "PASS" "editor-closed lane is shut while the editor holds the project"
         } else {
             Add-Result "lane-exclusivity-open" "FAIL" "both editor lanes reported available at once"
@@ -167,22 +220,26 @@ try {
 
         $env:PATH = "$(Split-Path $cmdExe);$env:PATH"
         $after = Invoke-Forge @("route-status", "--project", ".")
-        $closedAfter = $after.routes | Where-Object { $_.id -eq "unreal-python" }
-        if ($closedAfter.status -like "AVAILABLE*") {
+        $closedAfter = Get-Route $after "unreal-python"
+        if (-not $closedAfter) {
+            Add-Result "lane-swap-on-close" "FAIL" "route-status returned no row for unreal-python"
+        } elseif ($closedAfter.status -like "AVAILABLE*") {
             Add-Result "lane-swap-on-close" "PASS" "editor-closed lane opened once the editor released the project"
         } else {
-            Add-Result "lane-swap-on-close" "FAIL" "editor-closed lane stayed shut: $($closedAfter.status)"
+            Add-Result "lane-swap-on-close" "FAIL" "editor-closed lane stayed shut: $($closedAfter.status) - $($closedAfter.note)"
         }
 
         $resultFile = Join-Path $projectDir "commandlet-result.json"
-        $script = Join-Path $projectDir "audit.py"
+        $auditScript = Join-Path $projectDir "audit.py"
         @"
 import json, unreal
 paths = [str(a.package_name) for a in unreal.AssetRegistryHelpers.get_asset_registry().get_all_assets()]
 with open(r'$resultFile', 'w', encoding='utf-8') as handle:
     json.dump({'schema': 'forge.commandlet-result/v1', 'ok': True, 'asset_count': len(paths)}, handle)
-"@ | Set-Content -Encoding utf8 $script
-        & $cmdExe "$uproject" -run=pythonscript -script="$script" -unattended -nop4 -nosplash 2>&1 | Out-Null
+"@ | Set-Content -Encoding utf8 $auditScript
+        Invoke-Native -Exe $cmdExe -NativeArgs @(
+            "$uproject", "-run=pythonscript", "-script=$auditScript", "-unattended", "-nop4", "-nosplash"
+        ) -AllowFailure | Out-Null
         if (Test-Path $resultFile) {
             $payload = Get-Content $resultFile -Raw | ConvertFrom-Json
             Add-Result "commandlet-result-file" "PASS" "commandlet wrote a result file reporting $($payload.asset_count) assets"

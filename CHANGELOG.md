@@ -4,6 +4,12 @@ Every section below is dated from the tag that released it. One tag is not a rel
 
 ## 0.6.0 - 2026-08-17
 
+### Proven against UE 5.8, and the guidance corrected by what that proved
+
+- The acceptance driver was run against a real UE 5.8 editor: **11 passed, 0 failed.** `ue.live.typed` reached `AVAILABLE_VERIFIED` against Epic's own plugin — the claim a stand-in server can never settle — the two editor lanes swapped as the editor opened and closed, and a commandlet ran against the closed project and reported 266 assets from its result file.
+- It also settled the case this release exists for: **the editor was detected as holding the project 16 seconds before its MCP server finished binding its port.** For those 16 seconds an open editor answered nothing, which is what the old "no MCP answer means the project is free" rule would have read as an invitation to run a commandlet into it.
+- Enabling the plugins is **not** enough to bind the route, and every place Forge said otherwise was wrong. `ShouldAutoStartServer()` honours `-ModelContextProtocolStartServer`, then falls back to `bAutoStartServer`, which is off by default. `README.md`, the project template's `mcp.json`, `route-registry.json` and the probe's own failure note now say so and name the three ways to start it, instead of leaving a correctly-configured editor unexplained.
+
 ### A real engine can now be driven, and what remains unproven says so
 
 - CI tested the factory controller well and never started the factory machinery: MCP against a stand-in server, the commandlet against a stub binary. Both prove the plumbing; neither proves Unreal.

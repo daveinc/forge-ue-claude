@@ -47,7 +47,9 @@ Adopt a project directory — an empty one is fine:
 .\install.ps1 -Mode Install -ProjectPath "D:\Unreal Projects\MyGame" -Apply
 ```
 
-A new project declares Unreal's first-party MCP route at `http://127.0.0.1:8000/mcp`. To bind it, enable the **Unreal MCP** (`ModelContextProtocol`) and **AllToolsets** plugins in your `.uproject`, keep the editor open, and check the route:
+A new project declares Unreal's first-party MCP route at `http://127.0.0.1:8000/mcp`. To bind it, enable the **Unreal MCP** (`ModelContextProtocol`) and **AllToolsets** plugins in your `.uproject`, and keep the editor open.
+
+Enabling the plugin is necessary and not sufficient: the server only listens when it is told to. `ShouldAutoStartServer()` honours `-ModelContextProtocolStartServer` on the command line, then falls back to the `bAutoStartServer` setting, **which is off by default**. Launch the editor with that switch, set `bAutoStartServer`, or run `ModelContextProtocol.StartServer` in the editor console. Then check the route:
 
 ```powershell
 .\install.ps1 -Mode McpStatus -ProjectPath "D:\Unreal Projects\MyGame"

@@ -270,7 +270,9 @@ def _apply_handshake(root: Path, result: dict[str, Any], provider: dict[str, Any
         enriched["note"] = (
             f"{handshake['detail']}. A route with a live probe that fails is unavailable, not unverified, "
             "so work degrades to the declared fallback instead of dispatching into nothing. For Unreal's "
-            "first-party server the editor must be open with the ModelContextProtocol and AllToolsets plugins enabled."
+            "first-party server the editor must be open with the ModelContextProtocol and AllToolsets plugins "
+            "enabled, and the server must have been started: it only listens when launched with "
+            "-ModelContextProtocolStartServer, when bAutoStartServer is set, or after ModelContextProtocol.StartServer."
         )
         return enriched
     if live:

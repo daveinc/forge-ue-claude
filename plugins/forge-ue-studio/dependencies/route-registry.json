@@ -47,7 +47,7 @@
           "ModelContextProtocol",
           "AllToolsets"
         ],
-        "note": "ModelContextProtocol serves the endpoint; without AllToolsets it advertises no tools. The editor must be open for the route to answer."
+        "note": "ModelContextProtocol serves the endpoint; without AllToolsets it advertises no tools. The editor must be open, and the server must have been started: enabling the plugin does not make it listen. ShouldAutoStartServer honours -ModelContextProtocolStartServer, then falls back to bAutoStartServer, which is off by default; ModelContextProtocol.StartServer works from the editor console. Confirmed against UE 5.8 on 2026-08-17, where the route reached AVAILABLE_VERIFIED once the server was started."
       },
       "transport_default": {
         "type": "http",
