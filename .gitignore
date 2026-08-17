@@ -19,3 +19,4 @@ DerivedDataCache/
 *.VC.db
 *.VC.opendb
 tests/.tmp/
+tests/unreal/acceptance-result.json
