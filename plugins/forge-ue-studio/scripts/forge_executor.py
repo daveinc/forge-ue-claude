@@ -6,6 +6,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import platform
 import subprocess
 import time
 import uuid
@@ -19,19 +20,26 @@ ERROR_REASONS = MappingProxyType(
         "LEASE_CONFLICT": "lease_conflict",
         "LEASE_UNKNOWN": "lease_unknown",
         "LEASE_STATE_UNREADABLE": "lease_state_unreadable",
+        "LEASE_NOT_RENEWABLE": "lease_not_renewable",
         "PACKET_INVALID": "packet_invalid",
         "ISOLATION_FAILED": "isolation_failed",
         "VCS_UNAVAILABLE": "vcs_unavailable",
         "STATE_MUTEX_HELD": "state_mutex_held",
+        "RECONCILE_INCOMPLETE": "reconcile_incomplete",
     }
 )
 
 LEASE_TTL_MINUTES = 120
+CROSS_MACHINE_GRACE_MINUTES = 60
 MUTEX_STALE_SECONDS = 120
 MUTEX_WAIT_SECONDS = 10
+PROCESS_PROBE_TIMEOUT = 15
 ISOLATION_MODES = ("read-only", "git-worktree", "lfs-lock", "project-exclusive")
 BINARY_MODES = ("lfs-lock", "project-exclusive")
 ACTIVE = "ACTIVE"
+RELEASING = "RELEASING"
+ORPHANED = "ORPHANED_EXTERNAL_LOCK"
+HOLDING_STATES = (ACTIVE, RELEASING, ORPHANED)
 
 
 class ExecutorError(Exception):
@@ -53,12 +61,159 @@ def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _in_minutes(minutes: int) -> str:
+    return (dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=minutes)).replace(microsecond=0).isoformat()
+
+
 def _parse_time(value: str) -> dt.datetime:
     try:
         parsed = dt.datetime.fromisoformat(str(value))
     except ValueError:
         return dt.datetime.min.replace(tzinfo=dt.timezone.utc)
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
+
+
+def this_machine() -> str:
+    return platform.node() or "unknown-machine"
+
+
+def _run_probe(command: list[str]) -> str | None:
+    """Output of one process-inspection mechanism, or None when it did not run."""
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=PROCESS_PROBE_TIMEOUT,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout
+
+
+def process_table() -> dict[str, Any]:
+    """Every running process with its pid, name, command line and start time.
+
+    Two independent mechanisms, because a failed inspection is a fault to resolve
+    rather than a condition to route around: a caller that cannot tell must be
+    able to say so instead of reading an empty table as an empty machine.
+    """
+    if platform.system() == "Windows":
+        script = (
+            "Get-CimInstance Win32_Process | "
+            "Select-Object ProcessId,Name,CommandLine,CreationDate | "
+            "ConvertTo-Json -Compress -Depth 3"
+        )
+        raw = _run_probe(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script])
+        if raw and raw.strip():
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = None
+            if parsed is not None:
+                rows = parsed if isinstance(parsed, list) else [parsed]
+                return {
+                    "resolved": True,
+                    "mechanism": "Win32_Process",
+                    "processes": [
+                        {
+                            "pid": row.get("ProcessId"),
+                            "name": str(row.get("Name") or ""),
+                            "command_line": str(row.get("CommandLine") or ""),
+                            "started_at": str(row.get("CreationDate") or ""),
+                        }
+                        for row in rows
+                        if isinstance(row, dict) and row.get("ProcessId") is not None
+                    ],
+                }
+        raw = _run_probe(["tasklist", "/FO", "CSV", "/NH"])
+        if raw:
+            processes = []
+            for line in raw.splitlines():
+                fields = [field.strip('"') for field in line.split('","')]
+                if len(fields) < 2:
+                    continue
+                name = fields[0].lstrip('"')
+                try:
+                    pid = int(fields[1])
+                except ValueError:
+                    continue
+                processes.append({"pid": pid, "name": name, "command_line": "", "started_at": ""})
+            if processes:
+                return {"resolved": True, "mechanism": "tasklist", "processes": processes}
+        return {
+            "resolved": False,
+            "mechanism": None,
+            "processes": [],
+            "detail": "neither Win32_Process nor tasklist answered; process ownership cannot be determined on this machine",
+        }
+    raw = _run_probe(["ps", "-eo", "pid=,lstart=,comm=,args="])
+    if raw is None:
+        return {
+            "resolved": False,
+            "mechanism": None,
+            "processes": [],
+            "detail": "ps did not answer; process ownership cannot be determined on this machine",
+        }
+    processes = []
+    for line in raw.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            continue
+        processes.append({"pid": pid, "name": parts[1].split()[-1], "command_line": parts[1], "started_at": ""})
+    return {"resolved": True, "mechanism": "ps", "processes": processes}
+
+
+def process_identity(pid: int | None = None) -> dict[str, Any]:
+    """This process's identity, recorded on a lease so its liveness can be checked later."""
+    target = os.getpid() if pid is None else pid
+    table = process_table()
+    match = next((row for row in table["processes"] if row["pid"] == target), None)
+    return {
+        "pid": target,
+        "machine": this_machine(),
+        "started_at": match["started_at"] if match else "",
+    }
+
+
+def owner_is_alive(lease: dict[str, Any], table: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Whether the process holding this lease is still running, and on what evidence.
+
+    A bare pid is not enough over a two-hour lease: pids are reused, and a reused
+    one would read as the original owner still working. The recorded start time is
+    what separates the two.
+    """
+    machine = str(lease.get("owner_machine") or "")
+    pid = lease.get("owner_pid")
+    if not machine or pid is None:
+        return {"alive": None, "detail": "lease records no owner process, so liveness cannot be checked"}
+    if machine != this_machine():
+        return {
+            "alive": None,
+            "detail": f"owner runs on {machine!r} and this is {this_machine()!r}; liveness is not checkable from here",
+        }
+    resolved = table if table is not None else process_table()
+    if not resolved["resolved"]:
+        return {"alive": None, "detail": str(resolved.get("detail", "process inspection did not answer"))}
+    match = next((row for row in resolved["processes"] if row["pid"] == pid), None)
+    if match is None:
+        return {"alive": False, "detail": f"no process {pid} is running on {machine}"}
+    recorded_start = str(lease.get("owner_process_start") or "")
+    if recorded_start and match["started_at"] and match["started_at"] != recorded_start:
+        return {
+            "alive": False,
+            "detail": f"process {pid} exists but started at {match['started_at']}, not {recorded_start}; the pid was reused",
+        }
+    return {"alive": True, "detail": f"process {pid} is running on {machine} and matches the recorded start time"}
 
 
 def lease_state_path(root: Path) -> Path:
@@ -138,19 +293,66 @@ class StateMutex:
         self.path.unlink(missing_ok=True)
 
 
-def expire_stale_leases(document: dict[str, Any], now: str | None = None) -> list[str]:
-    """Mark every ACTIVE lease past its expiry EXPIRED. Returns the ids recovered."""
+def expire_stale_leases(document: dict[str, Any], now: str | None = None) -> dict[str, Any]:
+    """Recover leases whose owner is gone; keep the lane for an owner still working.
+
+    The clock alone cannot free a lane. Work that legitimately outruns the TTL —
+    a Nanite rebuild, a cook, a mass retarget — would otherwise have its isolation
+    withdrawn while it is still writing, which is the failure the lease exists to
+    prevent. A lease is recovered only on evidence its owner is gone: the process
+    is absent on the machine that took it, or its pid was reused, or it was taken
+    on another machine and is past the cross-machine grace as well.
+    """
     moment = _parse_time(now or utc_now())
+    stamp = now or utc_now()
+    table: dict[str, Any] | None = None
     recovered: list[str] = []
+    overdue: list[dict[str, Any]] = []
     for lease in document.get("leases", []):
         if lease.get("status") != ACTIVE:
             continue
-        if _parse_time(str(lease.get("expires_at", ""))) <= moment:
-            lease["status"] = "EXPIRED"
-            lease["released_at"] = now or utc_now()
-            lease["release_note"] = "expired without release; recovered on the next acquire"
-            recovered.append(str(lease.get("lease_id")))
-    return recovered
+        if _parse_time(str(lease.get("expires_at", ""))) > moment:
+            continue
+        if table is None:
+            table = process_table()
+        liveness = owner_is_alive(lease, table)
+        if liveness["alive"] is True:
+            overdue.append(
+                {
+                    "lease_id": lease.get("lease_id"),
+                    "lane": lease.get("lane"),
+                    "owner": lease.get("owner"),
+                    "work_order": lease.get("work_order"),
+                    "expires_at": lease.get("expires_at"),
+                    "heartbeat_at": lease.get("heartbeat_at"),
+                    "detail": liveness["detail"],
+                    "remedy": "the owner is still running, so the lane stays held. Renew it with "
+                              "`forge.py exec renew`, or stop the worker before another writer needs the lane",
+                }
+            )
+            continue
+        if liveness["alive"] is None:
+            recoverable_after = _parse_time(str(lease.get("recoverable_after") or lease.get("expires_at", "")))
+            if recoverable_after > moment:
+                overdue.append(
+                    {
+                        "lease_id": lease.get("lease_id"),
+                        "lane": lease.get("lane"),
+                        "owner": lease.get("owner"),
+                        "work_order": lease.get("work_order"),
+                        "expires_at": lease.get("expires_at"),
+                        "recoverable_after": lease.get("recoverable_after"),
+                        "detail": liveness["detail"],
+                        "remedy": "liveness is unknown from here, so the lane is held until the grace window "
+                                  "passes rather than freed on a guess",
+                    }
+                )
+                continue
+        lease["status"] = "EXPIRED"
+        lease["released_at"] = stamp
+        lease["release_note"] = f"expired without release; recovered because {liveness['detail']}"
+        recovered.append(str(lease.get("lease_id")))
+    return {"recovered": recovered, "overdue": overdue}
 
 
 def exclusive_group_of(document: dict[str, Any], name: str) -> str | None:
@@ -173,7 +375,8 @@ def lease_conflicts(
     requested_group = exclusive_group_of(document, lane)
     conflicts: list[dict[str, Any]] = []
     for held in document.get("leases", []):
-        if held.get("status") != ACTIVE:
+        held_status = str(held.get("status", ""))
+        if held_status not in HOLDING_STATES:
             continue
         held_lane = str(held.get("lane", ""))
         held_mode = str((held.get("isolation") or {}).get("mode", "project-exclusive"))
@@ -181,7 +384,13 @@ def lease_conflicts(
             continue
         held_scope = set(held.get("write_scope", []))
         reason = None
-        if held_lane == lane:
+        if held_status == ORPHANED and (requested_scope & held_scope or held_lane == lane):
+            reason = (
+                f"lane {lane!r} is quarantined: releasing {held.get('work_order')!r} could not free "
+                f"{held.get('unreleased') or 'an external resource'}, so the lane is not actually free. "
+                "Clear it with `forge.py exec reconcile`"
+            )
+        elif held_lane == lane:
             reason = f"lane {lane!r} is already leased"
         elif requested_group and requested_group == exclusive_group_of(document, held_lane):
             reason = (
@@ -203,6 +412,7 @@ def lease_conflicts(
                     "owner": held.get("owner"),
                     "work_order": held.get("work_order"),
                     "expires_at": held.get("expires_at"),
+                    "status": held_status,
                     "reason": reason,
                 }
             )
@@ -312,24 +522,23 @@ def acquire(
     """Take every lease and set up isolation, or leave the project exactly as it was."""
     intent = validate_packet(packet)
     now = utc_now()
-    expires_at = (
-        (dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=ttl_minutes))
-        .replace(microsecond=0)
-        .isoformat()
-    )
+    expires_at = _in_minutes(ttl_minutes)
+    identity = process_identity()
 
     with StateMutex(root) as _mutex:
         document = read_lease_state(root)
-        recovered = expire_stale_leases(document, now)
+        expiry = expire_stale_leases(document, now)
+        recovered = expiry["recovered"]
         blocked: list[dict[str, Any]] = []
         for lane in intent["lanes"]:
             blocked.extend(lease_conflicts(document, lane, intent["write_scope"], intent["mode"]))
         if blocked:
             raise _fail(
-                f"Cannot acquire {intent['work_order']!r}: {len(blocked)} active lease(s) conflict",
+                f"Cannot acquire {intent['work_order']!r}: {len(blocked)} lease(s) still hold what it needs",
                 reason=ERROR_REASONS["LEASE_CONFLICT"],
                 conflicts=blocked,
                 recovered_stale=recovered,
+                renewal_overdue=expiry["overdue"],
             )
         revision = resolve_revision(root, intent["base_revision"]) if apply else None
         granted = [
@@ -338,10 +547,16 @@ def acquire(
                 "lane": lane,
                 "exclusive_group": exclusive_group_of(document, lane),
                 "owner": owner,
+                "owner_pid": identity["pid"],
+                "owner_machine": identity["machine"],
+                "owner_process_start": identity["started_at"],
                 "work_order": intent["work_order"],
                 "write_scope": intent["write_scope"] or [intent["work_order"]],
                 "acquired_at": now,
                 "expires_at": expires_at,
+                "heartbeat_at": now,
+                "renewals": 0,
+                "recoverable_after": _in_minutes(ttl_minutes + CROSS_MACHINE_GRACE_MINUTES),
                 "status": ACTIVE,
                 "isolation": {
                     "mode": intent["mode"],
@@ -377,6 +592,7 @@ def acquire(
             "owner": owner,
             "isolation_mode": intent["mode"],
             "recovered_stale": recovered,
+            "renewal_overdue": expiry["overdue"],
             "conflicts": [],
             "plan": _plan(intent, owner, None),
             "leases": [],
@@ -418,6 +634,7 @@ def acquire(
         "branch": intent["branch"] if intent["mode"] == "git-worktree" else None,
         "locked": intent["lock_targets"] if intent["mode"] == "lfs-lock" else [],
         "recovered_stale": recovered,
+        "renewal_overdue": expiry["overdue"],
         "conflicts": [],
         "plan": _plan(intent, owner, revision),
         "leases": granted,
@@ -453,23 +670,73 @@ def _undo_worktree(root: Path, workspace: str, branch: str) -> str | None:
     return f"worktree {workspace!r} could not be removed: {(completed.stderr or completed.stdout or '').strip()}"
 
 
-def _remove_worktree(root: Path, workspace: str, branch: str) -> None:
-    git(root, "worktree", "remove", "--force", workspace)
-    git(root, "branch", "-D", branch)
+def _remove_worktree(root: Path, workspace: str, branch: str) -> str | None:
+    """Discard the workspace, reporting what survived instead of assuming it did not."""
+    return _undo_worktree(root, workspace, branch)
 
 
-def _release_ids(root: Path, lease_ids: list[str], status: str, note: str) -> list[dict[str, Any]]:
+def _release_ids(
+    root: Path,
+    lease_ids: list[str],
+    status: str,
+    note: str,
+    from_states: tuple[str, ...] = (ACTIVE,),
+    unreleased: list[dict[str, str]] | None = None,
+) -> list[dict[str, Any]]:
     with StateMutex(root) as _mutex:
         document = read_lease_state(root)
         released: list[dict[str, Any]] = []
         for lease in document.get("leases", []):
-            if str(lease.get("lease_id")) in lease_ids and lease.get("status") == ACTIVE:
+            if str(lease.get("lease_id")) in lease_ids and str(lease.get("status")) in from_states:
                 lease["status"] = status
-                lease["released_at"] = utc_now()
                 lease["release_note"] = note
+                if status in HOLDING_STATES:
+                    lease["unreleased"] = unreleased or []
+                    lease.pop("released_at", None)
+                else:
+                    lease["released_at"] = utc_now()
+                    lease.pop("unreleased", None)
                 released.append(lease)
         write_lease_state(root, document)
     return released
+
+
+def _teardown_external(root: Path, isolation: dict[str, Any], discards_workspace: bool) -> dict[str, Any]:
+    """Free every external resource the lease took, and report exactly what survived.
+
+    Git LFS locks and worktrees live outside the ledger, so a teardown Forge only
+    attempted is not a teardown that happened. What could not be freed is named
+    here and keeps its lease quarantined rather than being written off.
+    """
+    mode = str(isolation.get("mode", "read-only"))
+    unlocked: list[str] = []
+    unreleased: list[dict[str, str]] = []
+    if mode == "lfs-lock":
+        for target in isolation.get("lock_targets", []):
+            completed = git(root, "lfs", "unlock", str(target))
+            if completed.returncode == 0:
+                unlocked.append(str(target))
+            else:
+                unreleased.append(
+                    {
+                        "kind": "lfs-lock",
+                        "target": str(target),
+                        "detail": (completed.stderr or completed.stdout or "").strip(),
+                    }
+                )
+    workspace_removed = None
+    if discards_workspace:
+        failure = _remove_worktree(root, str(isolation.get("workspace")), str(isolation.get("branch")))
+        workspace_removed = failure is None
+        if failure:
+            unreleased.append(
+                {"kind": "git-worktree", "target": str(isolation.get("workspace")), "detail": failure}
+            )
+    return {
+        "unlocked": unlocked,
+        "unreleased": unreleased,
+        "workspace_removed": workspace_removed,
+    }
 
 
 def release(root: Path, work_order: str, outcome: str, apply: bool) -> dict[str, Any]:
@@ -503,34 +770,33 @@ def release(root: Path, work_order: str, outcome: str, apply: bool) -> dict[str,
             "work_order": work_order,
             "outcome": outcome,
             "isolation_mode": mode,
+            "lease_status": str(held[0].get("status")),
             "workspace_retained": mode == "git-worktree" and not discards_workspace,
             "workspace": str(isolation.get("workspace")) if mode == "git-worktree" and not discards_workspace else None,
             "plan": teardown,
             "released": [],
             "unlocked": [],
-            "unlock_failures": [],
+            "unreleased": [],
             "note": None,
         }
 
-    unlocked: list[str] = []
-    unlock_failures: list[dict[str, str]] = []
-    if mode == "lfs-lock":
-        for target in isolation.get("lock_targets", []):
-            completed = git(root, "lfs", "unlock", str(target))
-            if completed.returncode == 0:
-                unlocked.append(str(target))
-            else:
-                unlock_failures.append(
-                    {"target": str(target), "detail": (completed.stderr or completed.stdout or "").strip()}
-                )
-    if discards_workspace:
-        _remove_worktree(root, str(isolation.get("workspace")), str(isolation.get("branch")))
-    released = _release_ids(
-        root,
-        [str(lease.get("lease_id")) for lease in held],
-        "RELEASED",
-        f"released on outcome {outcome}",
-    )
+    lease_ids = [str(lease.get("lease_id")) for lease in held]
+    _release_ids(root, lease_ids, RELEASING, f"releasing on outcome {outcome}")
+    teardown_result = _teardown_external(root, isolation, discards_workspace)
+    unreleased = teardown_result["unreleased"]
+    if unreleased:
+        released = _release_ids(
+            root,
+            lease_ids,
+            ORPHANED,
+            f"outcome {outcome}, but {len(unreleased)} external resource(s) could not be freed",
+            from_states=(RELEASING,),
+            unreleased=unreleased,
+        )
+    else:
+        released = _release_ids(
+            root, lease_ids, "RELEASED", f"released on outcome {outcome}", from_states=(RELEASING,)
+        )
     return {
         "schema": "forge.execution-release/v1",
         "mode": "apply",
@@ -538,39 +804,192 @@ def release(root: Path, work_order: str, outcome: str, apply: bool) -> dict[str,
         "work_order": work_order,
         "outcome": outcome,
         "isolation_mode": mode,
+        "lease_status": ORPHANED if unreleased else "RELEASED",
         "workspace_retained": mode == "git-worktree" and not discards_workspace,
         "workspace": str(isolation.get("workspace")) if mode == "git-worktree" and not discards_workspace else None,
         "plan": teardown,
         "released": released,
-        "unlocked": unlocked,
-        "unlock_failures": unlock_failures,
+        "unlocked": teardown_result["unlocked"],
+        "unreleased": unreleased,
         "note": (
-            f"{len(unlock_failures)} lock(s) could not be released and are still held on the LFS server; "
-            "the lane is free but those paths are not. Unlock them before another writer needs them."
-            if unlock_failures
+            f"{len(unreleased)} external resource(s) could not be freed, so these leases are "
+            f"{ORPHANED} rather than released and their write scope stays quarantined. No writer may take "
+            "the lane until `forge.py exec reconcile` frees what is listed."
+            if unreleased
             else None
         ),
     }
 
 
-def status(root: Path) -> dict[str, Any]:
-    """Report what is held right now, and what expired without being released."""
+def reconcile(root: Path, work_order: str, apply: bool) -> dict[str, Any]:
+    """Retry the external teardown a release could not finish, and free the lane only if it works.
+
+    Also recovers a lease left mid-release by a crash. Retrying an unlock is safe
+    because it is idempotent; discarding a workspace is not, and an interrupted
+    release never recorded the outcome that would have earned the discard. So a
+    worktree is removed here only when the release already named it as what it
+    could not remove.
+    """
     document = read_lease_state(root)
-    recoverable = [
+    stuck = [
         lease
         for lease in document.get("leases", [])
-        if lease.get("status") == ACTIVE and _parse_time(str(lease.get("expires_at", ""))) <= _parse_time(utc_now())
+        if str(lease.get("work_order")) == work_order and str(lease.get("status")) in (ORPHANED, RELEASING)
     ]
+    if not stuck:
+        raise _fail(
+            f"Work order {work_order!r} holds nothing awaiting reconciliation",
+            reason=ERROR_REASONS["LEASE_UNKNOWN"],
+        )
+    isolation = stuck[0].get("isolation") or {}
+    outstanding = [item for lease in stuck for item in (lease.get("unreleased") or [])]
+    targets = [item for item in outstanding if item.get("kind") == "lfs-lock"]
+    worktree_stuck = any(item.get("kind") == "git-worktree" for item in outstanding)
+    plan = [{"step": f"retry-{item.get('kind')}", "detail": str(item.get("target"))} for item in outstanding]
+    if not outstanding:
+        plan = [{"step": "retry-teardown", "detail": "release was interrupted before it recorded what survived"}]
+
+    if not apply:
+        return {
+            "schema": "forge.execution-reconcile/v1",
+            "mode": "dry-run",
+            "project": str(root),
+            "work_order": work_order,
+            "plan": plan,
+            "outstanding": outstanding,
+            "cleared": [],
+            "still_held": [],
+            "lease_status": str(stuck[0].get("status")),
+        }
+
+    retry_isolation = {
+        "mode": isolation.get("mode"),
+        "workspace": isolation.get("workspace"),
+        "branch": isolation.get("branch"),
+        "lock_targets": [item["target"] for item in targets] if outstanding else isolation.get("lock_targets", []),
+    }
+    result = _teardown_external(root, retry_isolation, worktree_stuck)
+    still_held = result["unreleased"]
+    lease_ids = [str(lease.get("lease_id")) for lease in stuck]
+    if still_held:
+        _release_ids(
+            root,
+            lease_ids,
+            ORPHANED,
+            f"reconcile freed {len(result['unlocked'])}, {len(still_held)} still held",
+            from_states=(ORPHANED, RELEASING),
+            unreleased=still_held,
+        )
+        raise _fail(
+            f"Reconciling {work_order!r} could not free {len(still_held)} external resource(s); the lane stays "
+            "quarantined",
+            reason=ERROR_REASONS["RECONCILE_INCOMPLETE"],
+            still_held=still_held,
+            cleared=result["unlocked"],
+        )
+    _release_ids(
+        root, lease_ids, "RELEASED", "reconciled; every external resource is free", from_states=(ORPHANED, RELEASING)
+    )
+    return {
+        "schema": "forge.execution-reconcile/v1",
+        "mode": "apply",
+        "project": str(root),
+        "work_order": work_order,
+        "plan": plan,
+        "outstanding": outstanding,
+        "cleared": result["unlocked"],
+        "still_held": [],
+        "lease_status": "RELEASED",
+    }
+
+
+def renew(root: Path, work_order: str, apply: bool, ttl_minutes: int = LEASE_TTL_MINUTES) -> dict[str, Any]:
+    """Extend the lease a still-working owner holds, and record that it is alive.
+
+    Work that outruns the TTL is normal at production scale. Renewing is how a
+    worker says so; without it the only evidence of life is the owning process,
+    which is checkable on one machine but not from another.
+    """
+    with StateMutex(root) as _mutex:
+        document = read_lease_state(root)
+        held = [
+            lease
+            for lease in document.get("leases", [])
+            if str(lease.get("work_order")) == work_order and lease.get("status") == ACTIVE
+        ]
+        if not held:
+            raise _fail(
+                f"No active lease is held for work order {work_order!r}, so there is nothing to renew",
+                reason=ERROR_REASONS["LEASE_NOT_RENEWABLE"],
+            )
+        now = utc_now()
+        expires_at = _in_minutes(ttl_minutes)
+        recoverable_after = _in_minutes(ttl_minutes + CROSS_MACHINE_GRACE_MINUTES)
+        if apply:
+            for lease in held:
+                lease["heartbeat_at"] = now
+                lease["expires_at"] = expires_at
+                lease["recoverable_after"] = recoverable_after
+                lease["renewals"] = int(lease.get("renewals", 0)) + 1
+            write_lease_state(root, document)
+    return {
+        "schema": "forge.execution-renew/v1",
+        "mode": "apply" if apply else "dry-run",
+        "project": str(root),
+        "work_order": work_order,
+        "renewed": [str(lease.get("lease_id")) for lease in held] if apply else [],
+        "lanes": [str(lease.get("lane")) for lease in held],
+        "heartbeat_at": now if apply else None,
+        "expires_at": expires_at if apply else None,
+        "renewals": [int(lease.get("renewals", 0)) for lease in held],
+    }
+
+
+def status(root: Path) -> dict[str, Any]:
+    """Report what is held right now, why, and what is holding a lane it no longer earns."""
+    document = read_lease_state(root)
+    moment = _parse_time(utc_now())
     active = [lease for lease in document.get("leases", []) if lease.get("status") == ACTIVE]
+    quarantined = [lease for lease in document.get("leases", []) if str(lease.get("status")) == ORPHANED]
+    mid_release = [lease for lease in document.get("leases", []) if str(lease.get("status")) == RELEASING]
+    past_expiry = [lease for lease in active if _parse_time(str(lease.get("expires_at", ""))) <= moment]
+    table = process_table() if past_expiry else {"resolved": True, "processes": [], "mechanism": None}
+    overdue = []
+    recoverable = []
+    for lease in past_expiry:
+        liveness = owner_is_alive(lease, table)
+        entry = {
+            "lease_id": lease.get("lease_id"),
+            "lane": lease.get("lane"),
+            "work_order": lease.get("work_order"),
+            "expires_at": lease.get("expires_at"),
+            "heartbeat_at": lease.get("heartbeat_at"),
+            "owner_alive": liveness["alive"],
+            "detail": liveness["detail"],
+        }
+        (overdue if liveness["alive"] is not False else recoverable).append(entry)
     return {
         "schema": "forge.execution-status/v1",
         "project": str(root),
         "active": active,
         "lane_groups": {
             str(lease.get("lane")): exclusive_group_of(document, str(lease.get("lane")))
-            for lease in active
+            for lease in active + quarantined
         },
-        "expired_awaiting_recovery": [lease.get("lease_id") for lease in recoverable],
+        "expired_awaiting_recovery": [entry["lease_id"] for entry in recoverable],
+        "renewal_overdue": overdue,
+        "quarantined": [
+            {
+                "lease_id": lease.get("lease_id"),
+                "lane": lease.get("lane"),
+                "work_order": lease.get("work_order"),
+                "unreleased": lease.get("unreleased", []),
+                "remedy": f"`forge.py exec reconcile --project {root} --work-order {lease.get('work_order')} --apply`",
+            }
+            for lease in quarantined
+        ],
+        "interrupted_release": [lease.get("lease_id") for lease in mid_release],
+        "process_inspection": {"resolved": table.get("resolved"), "mechanism": table.get("mechanism")},
         "exclusive_groups": document.get("exclusive_groups", {}),
         "state_path": str(lease_state_path(root)),
     }

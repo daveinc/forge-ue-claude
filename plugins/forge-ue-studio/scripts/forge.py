@@ -208,6 +208,16 @@ def execute_release(project_value: str, work_order: str, outcome: str, apply: bo
     return executor.release(root, work_order, outcome, apply=apply)
 
 
+def execute_renew(project_value: str, work_order: str, apply: bool) -> dict[str, Any]:
+    root, _ = project_root(project_value)
+    return executor.renew(root, work_order, apply=apply)
+
+
+def execute_reconcile(project_value: str, work_order: str, apply: bool) -> dict[str, Any]:
+    root, _ = project_root(project_value)
+    return executor.reconcile(root, work_order, apply=apply)
+
+
 def execute_status(project_value: str) -> dict[str, Any]:
     root, _ = project_root(project_value)
     return executor.status(root)
@@ -308,6 +318,16 @@ def build_parser() -> argparse.ArgumentParser:
     release_parser.add_argument("--outcome", required=True, choices=["passed", "failed"])
     release_parser.add_argument("--apply", action="store_true")
     release_parser.add_argument("--output")
+    renew_parser = execution_sub.add_parser("renew", help="Extend a lease whose work legitimately outruns the TTL")
+    renew_parser.add_argument("--project", required=True)
+    renew_parser.add_argument("--work-order", dest="work_order", required=True)
+    renew_parser.add_argument("--apply", action="store_true")
+    renew_parser.add_argument("--output")
+    reconcile_parser = execution_sub.add_parser("reconcile", help="Retry the external teardown a release could not finish")
+    reconcile_parser.add_argument("--project", required=True)
+    reconcile_parser.add_argument("--work-order", dest="work_order", required=True)
+    reconcile_parser.add_argument("--apply", action="store_true")
+    reconcile_parser.add_argument("--output")
     exec_status_parser = execution_sub.add_parser("status", help="Report held leases and stale ones awaiting recovery")
     exec_status_parser.add_argument("--project", required=True)
     exec_status_parser.add_argument("--output")
@@ -381,6 +401,10 @@ def main(argv: list[str] | None = None) -> int:
                 result = execute_acquire(args.project, args.packet, args.owner, apply=bool(args.apply), host_override=args.host, route_value=getattr(args, "route", None))
             elif args.exec_command == "release":
                 result = execute_release(args.project, args.work_order, args.outcome, apply=bool(args.apply))
+            elif args.exec_command == "renew":
+                result = execute_renew(args.project, args.work_order, apply=bool(args.apply))
+            elif args.exec_command == "reconcile":
+                result = execute_reconcile(args.project, args.work_order, apply=bool(args.apply))
             else:
                 result = execute_status(args.project)
         elif args.command == "lifecycle":

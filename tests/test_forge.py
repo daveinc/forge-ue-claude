@@ -2068,17 +2068,162 @@ class ExecutorTests(unittest.TestCase):
                 forge.executor.acquire(root, self.packet("WO-2", "ue-live-python"), owner="worker-b", apply=True)
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
 
-    def test_an_expired_lease_is_recovered_rather_than_inherited(self):
+    def orphan_the_owner(self, root, pid=999999, machine=None):
+        """Rewrite the ledger so the owning process looks gone, without killing anything."""
+        path = forge.executor.lease_state_path(root)
+        document = json.loads(path.read_text(encoding="utf-8"))
+        for lease in document["leases"]:
+            lease["owner_pid"] = pid
+            lease["owner_machine"] = machine or forge.executor.this_machine()
+            lease["owner_process_start"] = ""
+        forge.executor.write_state_atomically(path, document)
+
+    def test_an_expired_lease_whose_owner_died_is_recovered(self):
         with self.game() as root:
             forge.executor.acquire(
                 root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
             )
+            self.orphan_the_owner(root)
             result = forge.executor.acquire(
                 root, self.packet("WO-2", "ue-live-native-mcp"), owner="worker-b", apply=True
             )
             self.assertEqual(len(result["recovered_stale"]), 1)
             self.assertEqual(self.active_lanes(root), ["ue-live-native-mcp"])
             self.assertEqual(forge.executor.status(root)["active"][0]["work_order"], "WO-2")
+
+    def test_an_expired_lease_whose_owner_still_runs_keeps_its_lane(self):
+        """The Nanite-rebuild case: work outrunning the TTL must not have its isolation withdrawn."""
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
+            )
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(
+                    root, self.packet("WO-2", "ue-live-native-mcp"), owner="worker-b", apply=True
+                )
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
+            self.assertEqual(forge.executor.status(root)["active"][0]["work_order"], "WO-1")
+
+    def test_an_owner_that_stopped_reporting_is_named_rather_than_hidden(self):
+        """A live owner keeps the lane, so the missed heartbeat has to be visible."""
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
+            )
+            overdue = forge.executor.status(root)["renewal_overdue"]
+            self.assertEqual([item["work_order"] for item in overdue], ["WO-1"])
+            self.assertTrue(overdue[0]["owner_alive"])
+            self.assertEqual(forge.executor.status(root)["expired_awaiting_recovery"], [])
+
+    def test_a_reused_pid_does_not_read_as_the_original_owner(self):
+        """Over a two-hour lease a pid can be recycled; the start time is what separates them."""
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
+            )
+            path = forge.executor.lease_state_path(root)
+            document = json.loads(path.read_text(encoding="utf-8"))
+            for lease in document["leases"]:
+                lease["owner_process_start"] = "some-other-moment"
+            forge.executor.write_state_atomically(path, document)
+            result = forge.executor.acquire(
+                root, self.packet("WO-2", "ue-live-native-mcp"), owner="worker-b", apply=True
+            )
+            self.assertEqual(len(result["recovered_stale"]), 1)
+            recovered = json.loads(path.read_text(encoding="utf-8"))["leases"][0]
+            self.assertIn("pid was reused", recovered["release_note"])
+
+    def test_a_lease_from_another_machine_waits_for_its_grace_window(self):
+        """Liveness is not checkable from here, so the clock alone must not free the lane."""
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
+            )
+            self.orphan_the_owner(root, pid=4242, machine="some-other-box")
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(
+                    root, self.packet("WO-2", "ue-live-native-mcp"), owner="worker-b", apply=True
+                )
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
+            path = forge.executor.lease_state_path(root)
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["leases"][0]["recoverable_after"] = "2000-01-01T00:00:00+00:00"
+            forge.executor.write_state_atomically(path, document)
+            result = forge.executor.acquire(
+                root, self.packet("WO-3", "ue-live-native-mcp"), owner="worker-c", apply=True
+            )
+            self.assertEqual(len(result["recovered_stale"]), 1)
+
+    def test_renewing_pushes_the_expiry_out_and_counts_the_heartbeat(self):
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
+            )
+            self.assertEqual(forge.executor.status(root)["renewal_overdue"][0]["work_order"], "WO-1")
+            renewed = forge.executor.renew(root, "WO-1", apply=True)
+            self.assertEqual(renewed["renewals"], [1])
+            self.assertEqual(forge.executor.status(root)["renewal_overdue"], [])
+            self.assertEqual(self.active_lanes(root), ["ue-live-native-mcp"])
+
+    def test_renewing_what_is_not_held_is_refused(self):
+        with self.game() as root:
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.renew(root, "WO-NOTHING", apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_NOT_RENEWABLE"])
+
+    def test_a_worktree_that_will_not_go_quarantines_the_lane_too(self):
+        """Rollback already reported this; the ordinary release path used to discard it."""
+        with self.game() as root:
+            forge.executor.acquire(
+                root,
+                self.packet("WO-1", "project-files", mode="git-worktree", branch="forge/WO-1"),
+                owner="worker-a",
+                apply=True,
+            )
+            original = forge.executor.git
+
+            def failing_removal(target_root, *args, **kwargs):
+                if args[:2] == ("worktree", "remove"):
+                    return subprocess.CompletedProcess(args, 1, "", "worktree is locked by another process")
+                return original(target_root, *args, **kwargs)
+
+            forge.executor.git = failing_removal
+            try:
+                result = forge.executor.release(root, "WO-1", outcome="failed", apply=True)
+            finally:
+                forge.executor.git = original
+            self.assertEqual(result["lease_status"], "ORPHANED_EXTERNAL_LOCK")
+            self.assertEqual([item["kind"] for item in result["unreleased"]], ["git-worktree"])
+            self.assertEqual([item["work_order"] for item in forge.executor.status(root)["quarantined"]], ["WO-1"])
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(
+                    root, self.packet("WO-2", "project-files"), owner="worker-b", apply=True
+                )
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
+            forge.executor.reconcile(root, "WO-1", apply=True)
+            self.assertEqual(forge.executor.status(root)["quarantined"], [])
+
+    def test_a_release_interrupted_mid_teardown_is_recoverable(self):
+        """RELEASING is a real state, so a crash between the ledger and the resource is visible."""
+        with self.game() as root:
+            forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
+            path = forge.executor.lease_state_path(root)
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["leases"][0]["status"] = "RELEASING"
+            forge.executor.write_state_atomically(path, document)
+            self.assertEqual(len(forge.executor.status(root)["interrupted_release"]), 1)
+            with self.assertRaises(forge.executor.ExecutorError):
+                forge.executor.acquire(root, self.packet("WO-2", "ue-live-native-mcp"), owner="worker-b", apply=True)
+            forge.executor.reconcile(root, "WO-1", apply=True)
+            self.assertEqual(forge.executor.status(root)["interrupted_release"], [])
+            forge.executor.acquire(root, self.packet("WO-2", "ue-live-native-mcp"), owner="worker-b", apply=True)
+
+    def test_renewing_without_apply_changes_nothing(self):
+        with self.game() as root:
+            forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
+            before = forge.executor.lease_state_path(root).read_bytes()
+            forge.executor.renew(root, "WO-1", apply=False)
+            self.assertEqual(forge.executor.lease_state_path(root).read_bytes(), before)
 
     def test_a_worktree_is_created_from_the_named_revision(self):
         with self.game() as root:
@@ -2330,24 +2475,80 @@ class LfsLockTests(unittest.TestCase):
             )
             result = forge.executor.release(root, "WO-MAP", outcome="passed", apply=True)
             self.assertEqual(result["unlocked"], ["Content/Main.umap"])
-            self.assertEqual(result["unlock_failures"], [])
+            self.assertEqual(result["unreleased"], [])
+            self.assertEqual(result["lease_status"], "RELEASED")
             self.assertEqual(self.held_paths(), [])
 
-    def test_a_lock_that_will_not_release_is_reported_not_swallowed(self):
-        """The lane frees, the path does not. Saying so is the whole job."""
+    def strand_the_lock_server(self, root):
+        """Point LFS at a dead endpoint so unlock fails the way a real outage does."""
+        subprocess.run(
+            ["git", "config", "lfs.url", "http://127.0.0.1:1"], cwd=str(root), capture_output=True, check=True
+        )
+
+    def test_a_lock_that_will_not_release_quarantines_the_lane(self):
+        """The lane must not read as free while the path it protects is still locked."""
         with self.game() as root:
             forge.executor.acquire(
                 root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
             )
-            LfsLockHandler.locks.clear()
-            subprocess.run(
-                ["git", "config", "lfs.url", "http://127.0.0.1:1"], cwd=str(root), capture_output=True, check=True
-            )
+            self.strand_the_lock_server(root)
             result = forge.executor.release(root, "WO-MAP", outcome="failed", apply=True)
             self.assertEqual(result["unlocked"], [])
-            self.assertEqual([item["target"] for item in result["unlock_failures"]], ["Content/Main.umap"])
-            self.assertIn("still held", result["note"])
-            self.assertEqual(forge.executor.status(root)["active"], [])
+            self.assertEqual([item["target"] for item in result["unreleased"]], ["Content/Main.umap"])
+            self.assertEqual(result["lease_status"], "ORPHANED_EXTERNAL_LOCK")
+            self.assertIn("quarantined", result["note"])
+            status = forge.executor.status(root)
+            self.assertEqual(status["active"], [])
+            self.assertEqual([item["work_order"] for item in status["quarantined"]], ["WO-MAP"])
+
+    def test_a_quarantined_write_scope_still_refuses_the_next_writer(self):
+        """Forge stops depending on the LFS server rediscovering the orphan for it."""
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
+            )
+            self.strand_the_lock_server(root)
+            forge.executor.release(root, "WO-MAP", outcome="failed", apply=True)
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(
+                    root, self.packet("WO-NEXT", ["Content/Main.umap"]), owner="worker-b", apply=True
+                )
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
+            self.assertEqual(caught.exception.extra["conflicts"][0]["status"], "ORPHANED_EXTERNAL_LOCK")
+            self.assertIn("quarantined", caught.exception.extra["conflicts"][0]["reason"])
+
+    def test_reconciling_frees_the_lane_once_the_lock_actually_goes(self):
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
+            )
+            url = subprocess.run(
+                ["git", "config", "lfs.url"], cwd=str(root), capture_output=True, text=True, check=True
+            ).stdout.strip()
+            self.strand_the_lock_server(root)
+            forge.executor.release(root, "WO-MAP", outcome="failed", apply=True)
+            subprocess.run(["git", "config", "lfs.url", url], cwd=str(root), capture_output=True, check=True)
+            reconciled = forge.executor.reconcile(root, "WO-MAP", apply=True)
+            self.assertEqual(reconciled["cleared"], ["Content/Main.umap"])
+            self.assertEqual(reconciled["still_held"], [])
+            self.assertEqual(reconciled["lease_status"], "RELEASED")
+            self.assertEqual(forge.executor.status(root)["quarantined"], [])
+            self.assertEqual(self.held_paths(), [])
+            forge.executor.acquire(
+                root, self.packet("WO-NEXT", ["Content/Main.umap"]), owner="worker-b", apply=True
+            )
+
+    def test_reconciling_that_still_cannot_free_the_lock_keeps_the_quarantine(self):
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
+            )
+            self.strand_the_lock_server(root)
+            forge.executor.release(root, "WO-MAP", outcome="failed", apply=True)
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.reconcile(root, "WO-MAP", apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["RECONCILE_INCOMPLETE"])
+            self.assertEqual([item["work_order"] for item in forge.executor.status(root)["quarantined"]], ["WO-MAP"])
 
     def test_the_lock_is_released_after_a_lease_is_freed_and_can_be_retaken(self):
         with self.game() as root:
@@ -2927,8 +3128,23 @@ class CommandSurfaceTests(unittest.TestCase):
             "mcp sync-user": ["mcp", "sync-user", *project],
             "exec acquire": ["exec", "acquire", *project, "--packet", str(root / "packet.json")],
             "exec status": ["exec", "status", *project],
+            "exec renew": ["exec", "renew", *project, "--work-order", "WO-SURFACE"],
+            "exec reconcile": ["exec", "reconcile", *project, "--work-order", "WO-ORPHAN"],
             "exec release": ["exec", "release", *project, "--work-order", "WO-SURFACE", "--outcome", "passed"],
         }
+
+    def strand_a_lease(self, root):
+        """A quarantined lease for reconcile to answer about, held read-only so it blocks nothing else."""
+        path = forge.executor.lease_state_path(root)
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["leases"].append({
+            "lease_id": "lease-surface-orphan", "lane": "generated-assets", "owner": "surface-test",
+            "work_order": "WO-ORPHAN", "write_scope": ["WO-ORPHAN"], "acquired_at": forge.executor.utc_now(),
+            "expires_at": forge.executor.utc_now(), "status": forge.executor.ORPHANED,
+            "unreleased": [{"kind": "lfs-lock", "target": "Content/Stranded.umap", "detail": "server unreachable"}],
+            "isolation": {"mode": "read-only", "base_revision": "HEAD", "lock_targets": []},
+        })
+        forge.executor.write_state_atomically(path, document)
 
     def run_command(self, argv):
         stream = io.StringIO()
@@ -2943,6 +3159,8 @@ class CommandSurfaceTests(unittest.TestCase):
     def test_every_command_answers_with_an_identified_payload(self):
         with self.game() as root:
             for name, argv in sorted(self.invocations(root).items()):
+                if name == "exec reconcile":
+                    self.strand_a_lease(root)
                 if name == "exec release":
                     forge.executor.acquire(
                         root, json.loads((root / "packet.json").read_text(encoding="utf-8")),

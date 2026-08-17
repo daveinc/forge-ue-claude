@@ -31,7 +31,7 @@ param(
     [string[]]$McpArg = @(),
     [ValidateSet('project', 'user', 'both')]
     [string]$McpScope,
-    [ValidateSet('acquire', 'release', 'status')]
+    [ValidateSet('acquire', 'release', 'renew', 'reconcile', 'status')]
     [string]$ExecAction,
     [string]$PacketPath,
     [string]$RoutePath,
@@ -224,7 +224,7 @@ if ($Mode -eq 'Mcp') {
 
 if ($Mode -eq 'Exec') {
     if (-not $ProjectPath) { throw '-ProjectPath is required for Exec mode.' }
-    if (-not $ExecAction) { throw '-ExecAction is required for Exec mode. One of: acquire, release, status.' }
+    if (-not $ExecAction) { throw '-ExecAction is required for Exec mode. One of: acquire, release, renew, reconcile, status.' }
     $arguments = @($forgeScript, 'exec', $ExecAction, '--project', $ProjectPath)
     if ($ExecAction -eq 'acquire') {
         if (-not $PacketPath) { throw '-PacketPath is required to acquire; the packet declares the leases and isolation.' }
@@ -238,11 +238,16 @@ if ($Mode -eq 'Exec') {
         if (-not $Outcome) { throw '-Outcome is required to release. One of: passed, failed.' }
         $arguments += @('--work-order', $WorkOrder, '--outcome', $Outcome)
     }
+    if ($ExecAction -in @('renew', 'reconcile')) {
+        if (-not $WorkOrder) { throw "-WorkOrder is required to $ExecAction." }
+        $arguments += @('--work-order', $WorkOrder)
+    }
     if ($Apply -and $ExecAction -ne 'status') {
-        $operation = if ($ExecAction -eq 'acquire') {
-            'Take lane leases and establish worktree or LFS isolation'
-        } else {
-            'Release lane leases and tear down isolation'
+        $operation = switch ($ExecAction) {
+            'acquire'   { 'Take lane leases and establish worktree or LFS isolation' }
+            'renew'     { 'Extend the lease held by work that is still running' }
+            'reconcile' { 'Retry the external teardown a release could not finish' }
+            default     { 'Release lane leases and tear down isolation' }
         }
         if ($PSCmdlet.ShouldProcess($ProjectPath, $operation)) { $arguments += '--apply' }
     }

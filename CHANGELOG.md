@@ -2,6 +2,21 @@
 
 Every section below is dated from the tag that released it. One tag is not a release: `v0.1.0` pins the exact tree an external architecture review read, so that its assessment can be reproduced. The work it marks shipped in 0.2.0, and there is no 0.1.0 section for it — the `0.1.0` heading at the bottom is the original release of 2026-08-14.
 
+## 0.6.0 - 2026-08-17
+
+### A lease is held by a process, not by a clock
+
+- `LEASE_TTL_MINUTES = 120` with no way to renew meant a lane could be freed while its worker was still writing. A Nanite rebuild, a cook, a mass retarget or a large import legitimately outruns two hours; at the TTL the lease was marked `EXPIRED` and the next acquire admitted a second writer, which defeats the isolation the lease exists to provide.
+- A lease now records `owner_pid`, `owner_machine` and `owner_process_start`, and recovery requires evidence the owner is gone rather than only a passed deadline. The start time is what makes this sound: over a two-hour window a pid can be recycled, and a bare pid check would read a recycled one as the original owner still working.
+- `forge.py exec renew` extends a lease and stamps a heartbeat. A lease past expiry whose owner is still running **keeps its lane** and is reported as `renewal_overdue` by `exec status`, so a worker that stopped reporting is visible rather than silently holding forever. A lease taken on another machine cannot be checked from here, so it waits for `recoverable_after` instead of being freed on a guess.
+
+### A resource Forge could not free is not a resource it reports as free
+
+- `release` marked leases `RELEASED` even when `git lfs unlock` had failed, and said so in a note: "the lane is free but those paths are not". That is transparent about entering an inconsistent state rather than avoiding it, and it left Forge depending on the LFS server to rediscover the orphan later. The ordinary release path also called `git worktree remove` and `git branch -D` without checking either return code — the rollback path already reported these failures and the release path discarded them.
+- Releasing is now `ACTIVE → RELEASING → RELEASED`, or `→ ORPHANED_EXTERNAL_LOCK` when an LFS lock or worktree survived. A quarantined lease keeps blocking its write scope, so the next writer is refused by Forge rather than by a remote server that happens to still say no.
+- `forge.py exec reconcile` retries the outstanding teardown and frees the lane only if it works. It also recovers a lease left `RELEASING` by a crash — retrying an unlock is idempotent so it is safe, while discarding a workspace is not and an interrupted release never recorded the outcome that would have earned it, so a worktree is removed only when a release already named it as what it could not remove.
+- Process inspection is one stdlib-only primitive in the executor with two independent mechanisms, because a failed inspection must be reportable as "cannot tell" rather than read as an empty machine.
+
 ## 0.5.0 - 2026-08-17
 
 ### Every verb is reachable from a workflow, and a guard keeps it that way

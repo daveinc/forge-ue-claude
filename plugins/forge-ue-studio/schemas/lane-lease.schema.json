@@ -2,16 +2,104 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "forge.lane-lease/v1",
   "type": "object",
-  "required": ["lease_id", "lane", "owner", "work_order", "write_scope", "acquired_at", "expires_at", "status"],
+  "required": [
+    "lease_id",
+    "lane",
+    "owner",
+    "work_order",
+    "write_scope",
+    "acquired_at",
+    "expires_at",
+    "status"
+  ],
   "properties": {
-    "lease_id": {"type": "string", "minLength": 1},
-    "lane": {"type": "string", "minLength": 1},
-    "owner": {"type": "string", "minLength": 1},
-    "work_order": {"type": "string", "minLength": 1},
-    "write_scope": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
-    "acquired_at": {"type": "string"},
-    "expires_at": {"type": "string"},
-    "status": {"enum": ["ACTIVE", "RELEASED", "EXPIRED", "BROKEN"]}
+    "lease_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lane": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "work_order": {
+      "type": "string",
+      "minLength": 1
+    },
+    "write_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "acquired_at": {
+      "type": "string"
+    },
+    "expires_at": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ACTIVE",
+        "RELEASING",
+        "RELEASED",
+        "EXPIRED",
+        "BROKEN",
+        "ORPHANED_EXTERNAL_LOCK"
+      ],
+      "description": "ACTIVE holds the lane. RELEASING means external teardown is in flight, so a lease left here was interrupted and must be reconciled rather than assumed free. ORPHANED_EXTERNAL_LOCK means an LFS lock or worktree survived the release: the lane stays quarantined until `exec reconcile` frees it, because a teardown Forge only attempted is not a teardown that happened."
+    },
+    "owner_pid": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Process that took the lease, checked for liveness before the clock is allowed to free the lane."
+    },
+    "owner_machine": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Machine the owner runs on. Liveness is only checkable from that machine."
+    },
+    "owner_process_start": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Owner's process start time, so a reused pid does not read as the original owner still working."
+    },
+    "heartbeat_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Last renewal. Work outrunning the TTL renews rather than losing its lane."
+    },
+    "renewals": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "recoverable_after": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Earliest a lease taken on another machine may be recovered, since liveness cannot be proven from here."
+    },
+    "unreleased": {
+      "type": "array",
+      "description": "External resources a release or reconcile could not free. Non-empty means the write scope is quarantined.",
+      "items": {
+        "type": "object"
+      }
+    }
   },
   "additionalProperties": true
 }
