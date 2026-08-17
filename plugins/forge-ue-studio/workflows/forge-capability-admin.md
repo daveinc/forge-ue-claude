@@ -15,10 +15,13 @@
    ```powershell
    python <forge-plugin-root>/scripts/forge.py mcp add     --project <project-root> --id <provider> --command <exe> --arg <arg> --apply
    python <forge-plugin-root>/scripts/forge.py mcp disable --project <project-root> --id <provider> --apply
+   python <forge-plugin-root>/scripts/forge.py mcp enable  --project <project-root> --id <provider> --apply
    python <forge-plugin-root>/scripts/forge.py mcp remove  --project <project-root> --id <provider> --apply
    ```
 
-   Declare capabilities, lane, isolation mode and fallbacks in the entry for any provider outside the shipped catalog. Re-run `route-status` afterwards and requalify; a newly declared route starts `UNQUALIFIED`.
+   `disable` and `enable` are a pair: disabling keeps the declaration and stops the route being probed or dispatched to, so re-adopting a route is `enable`, not a second `add`. `remove` deletes the declaration and loses its scope and fallbacks with it.
+
+   Declare capabilities, lane, isolation mode and fallbacks in the entry for any provider outside the shipped catalog. Re-run `route-status` afterwards and requalify; a newly declared route starts `UNQUALIFIED`, and so does one re-enabled after a version, path or schema change.
 10. Choose each route's scope deliberately. `--scope project` reaches this game's session; `--scope user` or `both` also publishes to the machine-wide config so spawned agents can use the route:
 
     ```powershell

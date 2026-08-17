@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Every verb is reachable from a workflow, and a guard keeps it that way
+
+- `CommandSurfaceTests` proved every verb *runs*. Nothing proved any verb is ever *reached*, and seven were not: `route`, `verify`, `validate`, `profile`, `gsd-sync`, `mcp enable` and `mcp-status`. A verb no workflow invokes only rots, which is how `profile` stayed broken through an entire release — it was named in prose while every command around it was named by path.
+- `WorkflowReachabilityTests` walks the same parser `CommandSurfaceTests` does and requires each leaf command to be invoked by some workflow or skill file, counting both the `forge.py <verb>` and `install.ps1 -Mode <Mode>` spellings and translating the latter through the same `$verbMap` `install.ps1` uses — the collapse this catches happens at translation, so checking the untranslated text would miss it. Exemptions are a dict of command to stated reason, and two further tests fail an exemption that names a command that no longer exists or one the prose already invokes.
+- `verify` is now a step in `forge-doctor`: overlay drift makes every capability answer below it suspect, and it was surfaced only if a human thought to look.
+- `profile` and `survey` are named by path in `forge-bootstrap` step 5, which said "Run Survey and Profile" as prose while naming fifteen state files exactly.
+- `validate` runs in `forge-bootstrap` on the bootstrap report and job ledger, and in `forge-route-work` on the work packet before dispatch and on each attempt result before it is acted on. Its absence is *why* the shipped schemas were never exercised.
+- `gsd-sync` appeared in no workflow at all, not even in prose. It is now the repair step in `forge-runtime` for a `runtime` key that drifted without a host swap.
+- `mcp enable` is documented beside `disable`, and the pair is explained: disabling keeps the declaration, so re-adopting a route is `enable` rather than a second `add`.
+- `mcp-status` stays deliberately unreachable, recorded with its reason: it is the retained spelling of `route-status`, and promoting both would offer one route under two names.
+
 ### A routing decision is state the executor reads, not a file an agent carries
 
 - `exec acquire --route` was optional, so the workflow telling the agent to pass it was compliance, not enforcement. It was worse than optional: **`forge.py route` was invoked by no workflow at all**. Step 10 of `forge-route-work` said "save the decision from step 6 and pass it", and step 6 never ran the command that produces a decision. There was no documented path that created the file the flag consumes, so in practice every packet was taken on trust.

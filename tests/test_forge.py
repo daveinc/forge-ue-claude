@@ -2967,6 +2967,73 @@ class CommandSurfaceTests(unittest.TestCase):
             self.assertEqual([p.name for p in before if before[p] != after[p]], [])
 
 
+class WorkflowReachabilityTests(unittest.TestCase):
+    """Every verb is reachable from a workflow, not merely runnable.
+
+    `CommandSurfaceTests` proves each verb runs. Nothing proved any verb is ever
+    reached, and a verb no workflow invokes is a verb that only rots: `route`
+    produced the decision `exec acquire` wanted and no step ran it, `profile` was
+    named in prose while every other command around it was named by path, and
+    `validate` going unrun is why six shipped schemas were never exercised.
+    """
+
+    EXEMPT = {
+        "mcp-status": "the retained spelling of route-status, kept so callers do not break; "
+                      "workflows name route-status, and promoting both would offer one route under two names",
+    }
+
+    PROSE_ROOTS = (
+        ROOT / "plugins" / "forge-ue-studio" / "workflows",
+        ROOT / "plugins" / "forge-ue-studio" / "skills",
+    )
+
+    @classmethod
+    def install_modes(cls):
+        """The -Mode spellings install.ps1 accepts, mapped the way install.ps1 maps them."""
+        text = (ROOT / "install.ps1").read_text(encoding="utf-8")
+        declared = re.search(r"\$verbMap = @\{([^}]*)\}", text)
+        pairs = re.findall(r"'([^']+)'\s*=\s*'([^']+)'", declared.group(1) if declared else "")
+        return dict(pairs)
+
+    def invoked(self):
+        """Every command the prose actually tells someone to run, in either spelling."""
+        verb_map = self.install_modes()
+        found = set()
+        for root in self.PROSE_ROOTS:
+            for path in sorted(root.rglob("*.md")):
+                text = path.read_text(encoding="utf-8")
+                for verb, subcommand in re.findall(r"forge\.py\s+([a-z][a-z-]*)(?:\s+([a-z][a-z-]*))?", text):
+                    found.add(verb)
+                    if subcommand:
+                        found.add(f"{verb} {subcommand}")
+                for mode in re.findall(r"install\.ps1\s+-Mode\s+(\w+)", text):
+                    found.add(verb_map.get(mode, mode.lower()))
+        return found
+
+    def test_every_declared_command_is_reachable_from_a_workflow(self):
+        invoked = self.invoked()
+        unreachable = sorted(
+            command
+            for command in CommandSurfaceTests.leaf_commands()
+            if command not in invoked and command not in self.EXEMPT
+        )
+        self.assertEqual(
+            unreachable, [],
+            "these verbs exist and no workflow invokes them; wire each into the workflow that needs it, "
+            "or record it in EXEMPT with the reason it is deliberately unreachable",
+        )
+
+    def test_every_exemption_names_a_command_that_exists(self):
+        """An exemption outliving its command would silently excuse a real gap."""
+        declared = CommandSurfaceTests.leaf_commands()
+        self.assertEqual(sorted(set(self.EXEMPT) - declared), [])
+
+    def test_no_exemption_covers_a_command_the_prose_already_invokes(self):
+        """An exemption that is not needed is a claim the repo no longer makes."""
+        invoked = self.invoked()
+        self.assertEqual(sorted(command for command in self.EXEMPT if command in invoked), [])
+
+
 class ModuleBoundaryTests(unittest.TestCase):
     """The split holds: every reference resolves, the layering stays acyclic, and
     the command line still names the whole public surface."""

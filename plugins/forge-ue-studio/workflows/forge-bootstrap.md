@@ -6,13 +6,27 @@
 2. Apply the overlay with `scripts/forge.py install --project <root> --apply` when `.forge/config.json` or `.forge/directives.md` is absent. Never install packages, models, plugins, or MCPs here, and never change the machine.
 3. **STOP after first overlay installation.** Tell the user to open a fresh task and run `forge-next`. Never continue in the current task.
 4. On `--resume`, read the host's project instruction file, `.forge/directives.md`, `.forge/state/install-state.json`, `.forge/state/install-jobs.json`, and the canonical packet registry. Treat `.forge/state/lifecycle.json` as deprecated history. The job ledger is the resume point: carry forward every job already recorded `COMPLETE`, `NOT_APPLICABLE` or `FAILED` with its evidence, and re-dispatch only what is still `PLANNED` or was left `DISPATCHED` by an interrupted session. Never re-probe a job the ledger already answers.
-5. Run Survey and Profile first and write `.forge/capabilities/detected.json`. Never treat detection as qualification.
+5. Detect before compiling anything, and write `.forge/capabilities/detected.json`:
+
+   ```powershell
+   python <forge-plugin-root>/scripts/forge.py survey --project <project-root>
+   python <forge-plugin-root>/scripts/forge.py profile --project <project-root> --apply
+   ```
+
+   Run `profile` without `--apply` first to read what it would record. Never treat detection as qualification: `profile` records what is present, and only `forge-capability-admin` records what has been proven to work.
 6. Compile only applicable jobs from [installation-waves.md](../skills/forge-bootstrap/references/installation-waves.md). Record each job's canonical `FI-*` work order, wave, objective, inputs, read/write scope, agent type, expected result, acceptance and a `PLANNED` status in `.forge/state/install-jobs.json` before dispatch, against `forge.install-jobs/v1`. Update each job's status and evidence in place as it dispatches and returns, so the ledger is always what step 4 can resume from.
 7. Dispatch agents whenever the host exposes authorized subagents: independent read-only Wave 1 jobs concurrently, local work stopped while they run, then Wave 2 analysis on their structured results. Use exact project-local agent types when visible, otherwise an exactly suitable installed typed agent. Never substitute an unnamed local model. Mark every affected job `DEGRADED_INLINE` and report the lost independence when dispatch is forbidden.
 8. Never delegate package installation, consent, credentials, PATH or system changes, project descriptor mutation, or external writes. Surface each as a separate human approval. Adapt around absent optional capabilities instead of blocking unrelated production.
 9. Persist observations, evidence, failures, proposed capability contracts, and unresolved human actions. Never qualify a provider because an investigator found it.
 10. Dispatch a fresh read-only verifier against the deterministic profile, job results, and acceptance criteria. Never give the verifier investigator reasoning beyond the returned artifacts.
-11. Write `.forge/state/bootstrap-report.json` against `forge.bootstrap-report/v1` with `verdict`, every canonical `FI-*` job including evidence-backed `NOT_APPLICABLE` entries, `delegation`, `verified`, `assumed`, `unavailable`, `blocking`, `human_actions`, `evidence`, and `next_action`. Set `next_action` to `forge-next`. Never maintain a competing Forge phase pointer.
+11. Write `.forge/state/bootstrap-report.json` against `forge.bootstrap-report/v1` with `verdict`, every canonical `FI-*` job including evidence-backed `NOT_APPLICABLE` entries, `delegation`, `verified`, `assumed`, `unavailable`, `blocking`, `human_actions`, `evidence`, and `next_action`. Set `next_action` to `forge-next`. Never maintain a competing Forge phase pointer. Then check it against its contract before the gate reads it:
+
+    ```powershell
+    python <forge-plugin-root>/scripts/forge.py validate --kind bootstrap-report --input <project-root>/.forge/state/bootstrap-report.json
+    python <forge-plugin-root>/scripts/forge.py validate --kind install-jobs --input <project-root>/.forge/state/install-jobs.json
+    ```
+
+    A schema no one runs is a contract only in name. The gate in step 12 checks that required fields are present; `validate` is what says which ones and why, so run it here rather than reading a `report-schema` failure and guessing.
 12. Run the gate and treat every failure as work remaining:
 
     ```powershell

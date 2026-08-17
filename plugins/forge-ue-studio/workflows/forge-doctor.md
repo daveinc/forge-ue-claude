@@ -10,16 +10,23 @@
 
 2. Read `runtime.detected_hosts`. Report every known host, its CLI presence, its GSD runtime, and whether it satisfies the prerequisite contract. The assigned host is marked `active`.
 3. Inspect the resident host's image and tool capabilities, the project, `.uproject`, existing instructions and config, VCS, UE executables and plugins, native MCP, VibeUE, editor-closed Python, Blender and its gateway, installed local runtimes and models, entitled services, approved remote providers, credential presence only, DDC and build tools, and platform visibility.
-4. Probe every declared typed tool route:
+4. Check the overlay against what shipped, before trusting anything read out of it:
+
+   ```powershell
+   python <forge-plugin-root>\scripts\forge.py verify --project "<project>"
+   ```
+
+   It reports every canon file that is missing or has drifted from the template. Drift is not automatically wrong — a project may have amended canon deliberately — but an unexplained difference makes every capability answer below suspect, since they are read from these files. Report what drifted and why; re-apply through `forge-bootstrap`, never by hand.
+5. Probe every declared typed tool route:
 
    ```powershell
    python <forge-plugin-root>\scripts\forge.py route-status --project "<project>"
    ```
 
    Report `session_visible` and `subagent_visible` separately. Report a route visible to the session but not to its spawned agents as project scope working as declared, with the declared fallback named. Name the remedy without performing it; widening a route to user scope belongs to `forge-capability-admin`. Never report a route as available because the server is installed.
-5. Report executable or plugin detection as `AVAILABLE_UNVERIFIED` until a safe end-to-end probe passes.
-6. Probe each accepted route with known-good and known-bad controls. Never expose or persist credential values.
-7. Distinguish generation and operation surfaces from planning or prompt-only skills. Never treat advertised vision, audio, or tool support as proof of image, video, mesh, or animation generation.
-8. Emit capability contracts and optional proposals. Compare each worker against the resident-host baseline for the exact task and complexity class, stating context savings, benefit, effective cost, permissions, hardware fit, test, fallback, and affected workflows.
-9. Pass proposals to `forge-capability-admin`. Never install packages, download models, enable UE plugins, change PATH, write credentials, or edit the `.uproject` without separate explicit approval.
-10. Report which hosts could hold the resident seat and leave the assignment to `forge-runtime`.
+6. Report executable or plugin detection as `AVAILABLE_UNVERIFIED` until a safe end-to-end probe passes.
+7. Probe each accepted route with known-good and known-bad controls. Never expose or persist credential values.
+8. Distinguish generation and operation surfaces from planning or prompt-only skills. Never treat advertised vision, audio, or tool support as proof of image, video, mesh, or animation generation.
+9. Emit capability contracts and optional proposals. Compare each worker against the resident-host baseline for the exact task and complexity class, stating context savings, benefit, effective cost, permissions, hardware fit, test, fallback, and affected workflows.
+10. Pass proposals to `forge-capability-admin`. Never install packages, download models, enable UE plugins, change PATH, write credentials, or edit the `.uproject` without separate explicit approval.
+11. Report which hosts could hold the resident seat and leave the assignment to `forge-runtime`.

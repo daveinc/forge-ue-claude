@@ -24,6 +24,13 @@ Reject any host name, skill prefix, or vendor path written into canon.
    ```
 
 3. Re-render before production work whenever `surfaces` reports anything other than `CURRENT`.
+4. Check GSD's `runtime` key against the assigned host, and repair it if it drifted:
+
+   ```powershell
+   python <forge-plugin-root>/scripts/forge.py gsd-sync --project <project-root>
+   ```
+
+   `install` and `host set --apply` both write this key already, so a mismatch here means `.planning/config.json` was edited outside Forge. Add `--apply` to repoint it. This is the only key Forge writes there, so nothing else in that file is Forge's to correct.
 
 ## Assign or swap
 
