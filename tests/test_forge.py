@@ -14,10 +14,11 @@ import symtable
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import uuid
 from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -1956,7 +1957,12 @@ class LfsLockHandler(RecordingHandler):
 
 
 class McpHandler(RecordingHandler):
-    """An endpoint that answers an MCP initialize the way a live server does."""
+    """An endpoint that answers an MCP initialize the way a live server does.
+
+    `segmented-sse` is how Unreal actually answers: an event stream with no
+    content length, delivered in pieces, connection kept open afterwards. A
+    single bounded read sees only the first segment.
+    """
 
     behaviour = "json"
 
@@ -1967,6 +1973,9 @@ class McpHandler(RecordingHandler):
             return
         if self.behaviour == "not-mcp":
             self.respond(200, b"<html>a web server, not an MCP server</html>", content_type="text/html")
+            return
+        if self.behaviour == "jsonrpc-not-mcp":
+            self.respond(200, {"jsonrpc": "2.0", "id": 1, "result": "pong"})
             return
         result = {
             "jsonrpc": "2.0",
@@ -1981,12 +1990,26 @@ class McpHandler(RecordingHandler):
             body = f"event: message\ndata: {json.dumps(result)}\n\n".encode("utf-8")
             self.respond(200, body, content_type="text/event-stream")
             return
+        if self.behaviour == "held-open-sse":
+            body = f"event: message\ndata: {json.dumps(result)}\n\n".encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream;charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            for start in range(0, len(body), 24):
+                self.wfile.write(body[start:start + 24])
+                self.wfile.flush()
+            time.sleep(6)
+            return
         self.respond(200, result)
 
 
 @contextmanager
 def local_server(handler_class):
-    server = HTTPServer(("127.0.0.1", 0), handler_class)
+    """A threaded server, because a single-threaded one cannot represent a real
+    endpoint: a handler holding its connection open would block every later
+    request, and holding connections open is what these servers do."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler_class)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -2613,6 +2636,25 @@ class McpHandshakeTests(unittest.TestCase):
             with self.game(url) as root:
                 self.assertEqual(self.route(root)["status"], "AVAILABLE_VERIFIED")
 
+    def test_an_answer_on_a_stream_that_stays_open_is_still_verified(self):
+        """How Unreal actually answers: an event stream with no content length,
+        kept open after the reply. Reading to EOF never returns, so a probe that
+        waits for one reports a live editor as a route that did not answer."""
+        McpHandler.behaviour = "held-open-sse"
+        with local_server(McpHandler) as url:
+            with self.game(url) as root:
+                self.assertEqual(self.route(root)["status"], "AVAILABLE_VERIFIED")
+
+    def test_a_json_rpc_server_that_is_not_mcp_is_not_verified(self):
+        """`result` present is not `result` being an MCP initialize payload. Deciding
+        this by substring accepted any JSON-RPC server as Unreal's typed route."""
+        McpHandler.behaviour = "jsonrpc-not-mcp"
+        with local_server(McpHandler) as url:
+            with self.game(url) as root:
+                route = self.route(root)
+                self.assertFalse(route["live"])
+                self.assertEqual(route["status"], "UNAVAILABLE_OPTIONAL")
+
     def test_a_server_that_errors_is_unavailable_not_verified(self):
         McpHandler.behaviour = "http-error"
         with local_server(McpHandler) as url:
@@ -2716,9 +2758,14 @@ class EditorClosedRouteTests(unittest.TestCase):
             self.assertEqual(self.contracts(root)["ue.python.commandlet"]["status"], "AVAILABLE_UNVERIFIED")
 
     def test_a_live_editor_closes_the_lane(self):
-        """The inverse handshake: a commandlet must not run against a project the editor holds."""
+        """The inverse handshake: a commandlet must not run against a project the editor holds.
+
+        A live editor is both an endpoint that answers and a process that holds the
+        project. The fixture supplies both, because either alone is a different case.
+        """
         with local_server(McpHandler) as url:
             with self.game(engine_present=True) as root:
+                (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
                 path = root / ".forge" / "mcp.json"
                 document = json.loads(path.read_text(encoding="utf-8"))
                 for entry in document["servers"]:
@@ -2728,13 +2775,15 @@ class EditorClosedRouteTests(unittest.TestCase):
                 rendered = forge.render_project_mcp(root, self.profile, root)
                 (root / ".mcp.json").write_bytes(rendered[1])
 
-                probe = forge.probe_process_route(root, self.row)
-                self.assertFalse(probe["lane_clear"])
-                self.assertEqual(probe["status"], "UNAVAILABLE_OPTIONAL")
+                table = {"resolved": True, "mechanism": "Win32_Process", "processes": [self.editor_process(root)]}
+                with self.process_table(table):
+                    probe = forge.probe_process_route(root, self.row)
+                    self.assertFalse(probe["lane_clear"])
+                    self.assertEqual(probe["status"], "UNAVAILABLE_OPTIONAL")
 
-                contracts = self.contracts(root)
-                self.assertEqual(contracts["ue.live.typed"]["status"], "AVAILABLE_VERIFIED")
-                self.assertEqual(contracts["ue.python.commandlet"]["status"], "UNAVAILABLE_OPTIONAL")
+                    contracts = self.contracts(root)
+                    self.assertEqual(contracts["ue.live.typed"]["status"], "AVAILABLE_VERIFIED")
+                    self.assertEqual(contracts["ue.python.commandlet"]["status"], "UNAVAILABLE_OPTIONAL")
 
     def test_the_two_editor_routes_are_never_available_together(self):
         with self.game(engine_present=True) as root:
@@ -2824,21 +2873,69 @@ class EditorClosedRouteTests(unittest.TestCase):
                 self.assertEqual(ownership["ownership"], "UNDETERMINED")
                 self.assertEqual(forge.probe_process_route(root, self.row)["status"], "UNAVAILABLE_BLOCKING")
 
-    def test_a_live_mcp_answer_settles_ownership_without_inspecting_anything(self):
-        """The cheap conclusive signal short-circuits: an editor that answers is an editor that is live."""
+    @contextmanager
+    def answering_editor(self, root):
+        """Point this project's declared endpoint at a server that answers MCP."""
+        McpHandler.behaviour = "json"
         with local_server(McpHandler) as url:
-            with self.game(engine_present=True) as root:
-                path = root / ".forge" / "mcp.json"
-                document = json.loads(path.read_text(encoding="utf-8"))
-                for entry in document["servers"]:
-                    if entry["id"] == "unreal-native-mcp":
-                        entry["transport"] = {"type": "http", "url": f"{url}/mcp"}
-                path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+            path = root / ".forge" / "mcp.json"
+            document = json.loads(path.read_text(encoding="utf-8"))
+            for entry in document["servers"]:
+                if entry["id"] == "unreal-native-mcp":
+                    entry["transport"] = {"type": "http", "url": f"{url}/mcp"}
+            path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+            yield url
+
+    def test_an_answer_with_no_editor_process_at_all_is_a_contradiction(self):
+        """Something serves MCP while no editor exists. Two signals disagreeing is
+        not evidence the project is free, so the lane stays shut and asks."""
+        with self.game(engine_present=True) as root:
+            (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
+            with self.answering_editor(root):
+                empty = {"resolved": True, "mechanism": "Win32_Process", "processes": []}
+                with self.process_table(empty):
+                    ownership = forge.live_editor_holds_project(root)
+                    self.assertEqual(ownership["ownership"], "UNDETERMINED")
+                    self.assertIn("contradict", ownership["detail"])
+                    self.assertFalse(forge.probe_process_route(root, self.row)["lane_clear"])
+
+    def test_an_mcp_answer_with_no_attributable_process_is_held(self):
+        """An editor is live and nothing can say whose project it holds: fail closed."""
+        with self.game(engine_present=True) as root:
+            (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
+            with self.answering_editor(root):
                 broken = {"resolved": False, "mechanism": None, "processes": [], "detail": "WMI did not answer"}
                 with self.process_table(broken):
                     ownership = forge.live_editor_holds_project(root)
                 self.assertEqual(ownership["ownership"], "HELD")
                 self.assertEqual(ownership["evidence"][0]["signal"], "mcp-handshake")
+
+    def test_an_editor_answering_for_another_project_does_not_hold_this_one(self):
+        """The MCP endpoint is a machine port, not a project's. On a workstation
+        running two editors, one project's session must not shut another's lane."""
+        with self.game(engine_present=True) as root:
+            (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
+            elsewhere = self.editor_process(
+                root, command_line='"C:\\UE\\UnrealEditor.exe" "D:\\Other\\Other.uproject"'
+            )
+            with self.answering_editor(root):
+                table = {"resolved": True, "mechanism": "Win32_Process", "processes": [elsewhere]}
+                self.assertEqual(elsewhere["name"], "UnrealEditor.exe")
+                with self.process_table(table):
+                    ownership = forge.live_editor_holds_project(root)
+                    self.assertEqual(ownership["ownership"], "FREE")
+                    self.assertIn("different project", ownership["detail"])
+                    self.assertTrue(forge.probe_process_route(root, self.row)["lane_clear"])
+
+    def test_an_mcp_answer_backed_by_this_projects_process_is_held(self):
+        with self.game(engine_present=True) as root:
+            (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
+            with self.answering_editor(root):
+                table = {"resolved": True, "mechanism": "Win32_Process", "processes": [self.editor_process(root)]}
+                with self.process_table(table):
+                    ownership = forge.live_editor_holds_project(root)
+                self.assertEqual(ownership["ownership"], "HELD")
+                self.assertEqual(ownership["holder"]["pid"], 4242)
 
 
 class RoutedAcquisitionTests(unittest.TestCase):

@@ -131,13 +131,16 @@ def _read_frame(response: Any, expect_reply: bool, message_id: Any = None) -> st
     The connection stays open after the reply, so waiting for EOF waits forever.
     Guessing at a terminator does not work either: a chunk boundary can land on a
     closing brace inside the payload and truncate a large answer. The only
-    reliable stop is a frame that actually decodes.
+    reliable stop is a frame that actually decodes. `read1` is required rather
+    than `read`, because a plain `read(n)` on a buffered socket waits for exactly
+    n bytes and a short reply never supplies them.
     """
     if not expect_reply:
         return ""
+    reader = getattr(response, "read1", response.read)
     buffered = b""
     while len(buffered) < 32_000_000:
-        chunk = response.read(8192)
+        chunk = reader(8192)
         if not chunk:
             break
         buffered += chunk

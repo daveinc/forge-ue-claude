@@ -4,6 +4,18 @@ Every section below is dated from the tag that released it. One tag is not a rel
 
 ## 0.6.0 - 2026-08-17
 
+### The handshake is decided by a parsed reply, not by a substring in one read
+
+- Driving a real editor turned up two defects in Forge's own probe. It read the reply once, bounded, and searched it for `"result"`. Both halves were wrong.
+- **A JSON-RPC server that is not MCP passed.** Any endpoint returning a `result` of any shape earned `AVAILABLE_VERIFIED` as Unreal's typed route. The handshake is now decided by a parsed reply whose `result` is an object, and a test proves the old check accepted a server the new one refuses.
+- **A reply on a stream that stays open was read as no reply.** Unreal answers on a `text/event-stream` with no content length and keeps the connection open, so there is no EOF; and `read(n)` on a buffered socket waits for exactly *n* bytes, which a short reply never supplies. Both are ways of waiting for an end that never comes, and both report a live editor as a route that did not answer. The probe now reads with `read1` until a frame decodes, under a byte budget.
+- The fixture server became threaded, because a single-threaded one cannot represent an endpoint that holds a connection open — the very behaviour that had to be tested.
+
+### An editor answering is not this project's editor answering
+
+- The MCP endpoint is a machine port, not a project's. Ownership treated any answer as proof *this* project was held, so on a workstation running two editors, one project's session shut the other's editor-closed lane. The lane is per-project; the endpoint is not.
+- The handshake and process inspection are now weighed together. An answer plus a process holding this project is `HELD`. An answer while other editors run and none holds this project is `FREE`. An answer that inspection cannot attribute at all is `HELD`, still failing closed. And an answer while **no editor process exists at all** is `UNDETERMINED` with a stated human action: two signals contradicting each other is not evidence a project is free.
+
 ### A moved MCP port no longer reads as a closed editor
 
 - Forge probes the endpoint the project declares; the editor serves the one its own settings declare. Nothing tied the two together, so a project that moved `ServerPortNumber` presented **exactly** as a project with no editor running — a silent endpoint and no reason given. This was found on a real project configured for port 8800 while Forge probed 8000.

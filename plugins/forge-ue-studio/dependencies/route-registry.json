@@ -53,7 +53,7 @@
         "type": "http",
         "url": "http://127.0.0.1:8000/mcp"
       },
-      "tool_surface": "Discovery mode by default: list_toolsets, describe_toolset and call_tool stand in for the full tool set, so the schema stays small. Treat named tools as discovered at runtime, never as a fixed contract.",
+      "tool_surface": "Discovery mode by default: tools/list returns only list_toolsets, describe_toolset and call_tool, so toolset tools are reached through call_tool with toolset_name plus an unprefixed tool_name. Treat named tools as discovered at runtime, never as a fixed contract. Confirmed against UE 5.8 on 2026-08-17: the server applies no schema defaults, so a parameter marked optional must still be sent and omitting one fails naming only the next missing parameter; object and class parameters take {refPath: ...} with classes as full object paths; and a tool that succeeds without a value returns null, which must not be read as failure. The transport answers on a text/event-stream with no content length and keeps the connection open, so a client that reads to EOF hangs and one that reads a fixed byte count blocks: read until a JSON-RPC frame decodes.",
       "probe": "mcp-http-handshake",
       "fallbacks": [
         "ue.editor-closed-or-human"

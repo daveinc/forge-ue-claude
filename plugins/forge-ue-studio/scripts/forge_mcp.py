@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import re
 import socket
@@ -154,6 +155,55 @@ def endpoint_is_listening(url: str, timeout: float = 0.35) -> bool:
         return False
 
 
+def decode_jsonrpc(payload: str) -> dict[str, Any] | None:
+    """One JSON-RPC reply out of `payload`, bare or inside SSE framing, or None."""
+    text = payload.strip()
+    if text.startswith("{"):
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return None
+    for line in text.splitlines():
+        candidate = line.strip()
+        if not candidate.startswith("data:"):
+            continue
+        body = candidate[5:].strip()
+        if not body.startswith("{"):
+            continue
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def read_jsonrpc_frame(response: Any, budget: int = 262_144) -> str:
+    """Read until a reply parses, rather than reading to an end that never comes.
+
+    Unreal answers on a `text/event-stream` with no content length and keeps the
+    connection open afterwards, so there is no EOF to read to and no length to
+    trust. A read that waits for the end of the stream waits until the timeout and
+    then reports a live editor as a route that did not answer. Stopping at the
+    first frame that decodes is what makes the probe work; a byte budget stops a
+    silent stream from hanging it. `read1` matters as much as the loop: a plain
+    `read(n)` on a buffered socket waits for exactly n bytes, which on a small
+    reply is another way of waiting for an end that never arrives.
+    """
+    reader = getattr(response, "read1", response.read)
+    buffered = b""
+    while len(buffered) < budget:
+        try:
+            chunk = reader(4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        buffered += chunk
+        if decode_jsonrpc(buffered.decode("utf-8", "replace")) is not None:
+            break
+    return buffered.decode("utf-8", "replace")
+
+
 def probe_mcp_endpoint(url: str, timeout: float = 3.0) -> dict[str, Any]:
     """Ask a running MCP endpoint to initialize. Contacts it; never starts or writes anything."""
     if not endpoint_is_listening(url):
@@ -170,33 +220,37 @@ def probe_mcp_endpoint(url: str, timeout: float = 3.0) -> dict[str, Any]:
             },
         }
     ).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
-        method="POST",
-    )
+    parsed = urllib.parse.urlparse(url)
+    opener = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+    connection = opener(parsed.hostname, parsed.port, timeout=timeout)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = response.read(8192).decode("utf-8", "replace")
-            speaks_mcp = '"result"' in payload or "serverInfo" in payload
+        connection.request(
+            "POST",
+            parsed.path or "/",
+            body=body,
+            headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+        )
+        response = connection.getresponse()
+        if response.status >= 400:
             return {
                 "reachable": True,
-                "speaks_mcp": speaks_mcp,
-                "code": getattr(response, "status", None),
-                "detail": "initialize returned an MCP result" if speaks_mcp else "endpoint answered but did not return an MCP result",
+                "speaks_mcp": False,
+                "code": response.status,
+                "detail": f"endpoint answered HTTP {response.status}; something is listening but it did not complete an MCP initialize",
             }
-    except urllib.error.HTTPError as exc:
-        code = exc.code
-        exc.close()
+        answer = decode_jsonrpc(read_jsonrpc_frame(response))
+        speaks_mcp = isinstance(answer, dict) and isinstance(answer.get("result"), dict)
         return {
             "reachable": True,
-            "speaks_mcp": False,
-            "code": code,
-            "detail": f"endpoint answered HTTP {code}; something is listening but it did not complete an MCP initialize",
+            "speaks_mcp": speaks_mcp,
+            "code": response.status,
+            "server_info": answer["result"].get("serverInfo") if speaks_mcp else None,
+            "detail": "initialize returned an MCP result" if speaks_mcp else "endpoint answered but did not return an MCP result",
         }
-    except (urllib.error.URLError, OSError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         return {"reachable": False, "speaks_mcp": False, "code": None, "detail": f"no endpoint answered at {url}: {exc}"}
+    finally:
+        connection.close()
 
 
 def probe_mcp_server(root: Path, profile: dict[str, Any], server: str, provider: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -433,10 +487,19 @@ def editor_process_holding(root: Path, table: dict[str, Any] | None = None) -> d
                     "its command line, so whether it holds this project cannot be told apart from whether it holds another"
                 ),
             }
+    editors = [
+        process for process in resolved["processes"]
+        if any(marker in process["name"].lower() for marker in EDITOR_PROCESS_NAMES)
+    ]
     return {
         "determined": True,
         "holder": None,
-        "detail": f"{resolved['mechanism']} found no Unreal editor process holding this project",
+        "editors_running": len(editors),
+        "detail": (
+            f"{resolved['mechanism']} found {len(editors)} Unreal editor process(es), none holding this project"
+            if editors
+            else f"{resolved['mechanism']} found no Unreal editor process at all"
+        ),
     }
 
 
@@ -454,16 +517,52 @@ def live_editor_holds_project(root: Path) -> dict[str, Any]:
         if url
     ]
     evidence: list[dict[str, Any]] = []
-    for url in endpoints:
-        handshake = probe_mcp_endpoint(url, timeout=1.5)
-        if handshake["speaks_mcp"]:
-            return {
-                "ownership": "HELD",
-                "held": True,
-                "endpoint": url,
-                "evidence": [{"signal": "mcp-handshake", "conclusive": True, "detail": f"a live editor answered an MCP initialize at {url}"}],
-                "detail": f"a live editor answered an MCP initialize at {url}",
+    answering = next((url for url in endpoints if probe_mcp_endpoint(url, timeout=1.5)["speaks_mcp"]), None)
+    process = editor_process_holding(root)
+    if answering:
+        evidence.append(
+            {
+                "signal": "mcp-handshake",
+                "conclusive": not process["determined"],
+                "detail": f"an editor answered an MCP initialize at {answering}, which proves an editor is live "
+                          "but not which project it has open: the endpoint is a machine port, not a project's",
             }
+        )
+        evidence.append({"signal": "process-inspection", "conclusive": process["determined"], "detail": process["detail"]})
+        if process["determined"] and not process["holder"]:
+            if process.get("editors_running"):
+                return {
+                    "ownership": "FREE",
+                    "held": False,
+                    "endpoint": answering,
+                    "evidence": evidence,
+                    "detail": f"an editor answered at {answering} and {process['editors_running']} editor "
+                              "process(es) are running, none of them holding this project, so the answering "
+                              "editor has a different project open and this lane is enterable",
+                }
+            return {
+                "ownership": "UNDETERMINED",
+                "held": None,
+                "endpoint": answering,
+                "evidence": evidence,
+                "detail": f"something answered an MCP initialize at {answering} while no Unreal editor process "
+                          "exists at all; the two signals contradict each other",
+                "human_action": (
+                    f"Something is serving MCP at {answering} that is not an Unreal editor this machine can see. "
+                    "Find out what: another tool on the port, an editor running as a different user, or an "
+                    "engine build process inspection does not recognise. Forge will not enter the editor-closed "
+                    "lane while a signal it cannot explain says an editor is live."
+                ),
+            }
+        return {
+            "ownership": "HELD",
+            "held": True,
+            "endpoint": answering,
+            "holder": process["holder"],
+            "evidence": evidence,
+            "detail": process["detail"] if process["holder"] else
+                      f"an editor answered at {answering} and process inspection could not say whose project it is",
+        }
     evidence.append(
         {
             "signal": "mcp-handshake",
@@ -472,7 +571,6 @@ def live_editor_holds_project(root: Path) -> dict[str, Any]:
                       "a frozen editor stops answering while still holding the project",
         }
     )
-    process = editor_process_holding(root)
     evidence.append({"signal": "process-inspection", "conclusive": process["determined"], "detail": process["detail"]})
     if process["determined"] and process["holder"]:
         return {
