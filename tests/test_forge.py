@@ -3192,6 +3192,19 @@ class CommandSurfaceTests(unittest.TestCase):
                 }),
                 encoding="utf-8",
             )
+            (root / "dispatch-packet.json").write_text(
+                json.dumps({
+                    "work_order": "WO-SURFACE", "revision": "HEAD", "role": "gameplay-engineer",
+                    "task_class": "bounded-code", "complexity": "low", "objective": "exercise the surface",
+                    "inputs": [], "referrals": [], "write_scope": ["project-files"],
+                    "isolation": {"mode": "project-exclusive", "base_revision": "HEAD"},
+                    "leases": ["ue-live-native-mcp"], "capabilities": [],
+                    "context_budget": {"tokens": 1000}, "output_contract": {"schema": "forge.attempt-result/v1"},
+                    "acceptance": ["it answered"], "verification": ["a verifier read it"],
+                    "evidence": [], "invalidation_hashes": {},
+                }),
+                encoding="utf-8",
+            )
             forge.record_route_decision(
                 root,
                 {"schema": "forge.route-decision/v1", "canonical_work_order": "WO-SURFACE",
@@ -3214,6 +3227,7 @@ class CommandSurfaceTests(unittest.TestCase):
             "route-status": ["route-status", *project],
             "lifecycle": ["lifecycle", *project],
             "route": ["route", *project, "--request", str(root / "request.json")],
+            "dispatch": ["dispatch", *project, "--packet", str(root / "dispatch-packet.json")],
             "validate": ["validate", "--kind", "lane-lease", "--input", str(root / ".forge" / "state" / "leases.json")],
             "host list": ["host", "list"],
             "host status": ["host", "status", *project],
@@ -3280,6 +3294,156 @@ class CommandSurfaceTests(unittest.TestCase):
             after = {p: p.read_bytes() for p in sorted((root / ".forge").rglob("*")) if p.is_file()}
             self.assertEqual(sorted(before), sorted(after), "a preview created or removed a file")
             self.assertEqual([p.name for p in before if before[p] != after[p]], [])
+
+
+class DispatchAdmissionTests(unittest.TestCase):
+    """Admission is one decision. Nothing is acquired unless every check passed,
+    and nothing is recorded unless it was acquired."""
+
+    def setUp(self):
+        self.profile = forge.host_profile("claude")
+
+    @contextmanager
+    def game(self, engine_present=True):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            for command in (
+                ["git", "init", "-q", "-b", "main"],
+                ["git", "config", "user.email", "forge@test.invalid"],
+                ["git", "config", "user.name", "Forge Test"],
+                ["git", "add", "-A"],
+                ["git", "commit", "-qm", "base"],
+            ):
+                subprocess.run(command, cwd=str(root), capture_output=True, check=True)
+            (root / "request.json").write_text(
+                json.dumps({
+                    "work_order": "FI-UNREAL", "task_class": "engine-operation", "complexity": "medium",
+                    "bounded": True, "required_capabilities": ["ue.python.commandlet"],
+                    "required_lanes": ["lane.ue-editor-closed"], "mutation_risk": "project-write",
+                }),
+                encoding="utf-8",
+            )
+            original = os.environ.get("PATH", "")
+            if engine_present:
+                shim = temp / "engine"
+                shim.mkdir()
+                (shim / "UnrealEditor-Cmd.cmd").write_text("@echo off\r\necho stub\r\n", encoding="utf-8")
+                os.environ["PATH"] = f"{shim}{os.pathsep}{original}"
+            try:
+                yield root
+            finally:
+                os.environ["PATH"] = original
+
+    def record(self, root, **overrides):
+        decision = {**forge.route_work(str(root), str(root / "request.json")), **overrides}
+        forge.record_route_decision(root, decision, "test")
+        return decision
+
+    def packet(self, root, name="packet.json", **overrides):
+        body = {
+            "work_order": "FI-UNREAL",
+            "revision": "HEAD",
+            "role": "unreal-operator",
+            "task_class": "engine-operation",
+            "complexity": "medium",
+            "objective": "Audit the asset registry with a commandlet",
+            "inputs": [],
+            "referrals": [],
+            "write_scope": ["Content"],
+            "isolation": {"mode": "project-exclusive", "base_revision": "HEAD"},
+            "leases": ["ue-editor-closed-api"],
+            "capabilities": ["ue.python.commandlet"],
+            "context_budget": {"tokens": 20000},
+            "output_contract": {"schema": "forge.attempt-result/v1"},
+            "acceptance": ["the result file reports the audit ran"],
+            "verification": ["independent-verifier reads the result file"],
+            "evidence": [],
+            "invalidation_hashes": {},
+        }
+        body.update(overrides)
+        path = root / name
+        path.write_text(json.dumps(body), encoding="utf-8")
+        return path
+
+    def test_a_complete_packet_is_admitted_and_recorded(self):
+        with self.game() as root:
+            self.record(root)
+            result = forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertEqual(result["schema"], "forge.dispatch/v1")
+            self.assertEqual([lease["lane"] for lease in result["leases"]], ["ue-editor-closed-api"])
+            orders = json.loads(forge.work_orders_path(root).read_text(encoding="utf-8"))["orders"]
+            self.assertEqual([item["work_order"] for item in orders], ["FI-UNREAL"])
+            self.assertEqual(orders[0]["status"], "DISPATCHED")
+            self.assertEqual(orders[0]["leases"], [result["leases"][0]["lease_id"]])
+
+    def test_a_packet_failing_its_contract_is_refused_before_anything_is_taken(self):
+        with self.game() as root:
+            self.record(root)
+            path = self.packet(root)
+            body = json.loads(path.read_text(encoding="utf-8"))
+            del body["acceptance"]
+            path.write_text(json.dumps(body), encoding="utf-8")
+            before = forge.executor.lease_state_path(root).read_bytes()
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.dispatch_work(str(root), str(path), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["CONTRACT_INVALID"])
+            self.assertIn("acceptance", " ".join(caught.exception.extra["errors"]))
+            self.assertEqual(forge.executor.lease_state_path(root).read_bytes(), before)
+            self.assertFalse(forge.work_orders_path(root).exists() and
+                             json.loads(forge.work_orders_path(root).read_text(encoding="utf-8"))["orders"])
+
+    def test_a_capability_that_cannot_be_reached_now_refuses_admission(self):
+        """The decision was scored when the engine was present; it is not any more."""
+        with self.game(engine_present=True) as root:
+            self.record(root)
+            os.environ["PATH"] = ""
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_UNREACHABLE"])
+            self.assertEqual(
+                [item["capability"] for item in caught.exception.extra["unreachable"]], ["ue.python.commandlet"]
+            )
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_a_packet_holding_less_than_routing_required_is_refused(self):
+        with self.game() as root:
+            self.record(root)
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.dispatch_work(str(root), str(self.packet(root, leases=[])), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_PACKET_MISMATCH"])
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_a_packet_no_decision_covers_is_refused(self):
+        with self.game() as root:
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_DECISION_MISSING"])
+
+    def test_routes_that_drifted_since_the_decision_refuse_admission(self):
+        """Recorded and live must agree at admission, not merely have agreed once."""
+        with self.game() as root:
+            decision = self.record(root)
+            stale = {**decision, "tool_access": [
+                {**item, "bound": False} for item in decision["tool_access"]
+            ]}
+            forge.record_route_decision(root, stale, "test")
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_DECISION_STALE"])
+            self.assertTrue(any("is bound now" in item for item in caught.exception.extra["drift"]))
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_a_preview_admits_nothing_and_records_nothing(self):
+        with self.game() as root:
+            self.record(root)
+            before = forge.executor.lease_state_path(root).read_bytes()
+            result = forge.dispatch_work(str(root), str(self.packet(root)), None, apply=False)
+            self.assertEqual(result["mode"], "dry-run")
+            self.assertIsNone(result["recorded"])
+            self.assertEqual(forge.executor.lease_state_path(root).read_bytes(), before)
+            self.assertEqual(json.loads(forge.work_orders_path(root).read_text(encoding="utf-8"))["orders"], [])
 
 
 class WorkflowReachabilityTests(unittest.TestCase):

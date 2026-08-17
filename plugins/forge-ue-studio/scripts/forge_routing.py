@@ -117,6 +117,87 @@ def resolve_route_decision(root: Path, work_order: str, freshness_minutes: int |
     return entry
 
 
+def resolve_decision_for(root: Path, packet: dict[str, Any], route_value: str | None) -> dict[str, Any]:
+    """The routing decision authorising this packet, from the ledger or an override."""
+    if route_value:
+        override = Path(route_value).expanduser().resolve()
+        return {
+            "decision": load_json(override),
+            "source": str(override),
+            "recorded_at": None,
+            "canonical_work_order": None,
+        }
+    entry = resolve_route_decision(root, str(packet.get("work_order", "")))
+    return {
+        "decision": entry.get("decision") or {},
+        "source": str(route_decisions_path(root)),
+        "recorded_at": entry.get("recorded_at"),
+        "canonical_work_order": str(entry.get("canonical_work_order", "")),
+    }
+
+
+def route_drift(decision: dict[str, Any], live: list[dict[str, Any]]) -> list[str]:
+    """Every way the routes available now differ from the ones the decision was scored against.
+
+    A decision records what was reachable when routing ran. Admission happens
+    later, and in between an editor can open or close, a server can stop
+    answering, or a lane can change hands. Acquiring on the recorded answer alone
+    would hold protection for a route that is no longer the one being used.
+    """
+    recorded = {str(item.get("capability")): item for item in decision.get("tool_access", [])}
+    drift: list[str] = []
+    for item in live:
+        name = str(item["capability"])
+        was = recorded.get(name)
+        if was is None:
+            drift.append(f"capability {name!r} is required now but the decision never scored it")
+            continue
+        if bool(was.get("bound")) != bool(item["bound"]):
+            state = "bound" if item["bound"] else "unbound"
+            drift.append(
+                f"capability {name!r} was {'bound' if was.get('bound') else 'unbound'} when routing ran and is "
+                f"{state} now"
+            )
+            continue
+        if item["bound"] and was.get("lease") != item.get("lease"):
+            drift.append(
+                f"capability {name!r} resolved to lease {was.get('lease')!r} when routing ran and to "
+                f"{item.get('lease')!r} now"
+            )
+    return drift
+
+
+def work_orders_path(root: Path) -> Path:
+    return root / ".forge" / "state" / "work-orders.json"
+
+
+def record_dispatch(root: Path, packet: dict[str, Any], admission: dict[str, Any], leases: list[dict[str, Any]]) -> dict[str, Any]:
+    """Write the order transition in the same breath as the acquisition that earned it."""
+    path = work_orders_path(root)
+    order = str(packet.get("work_order", ""))
+    entry = {
+        "work_order": order,
+        "status": "DISPATCHED",
+        "revision": packet.get("revision"),
+        "role": packet.get("role"),
+        "dispatched_at": utc_now(),
+        "lanes": [str(item.get("lane")) for item in leases],
+        "leases": [str(item.get("lease_id")) for item in leases],
+        "isolation_mode": str((packet.get("isolation") or {}).get("mode", "")),
+        "route_source": admission["source"],
+        "route_recorded_at": admission["recorded_at"],
+    }
+    with executor.StateMutex(root, state_path=path) as _mutex:
+        document = load_json(path) if path.is_file() else {"schema": "forge.work-orders/v1", "orders": []}
+        document.setdefault("schema", "forge.work-orders/v1")
+        document["orders"] = [
+            item for item in document.get("orders", []) if str(item.get("work_order")) != order
+        ] + [entry]
+        document["updated_at"] = entry["dispatched_at"]
+        executor.write_state_atomically(path, document)
+    return entry
+
+
 def _parse_moment(value: str) -> dt.datetime:
     try:
         parsed = dt.datetime.fromisoformat(value)

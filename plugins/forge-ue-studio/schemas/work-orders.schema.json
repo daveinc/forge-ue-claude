@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.work-orders/v1",
+  "type": "object",
+  "required": ["schema", "orders", "terminal_states"],
+  "properties": {
+    "schema": {"const": "forge.work-orders/v1"},
+    "orders": {
+      "type": "array",
+      "description": "One entry per work order that has been admitted to execution, written by `forge.py dispatch --apply` in the same transaction as the acquisition that earned it. Resume reads this file rather than conversation memory.",
+      "items": {
+        "type": "object",
+        "required": ["work_order", "status"],
+        "properties": {
+          "work_order": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "minLength": 1},
+          "revision": {"type": ["string", "null"]},
+          "role": {"type": ["string", "null"]},
+          "dispatched_at": {"type": ["string", "null"]},
+          "lanes": {"type": "array", "items": {"type": "string"}},
+          "leases": {"type": "array", "items": {"type": "string"}},
+          "isolation_mode": {"type": "string"},
+          "route_source": {"type": ["string", "null"]},
+          "route_recorded_at": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "terminal_states": {
+      "type": "array",
+      "description": "The states an order may stop at. An order resting anywhere else is still in flight.",
+      "items": {"type": "string"},
+      "minItems": 1
+    },
+    "updated_at": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}

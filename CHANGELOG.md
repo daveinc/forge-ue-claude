@@ -4,6 +4,13 @@ Every section below is dated from the tag that released it. One tag is not a rel
 
 ## 0.6.0 - 2026-08-17
 
+### Admission is one decision, not four steps with seams between them
+
+- Validating a packet, proving its routes were reachable, taking its leases and recording the transition were four commands an agent walked between. Each gap was somewhere a check could be skipped and the next step still reached, so the guarantee held only while the agent followed the workflow. Routing could also return `selected: resident` while a required capability had no viable route, leaving the final capability resolution to the agent.
+- `forge.py dispatch` does all four as one decision. Nothing is acquired unless every check passed, and nothing is recorded unless it was acquired. `exec acquire` remains for taking leases alone.
+- The recorded decision and the live contracts are checked **together**, at admission. A decision records what was reachable when routing ran; in between an editor can open or close and a server can stop answering. `route_unreachable` refuses a capability no route can serve right now; `route_decision_stale` refuses when what is reachable has drifted from what the decision was scored against.
+- `.forge/state/work-orders.json` declared `forge.work-orders/v1` and no such schema shipped — a contract named with nothing to validate against. It ships now, and `dispatch --apply` writes the order transition through it.
+
 ### A silent editor is not a closed editor
 
 - The editor-closed lane was entered whenever no MCP endpoint answered: "no live editor answered … so the project is free for editor-closed work". Silence is not absence. An editor that is open but whose MCP plugin is disabled, crashed, firewalled or simply frozen stops answering while still holding every file it has open — and a frozen editor is *exactly* when MCP goes quiet, so the most likely failure was also the undetected one. Forge would then let `UnrealEditor-Cmd` run against a project the live editor held, which is the corruption the super-lock exists to prevent.

@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'RouteStatus', 'Exec', 'Lifecycle', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
+    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'RouteStatus', 'Dispatch', 'Exec', 'Lifecycle', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
     [string]$Mode = 'Plugin',
     [ArgumentCompleter({
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -18,7 +18,7 @@ param(
     [string]$GsdVersion = '1.10.0',
     [string]$ProjectPath,
     [string]$RequestPath,
-    [ValidateSet('asset-interface', 'attempt-result', 'bootstrap-report', 'capability-contract', 'environment-snapshot', 'host-profile', 'install-jobs', 'lane-lease', 'learning-record', 'lifecycle-state', 'packet-registry', 'project-mcp', 'provider-evaluation', 'research-record', 'review-cycle', 'route-decisions', 'route-provider', 'route-request', 'runtime-state', 'smart-entry', 'work-packet')]
+    [ValidateSet('asset-interface', 'attempt-result', 'bootstrap-report', 'capability-contract', 'environment-snapshot', 'host-profile', 'install-jobs', 'lane-lease', 'learning-record', 'lifecycle-state', 'packet-registry', 'project-mcp', 'provider-evaluation', 'research-record', 'review-cycle', 'route-decisions', 'route-provider', 'route-request', 'runtime-state', 'smart-entry', 'work-orders', 'work-packet')]
     [string]$ContractKind,
     [string]$InputPath,
     [ValidateSet('status')]
@@ -216,6 +216,21 @@ if ($Mode -eq 'Mcp') {
             "Amend this project's typed tool routes"
         }
         if ($PSCmdlet.ShouldProcess($ProjectPath, $operation)) { $arguments += '--apply' }
+    }
+    if ($OutputPath) { $arguments += @('--output', $OutputPath) }
+    & python @arguments
+    exit $LASTEXITCODE
+}
+
+if ($Mode -eq 'Dispatch') {
+    if (-not $ProjectPath) { throw '-ProjectPath is required for Dispatch mode.' }
+    if (-not $PacketPath) { throw '-PacketPath is required for Dispatch mode; the packet is what is admitted.' }
+    $arguments = @($forgeScript, 'dispatch', '--project', $ProjectPath, '--packet', $PacketPath)
+    if ($RoutePath) { $arguments += @('--route', $RoutePath) }
+    if ($Owner) { $arguments += @('--owner', $Owner) }
+    if ($PSBoundParameters.ContainsKey('RuntimeHost')) { $arguments += @('--host', $RuntimeHost) }
+    if ($Apply -and $PSCmdlet.ShouldProcess($ProjectPath, 'Admit the packet: prove its routes, take its leases, record the transition')) {
+        $arguments += '--apply'
     }
     if ($OutputPath) { $arguments += @('--output', $OutputPath) }
     & python @arguments

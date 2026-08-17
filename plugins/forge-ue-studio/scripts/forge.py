@@ -131,14 +131,18 @@ from forge_routing import (
     canonical_order,
     decision_freshness_minutes,
     read_route_decisions,
+    record_dispatch,
     record_route_decision,
+    resolve_decision_for,
     resolve_route_decision,
     resolve_tool_access,
     route_conflicts,
     route_decisions_path,
+    route_drift,
     route_policy,
     route_work,
     strictest_isolation,
+    work_orders_path,
 )
 from forge_runtime import host_list, host_set, host_status
 
@@ -173,19 +177,8 @@ def execute_acquire(
     profile = active_profile(root, host_override)
     packet_path = Path(packet_value).expanduser().resolve()
     packet = load_json(packet_path)
-    route_path = Path(route_value).expanduser().resolve() if route_value else None
-    if route_path is not None:
-        decision = load_json(route_path)
-        source = str(route_path)
-        recorded_at = None
-        resolved_order = None
-    else:
-        entry = resolve_route_decision(root, str(packet.get("work_order", "")))
-        decision = entry.get("decision") or {}
-        source = str(route_decisions_path(root))
-        recorded_at = entry.get("recorded_at")
-        resolved_order = str(entry.get("canonical_work_order", ""))
-    conflicts = route_conflicts(packet, decision, resolved_order)
+    admission = resolve_decision_for(root, packet, route_value)
+    conflicts = route_conflicts(packet, admission["decision"], admission["canonical_work_order"])
     if conflicts:
         raise fail(
             f"Packet and routing decision disagree on {len(conflicts)} point(s); acquiring would hold less "
@@ -194,15 +187,110 @@ def execute_acquire(
             code=EXIT_CONTRACT,
             conflicts=conflicts,
             packet=str(packet_path),
-            route=source,
+            route=admission["source"],
         )
     result = executor.acquire(root, packet, owner or str(profile["id"]), apply=apply)
     return {
         **result,
         "packet": str(packet_path),
-        "route": source,
-        "route_recorded_at": recorded_at,
+        "route": admission["source"],
+        "route_recorded_at": admission["recorded_at"],
         "host": profile["id"],
+    }
+
+
+def dispatch_work(
+    project_value: str,
+    packet_value: str,
+    owner: str | None,
+    apply: bool,
+    host_override: str | None = None,
+    route_value: str | None = None,
+) -> dict[str, Any]:
+    """Admit a packet to execution, or refuse it, as one decision.
+
+    Validating the packet, proving its routes are reachable now, holding the
+    leases and recording the transition were four steps an agent walked between.
+    Each seam was a place the agent could skip a check and still reach the next
+    step, so the guarantee held only while it followed the workflow. Here nothing
+    is acquired unless every check passed, and nothing is recorded unless it was
+    acquired.
+    """
+    root, _ = project_root(project_value)
+    profile = active_profile(root, host_override)
+    packet_path = Path(packet_value).expanduser().resolve()
+    packet = load_json(packet_path)
+
+    contract = validate_payload("work-packet", str(packet_path))
+    if not contract["ok"]:
+        raise fail(
+            f"Work packet {packet_path.name} does not satisfy forge.work-packet/v1",
+            reason=ERROR_REASON["CONTRACT_INVALID"],
+            code=EXIT_CONTRACT,
+            errors=contract["errors"],
+            packet=str(packet_path),
+        )
+
+    admission = resolve_decision_for(root, packet, route_value)
+    conflicts = route_conflicts(packet, admission["decision"], admission["canonical_work_order"])
+    if conflicts:
+        raise fail(
+            f"Packet and routing decision disagree on {len(conflicts)} point(s); dispatching would run outside "
+            "the protection routing decided it needed",
+            reason=ERROR_REASON["ROUTE_PACKET_MISMATCH"],
+            code=EXIT_CONTRACT,
+            conflicts=conflicts,
+            packet=str(packet_path),
+            route=admission["source"],
+        )
+
+    contracts = {str(item["capability"]): item for item in mcp_capability_contracts(root, profile)}
+    required = {str(item) for item in packet.get("capabilities", []) if str(item).strip()}
+    live = resolve_tool_access(contracts, required)
+    unreachable = [item for item in live if item["routed"] and not item["bound"]]
+    if unreachable:
+        raise fail(
+            f"{len(unreachable)} capability the packet declares has no reachable route right now; dispatching "
+            "would send work to a provider that cannot answer",
+            reason=ERROR_REASON["ROUTE_UNREACHABLE"],
+            code=EXIT_CONTRACT,
+            unreachable=[
+                {"capability": item["capability"], "status": item.get("status"), "take_fallback": item["fallbacks"]}
+                for item in unreachable
+            ],
+            packet=str(packet_path),
+        )
+    drift = route_drift(admission["decision"], live)
+    if drift:
+        raise fail(
+            f"The routes available now differ from the ones routing scored in {len(drift)} way(s); re-run route "
+            "rather than admitting on an answer the environment has moved past",
+            reason=ERROR_REASON["ROUTE_DECISION_STALE"],
+            code=EXIT_CONTRACT,
+            drift=drift,
+            route=admission["source"],
+            route_recorded_at=admission["recorded_at"],
+        )
+
+    result = executor.acquire(root, packet, owner or str(profile["id"]), apply=apply)
+    recorded = record_dispatch(root, packet, admission, result["leases"]) if apply else None
+    return {
+        "schema": "forge.dispatch/v1",
+        "mode": "apply" if apply else "dry-run",
+        "project": str(root),
+        "work_order": result["work_order"],
+        "packet": str(packet_path),
+        "host": profile["id"],
+        "route": admission["source"],
+        "route_recorded_at": admission["recorded_at"],
+        "contract": {"kind": "work-packet", "ok": True},
+        "tool_access": live,
+        "drift": [],
+        "isolation_mode": result["isolation_mode"],
+        "leases": result["leases"],
+        "plan": result["plan"],
+        "recorded": recorded,
+        "renewal_overdue": result.get("renewal_overdue", []),
     }
 
 
@@ -334,6 +422,14 @@ def build_parser() -> argparse.ArgumentParser:
     exec_status_parser = execution_sub.add_parser("status", help="Report held leases and stale ones awaiting recovery")
     exec_status_parser.add_argument("--project", required=True)
     exec_status_parser.add_argument("--output")
+    dispatch = sub.add_parser("dispatch", help="Admit a packet to execution as one decision: contract, routes, leases, record")
+    dispatch.add_argument("--project", required=True)
+    dispatch.add_argument("--packet", required=True)
+    dispatch.add_argument("--route", dest="route", help="Routing decision held outside the ledger; replaces the lookup, never relaxes it")
+    dispatch.add_argument("--owner", help="Who holds the lease; defaults to the assigned host")
+    dispatch.add_argument("--host")
+    dispatch.add_argument("--apply", action="store_true")
+    dispatch.add_argument("--output")
     lifecycle = sub.add_parser("lifecycle")
     lifecycle.add_argument("--project", required=True)
     lifecycle.add_argument("--event", default="status", choices=["status"])
@@ -410,6 +506,11 @@ def main(argv: list[str] | None = None) -> int:
                 result = execute_reconcile(args.project, args.work_order, apply=bool(args.apply))
             else:
                 result = execute_status(args.project)
+        elif args.command == "dispatch":
+            result = dispatch_work(
+                args.project, args.packet, args.owner, apply=bool(args.apply),
+                host_override=args.host, route_value=getattr(args, "route", None),
+            )
         elif args.command == "lifecycle":
             result = lifecycle_state(args.project, args.event)
         else:

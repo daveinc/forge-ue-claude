@@ -60,6 +60,7 @@ ERROR_REASON = MappingProxyType(
         "ROUTE_PACKET_MISMATCH": "route_packet_mismatch",
         "ROUTE_DECISION_MISSING": "route_decision_missing",
         "ROUTE_DECISION_STALE": "route_decision_stale",
+        "ROUTE_UNREACHABLE": "route_unreachable",
         "USAGE": "usage",
         "UNKNOWN": "unknown",
         **executor.ERROR_REASONS,
