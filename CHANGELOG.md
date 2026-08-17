@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### A routing decision is state the executor reads, not a file an agent carries
+
+- `exec acquire --route` was optional, so the workflow telling the agent to pass it was compliance, not enforcement. It was worse than optional: **`forge.py route` was invoked by no workflow at all**. Step 10 of `forge-route-work` said "save the decision from step 6 and pass it", and step 6 never ran the command that produces a decision. There was no documented path that created the file the flag consumes, so in practice every packet was taken on trust.
+- `forge.py route --apply` now records its decision in `.forge/state/route-decisions.json` under the canonical work order, against a new `forge.route-decisions/v1` contract that ships in the project template. Without `--apply` the decision is still a preview that writes nothing.
+- `exec acquire` resolves the decision for the packet's own work order from that ledger. An agent that skipped routing cannot acquire by omitting a flag, because there is no flag to omit. `--route <path>` remains as an override for a decision held elsewhere; it replaces the lookup and never relaxes it.
+- A work order with no recorded decision is refused as `route_decision_missing`. A decision older than `route_decision.freshness_minutes` in `route-policy.json` is refused as `route_decision_stale`: the two Unreal routes swap availability as the editor opens and closes, so a decision scored against a live editor names a lane that protects nothing once the editor is gone.
+- A packet naming a registered alias resolved its decision and then failed that decision's own work-order check, because `route_conflicts` compared the raw id. The registry treats aliases as display compatibility, so one may not read as a different work order; the canonical id is what is compared now.
+- The atomic-replace-under-mutex write that guarded the lease ledger is now `write_state_atomically`, and `StateMutex` takes the ledger it guards, so the decision ledger gets the same protection rather than a second implementation of it.
+
 ### Routing decides what a packet must hold, and acquiring checks it
 
 - `route_work` scored eligibility from `detected.json`, whose provider statuses come from survey's plugin-name heuristics, so it could refuse a route the live probe had just verified. It now resolves every required capability through the route contracts and overlays their status. A capability no route serves is not an error: the resident host or an engine prerequisite answers it, and the payload says so rather than failing closed.

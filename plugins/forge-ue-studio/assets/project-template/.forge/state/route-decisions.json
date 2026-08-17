@@ -1,0 +1,6 @@
+{
+  "schema": "forge.route-decisions/v1",
+  "note": "What routing decided, per canonical work order. `forge.py route --apply` records here; `forge.py exec acquire` reads here to find the decision that authorises a packet. A packet whose work order has no entry is refused, because acquiring the weaker thing is worse than refusing: no lease can detect afterwards that the work ran outside the protection routing decided it needed. A decision older than the freshness window in route-policy.json is refused too, since the routes it scored can have swapped availability since.",
+  "decisions": [],
+  "updated_at": null
+}

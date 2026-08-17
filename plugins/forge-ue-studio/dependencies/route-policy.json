@@ -121,6 +121,13 @@
       "round_trip_cost"
     ]
   },
+  "route_decision": {
+    "note": "A routing decision is state, not a message. `forge.py route --apply` records it under its canonical work order in .forge/state/route-decisions.json, and `forge.py exec acquire` reads it from there rather than being handed a path. A packet whose work order has no recorded decision is refused.",
+    "ledger": ".forge/state/route-decisions.json",
+    "freshness_minutes": 30,
+    "freshness_rationale": "The two Unreal routes swap availability as the editor opens and closes, so a decision scored against a live editor names a lane that protects nothing once the editor is gone. Re-run route rather than acquiring on a decision the environment has outlived.",
+    "override_flag": "--route, for a decision stored outside the ledger. It replaces the lookup; it never relaxes it."
+  },
   "unreal_routing": {
     "note": "The live editor and the editor-closed API are peer routes on mutually exclusive lanes, not a primary and its fallback. Pick by the shape of the work, then take the lane.",
     "prefer_editor_closed_for": [

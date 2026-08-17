@@ -18,7 +18,7 @@ param(
     [string]$GsdVersion = '1.10.0',
     [string]$ProjectPath,
     [string]$RequestPath,
-    [ValidateSet('asset-interface', 'attempt-result', 'bootstrap-report', 'capability-contract', 'environment-snapshot', 'host-profile', 'install-jobs', 'lane-lease', 'learning-record', 'lifecycle-state', 'packet-registry', 'project-mcp', 'provider-evaluation', 'research-record', 'review-cycle', 'route-provider', 'route-request', 'runtime-state', 'smart-entry', 'work-packet')]
+    [ValidateSet('asset-interface', 'attempt-result', 'bootstrap-report', 'capability-contract', 'environment-snapshot', 'host-profile', 'install-jobs', 'lane-lease', 'learning-record', 'lifecycle-state', 'packet-registry', 'project-mcp', 'provider-evaluation', 'research-record', 'review-cycle', 'route-decisions', 'route-provider', 'route-request', 'runtime-state', 'smart-entry', 'work-packet')]
     [string]$ContractKind,
     [string]$InputPath,
     [ValidateSet('status')]
@@ -293,6 +293,9 @@ if ($Mode -in @('Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapChec
 if ($Mode -eq 'Route') {
     if (-not $RequestPath) { throw '-RequestPath is required for Route mode.' }
     $arguments += @('--request', $RequestPath)
+    if ($Apply -and $PSCmdlet.ShouldProcess($ProjectPath, 'Record the routing decision that authorises acquisition')) {
+        $arguments += '--apply'
+    }
 }
 if ($Mode -eq 'Lifecycle') {
     $arguments += @('--event', $LifecycleEvent)

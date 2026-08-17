@@ -2,15 +2,127 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 from typing import Any
 
-from forge_core import ERROR_REASON, EXIT_USAGE, RESIDENT_PROVIDER, fail, load_json, plugin_root, project_root
+import forge_executor as executor
+from forge_core import ERROR_REASON, EXIT_CONTRACT, EXIT_USAGE, RESIDENT_PROVIDER, fail, load_json, plugin_root, project_root, utc_now
 from forge_hosts import active_profile
 from forge_mcp import mcp_capability_contracts
 
 
 ISOLATION_STRENGTH = ("read-only", "git-worktree", "lfs-lock", "project-exclusive")
+
+
+ROUTE_DECISIONS_SCHEMA = "forge.route-decisions/v1"
+
+
+DEFAULT_FRESHNESS_MINUTES = 30
+
+
+def route_policy() -> dict[str, Any]:
+    return load_json(plugin_root() / "dependencies" / "route-policy.json")
+
+
+def route_decisions_path(root: Path) -> Path:
+    return root / ".forge" / "state" / "route-decisions.json"
+
+
+def decision_freshness_minutes(policy: dict[str, Any] | None = None) -> int:
+    settings = (policy or route_policy()).get("route_decision") or {}
+    return int(settings.get("freshness_minutes", DEFAULT_FRESHNESS_MINUTES))
+
+
+def read_route_decisions(root: Path) -> dict[str, Any]:
+    """Read the decision ledger. Absent is empty, malformed is a refusal."""
+    path = route_decisions_path(root)
+    if not path.is_file():
+        return {"schema": ROUTE_DECISIONS_SCHEMA, "decisions": [], "updated_at": None}
+    document = load_json(path)
+    if not isinstance(document.get("decisions"), list):
+        raise fail(
+            f"{path} does not carry a {ROUTE_DECISIONS_SCHEMA} decisions array",
+            reason=ERROR_REASON["CONTRACT_INVALID"],
+            code=EXIT_CONTRACT,
+        )
+    return document
+
+
+def canonical_order(packet_registry: dict[str, Any], work_order: str) -> str:
+    """The registered id behind a work order, resolving one alias hop."""
+    aliases = {str(item.get("alias")): str(item.get("canonical")) for item in packet_registry.get("aliases", [])}
+    return aliases.get(work_order, work_order)
+
+
+def record_route_decision(root: Path, decision: dict[str, Any], owner: str | None = None) -> dict[str, Any]:
+    """Write the decision under its canonical work order, replacing any earlier one."""
+    path = route_decisions_path(root)
+    order = str(decision.get("canonical_work_order", ""))
+    entry = {
+        "canonical_work_order": order,
+        "recorded_at": utc_now(),
+        "recorded_by": owner,
+        "decision": decision,
+    }
+    with executor.StateMutex(root, state_path=path) as _mutex:
+        document = read_route_decisions(root)
+        document["schema"] = ROUTE_DECISIONS_SCHEMA
+        document["decisions"] = [
+            item for item in document["decisions"] if str(item.get("canonical_work_order")) != order
+        ] + [entry]
+        document["updated_at"] = entry["recorded_at"]
+        executor.write_state_atomically(path, document)
+    return entry
+
+
+def resolve_route_decision(root: Path, work_order: str, freshness_minutes: int | None = None) -> dict[str, Any]:
+    """The recorded decision authorising this work order, or the reason there is none.
+
+    Acquisition reads the decision rather than being handed one, so an agent that
+    skipped routing cannot acquire by omitting a flag, and a decision the
+    environment has outlived cannot authorise a lane it no longer describes.
+    """
+    packet_registry_path = root / ".forge" / "state" / "packet-registry.json"
+    registry = load_json(packet_registry_path) if packet_registry_path.is_file() else {}
+    order = canonical_order(registry, work_order)
+    document = read_route_decisions(root)
+    entry = next(
+        (item for item in document["decisions"] if str(item.get("canonical_work_order")) == order),
+        None,
+    )
+    if entry is None:
+        raise fail(
+            f"No routing decision is recorded for work order {order!r}; run "
+            f"`forge.py route --project {root} --request <request> --apply` before acquiring, or pass "
+            "--route for a decision stored elsewhere",
+            reason=ERROR_REASON["ROUTE_DECISION_MISSING"],
+            code=EXIT_CONTRACT,
+            work_order=order,
+            ledger=str(route_decisions_path(root)),
+        )
+    window = decision_freshness_minutes() if freshness_minutes is None else freshness_minutes
+    recorded_at = str(entry.get("recorded_at", ""))
+    age_minutes = (dt.datetime.fromisoformat(utc_now()) - _parse_moment(recorded_at)).total_seconds() / 60
+    if age_minutes > window:
+        raise fail(
+            f"The routing decision for {order!r} was recorded {int(age_minutes)} minutes ago and the freshness "
+            f"window is {window}; the routes it scored can have swapped availability since. Re-run route",
+            reason=ERROR_REASON["ROUTE_DECISION_STALE"],
+            code=EXIT_CONTRACT,
+            work_order=order,
+            recorded_at=recorded_at,
+            freshness_minutes=window,
+        )
+    return entry
+
+
+def _parse_moment(value: str) -> dt.datetime:
+    try:
+        parsed = dt.datetime.fromisoformat(value)
+    except ValueError:
+        return dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
 
 
 def resolve_tool_access(contracts: dict[str, Any], required_capabilities: set[str]) -> list[dict[str, Any]]:
@@ -64,15 +176,18 @@ def strictest_isolation(modes: set[str]) -> str | None:
     return ranked[-1] if ranked else None
 
 
-def route_conflicts(packet: dict[str, Any], decision: dict[str, Any]) -> list[str]:
+def route_conflicts(packet: dict[str, Any], decision: dict[str, Any], work_order: str | None = None) -> list[str]:
     """Every way a packet contradicts the routing decision that authorised it.
 
     Routing resolves which lanes the work needs and how strongly it must be
     isolated. A packet that holds less than that would run outside the protection
     routing decided it required, which no lease can detect after the fact.
+
+    Pass `work_order` when the packet names an alias: the registry treats aliases
+    as display compatibility, so one must not read as a different work order.
     """
     conflicts: list[str] = []
-    order = str(packet.get("work_order", ""))
+    order = str(work_order or packet.get("work_order", ""))
     canonical = str(decision.get("canonical_work_order", ""))
     if canonical and order and order != canonical:
         conflicts.append(f"packet is work order {order!r}; the decision authorises {canonical!r}")
@@ -110,13 +225,12 @@ def route_work(project_value: str, request_value: str, host_override: str | None
         raise fail("Canonical packet registry is missing; apply the Forge overlay before routing", reason=ERROR_REASON["OVERLAY_MISSING"])
     packet_registry = load_json(packet_registry_path)
     packets = {str(item.get("id")): item for item in packet_registry.get("packets", [])}
-    aliases = {str(item.get("alias")): str(item.get("canonical")) for item in packet_registry.get("aliases", [])}
     requested_order = str(request["work_order"])
-    canonical_order = aliases.get(requested_order, requested_order)
-    if canonical_order not in packets:
+    resolved_order = canonical_order(packet_registry, requested_order)
+    if resolved_order not in packets:
         raise fail(f"Unregistered work_order {requested_order!r}; register the canonical packet or an explicit alias before routing", reason=ERROR_REASON["CONTRACT_INVALID"])
 
-    policy = load_json(plugin_root() / "dependencies" / "route-policy.json")
+    policy = route_policy()
     offload = policy["offload_policy"]
     keep_on_resident = set(offload["keep_on_resident_by_default"])
     hard_resident = (
@@ -206,7 +320,7 @@ def route_work(project_value: str, request_value: str, host_override: str | None
         "schema": "forge.route-decision/v1",
         "project": str(root.resolve()),
         "request": request,
-        "canonical_work_order": canonical_order,
+        "canonical_work_order": resolved_order,
         "selected": selected,
         "resident_host": profile["id"],
         "decision": decision,

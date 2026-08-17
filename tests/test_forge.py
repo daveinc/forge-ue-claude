@@ -2030,6 +2030,16 @@ class ExecutorTests(unittest.TestCase):
             for lease in forge.executor.status(root)["active"]
         ]
 
+    def authorise(self, root, *work_orders):
+        """Record the routing decision the CLI now requires before it will acquire."""
+        for work_order in work_orders:
+            forge.record_route_decision(
+                root,
+                {"schema": "forge.route-decision/v1", "canonical_work_order": work_order,
+                 "leases": [], "isolation_mode": None, "tool_access_degraded": False},
+                "test",
+            )
+
     def test_two_workers_in_one_exclusive_group_cannot_both_hold(self):
         """The group is declared in leases.json; the runtime, not the workflow, enforces it."""
         with self.game() as root:
@@ -2167,6 +2177,7 @@ class ExecutorTests(unittest.TestCase):
     def test_two_processes_racing_the_same_lane_produce_exactly_one_holder(self):
         """The ledger is guarded by a real mutex, so the race has one winner, not two."""
         with self.game() as root:
+            self.authorise(root, "WO-A", "WO-B")
             packets = []
             for name in ("WO-A", "WO-B"):
                 path = root / f"{name}.json"
@@ -2574,6 +2585,12 @@ class RoutedAcquisitionTests(unittest.TestCase):
     def decision(self, root):
         return forge.route_work(str(root), str(root / "request.json"))
 
+    def record(self, root, **overrides):
+        """Put a decision in the ledger, the way `route --apply` does."""
+        decision = {**self.decision(root), **overrides}
+        forge.record_route_decision(root, decision, "test")
+        return decision
+
     def packet(self, root, name, **overrides):
         body = {
             "work_order": "FI-UNREAL",
@@ -2662,6 +2679,7 @@ class RoutedAcquisitionTests(unittest.TestCase):
     def test_a_lease_in_no_exclusive_group_is_reported_not_silent(self):
         """A typo'd lane still leases, but it protects nothing, so it must be visible."""
         with self.game() as root:
+            self.record(root, leases=["ue-editor-closed-api-typo"])
             packet_path = self.packet(root, "typo.json", leases=["ue-editor-closed-api-typo"])
             preview = forge.execute_acquire(str(root), str(packet_path), None, apply=False)
             self.assertEqual(preview["ungrouped_lanes"], ["ue-editor-closed-api-typo"])
@@ -2669,11 +2687,98 @@ class RoutedAcquisitionTests(unittest.TestCase):
 
     def test_a_known_lane_names_the_group_it_joined(self):
         with self.game() as root:
+            self.record(root)
             result = forge.execute_acquire(str(root), str(self.packet(root, "ok.json")), None, apply=True)
             self.assertEqual(result["leases"][0]["exclusive_group"], "unreal-project-super-lock")
             self.assertEqual(result["ungrouped_lanes"], [])
             status = forge.executor.status(root)
             self.assertEqual(status["lane_groups"]["ue-editor-closed-api"], "unreal-project-super-lock")
+
+    def test_a_packet_no_decision_covers_is_refused_and_changes_nothing(self):
+        """The seam the review named: an unrouted packet used to be taken on trust."""
+        with self.game() as root:
+            ledger = forge.executor.lease_state_path(root)
+            before = ledger.read_bytes()
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.execute_acquire(str(root), str(self.packet(root, "ok.json")), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_DECISION_MISSING"])
+            self.assertEqual(forge.executor.status(root)["active"], [])
+            self.assertEqual(ledger.read_bytes(), before)
+
+    def test_the_recorded_decision_authorises_acquisition_with_no_flag(self):
+        with self.game() as root:
+            self.record(root)
+            result = forge.execute_acquire(str(root), str(self.packet(root, "ok.json")), None, apply=True)
+            self.assertEqual(result["leases"][0]["lane"], "ue-editor-closed-api")
+            self.assertEqual(result["route"], str(forge.route_decisions_path(root)))
+            self.assertTrue(result["route_recorded_at"])
+
+    def test_a_recorded_decision_still_refuses_a_packet_holding_less(self):
+        """Reading the decision instead of being handed it does not relax the check."""
+        with self.game() as root:
+            self.record(root)
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.execute_acquire(str(root), str(self.packet(root, "under.json", leases=[])), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_PACKET_MISMATCH"])
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_a_decision_the_environment_has_outlived_is_refused(self):
+        """The two Unreal routes swap as the editor opens, so an old decision names a lane that may protect nothing."""
+        with self.game() as root:
+            self.record(root)
+            document = forge.read_route_decisions(root)
+            document["decisions"][0]["recorded_at"] = "2000-01-01T00:00:00+00:00"
+            forge.executor.write_state_atomically(forge.route_decisions_path(root), document)
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.execute_acquire(str(root), str(self.packet(root, "ok.json")), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_DECISION_STALE"])
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_route_records_only_on_apply(self):
+        with self.game() as root:
+            argv = ["route", "--project", str(root), "--request", str(root / "request.json")]
+            stream = io.StringIO()
+            with contextlib.redirect_stdout(stream):
+                forge.main(argv)
+            self.assertEqual(forge.read_route_decisions(root)["decisions"], [])
+            self.assertFalse(json.loads(stream.getvalue())["recorded"])
+            stream = io.StringIO()
+            with contextlib.redirect_stdout(stream):
+                forge.main([*argv, "--apply"])
+            recorded = forge.read_route_decisions(root)["decisions"]
+            self.assertEqual([item["canonical_work_order"] for item in recorded], ["FI-UNREAL"])
+            self.assertTrue(json.loads(stream.getvalue())["recorded"])
+
+    def test_re_routing_replaces_the_decision_rather_than_appending(self):
+        with self.game() as root:
+            self.record(root)
+            self.record(root)
+            self.assertEqual(len(forge.read_route_decisions(root)["decisions"]), 1)
+
+    def test_a_packet_naming_an_alias_finds_the_canonical_decision(self):
+        """Aliases are display compatibility, so they must not split the decision from the packet."""
+        with self.game() as root:
+            registry_path = root / ".forge" / "state" / "packet-registry.json"
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            registry["aliases"] = list(registry.get("aliases", [])) + [
+                {"alias": "FI-UNREAL-LEGACY", "canonical": "FI-UNREAL"}
+            ]
+            registry_path.write_text(json.dumps(registry), encoding="utf-8")
+            self.record(root)
+            packet_path = self.packet(root, "alias.json", work_order="FI-UNREAL-LEGACY")
+            result = forge.execute_acquire(str(root), str(packet_path), None, apply=True)
+            self.assertEqual(result["leases"][0]["lane"], "ue-editor-closed-api")
+
+    def test_an_override_decision_still_wins_over_the_ledger(self):
+        with self.game() as root:
+            self.record(root)
+            route_path = root / "route.json"
+            route_path.write_text(json.dumps(self.decision(root)), encoding="utf-8")
+            result = forge.execute_acquire(
+                str(root), str(self.packet(root, "ok.json")), None, apply=True, route_value=str(route_path)
+            )
+            self.assertEqual(result["route"], str(route_path))
+            self.assertIsNone(result["route_recorded_at"])
 
     def test_a_project_local_route_must_spell_its_lane_as_a_lane(self):
         with self.game() as root:
@@ -2788,6 +2893,12 @@ class CommandSurfaceTests(unittest.TestCase):
                     "isolation": {"mode": "project-exclusive", "base_revision": "HEAD"},
                 }),
                 encoding="utf-8",
+            )
+            forge.record_route_decision(
+                root,
+                {"schema": "forge.route-decision/v1", "canonical_work_order": "WO-SURFACE",
+                 "leases": [], "isolation_mode": None, "tool_access_degraded": False},
+                "surface-test",
             )
             yield root
 

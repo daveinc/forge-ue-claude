@@ -121,7 +121,22 @@ from forge_lifecycle import (
     lifecycle_state,
 )
 from forge_install import install_overlay, profile_registry, stable_profile, verify_overlay, write_profile
-from forge_routing import ISOLATION_STRENGTH, resolve_tool_access, route_conflicts, route_work, strictest_isolation
+from forge_routing import (
+    DEFAULT_FRESHNESS_MINUTES,
+    ISOLATION_STRENGTH,
+    ROUTE_DECISIONS_SCHEMA,
+    canonical_order,
+    decision_freshness_minutes,
+    read_route_decisions,
+    record_route_decision,
+    resolve_route_decision,
+    resolve_tool_access,
+    route_conflicts,
+    route_decisions_path,
+    route_policy,
+    route_work,
+    strictest_isolation,
+)
 from forge_runtime import host_list, host_set, host_status
 
 
@@ -145,8 +160,11 @@ def execute_acquire(
 ) -> dict[str, Any]:
     """Take the leases and isolation a work packet declares, as one transaction.
 
-    Given the decision that authorised the work, refuse a packet that holds less
-    than routing resolved it needs, rather than acquiring the weaker thing.
+    The decision that authorised the work is looked up from the ledger `route
+    --apply` writes, not handed in, so a packet no routing decision covers is
+    refused rather than acquired on trust. A packet that holds less than routing
+    resolved it needs is refused too, because acquiring the weaker thing leaves
+    nothing able to detect afterwards that the work ran unprotected.
     """
     root, _ = project_root(project_value)
     profile = active_profile(root, host_override)
@@ -155,19 +173,34 @@ def execute_acquire(
     route_path = Path(route_value).expanduser().resolve() if route_value else None
     if route_path is not None:
         decision = load_json(route_path)
-        conflicts = route_conflicts(packet, decision)
-        if conflicts:
-            raise fail(
-                f"Packet and routing decision disagree on {len(conflicts)} point(s); acquiring would hold less "
-                "than routing required",
-                reason=ERROR_REASON["ROUTE_PACKET_MISMATCH"],
-                code=EXIT_CONTRACT,
-                conflicts=conflicts,
-                packet=str(packet_path),
-                route=str(route_path),
-            )
+        source = str(route_path)
+        recorded_at = None
+        resolved_order = None
+    else:
+        entry = resolve_route_decision(root, str(packet.get("work_order", "")))
+        decision = entry.get("decision") or {}
+        source = str(route_decisions_path(root))
+        recorded_at = entry.get("recorded_at")
+        resolved_order = str(entry.get("canonical_work_order", ""))
+    conflicts = route_conflicts(packet, decision, resolved_order)
+    if conflicts:
+        raise fail(
+            f"Packet and routing decision disagree on {len(conflicts)} point(s); acquiring would hold less "
+            "than routing required",
+            reason=ERROR_REASON["ROUTE_PACKET_MISMATCH"],
+            code=EXIT_CONTRACT,
+            conflicts=conflicts,
+            packet=str(packet_path),
+            route=source,
+        )
     result = executor.acquire(root, packet, owner or str(profile["id"]), apply=apply)
-    return {**result, "packet": str(packet_path), "route": str(route_path) if route_path else None, "host": profile["id"]}
+    return {
+        **result,
+        "packet": str(packet_path),
+        "route": source,
+        "route_recorded_at": recorded_at,
+        "host": profile["id"],
+    }
 
 
 def execute_release(project_value: str, work_order: str, outcome: str, apply: bool) -> dict[str, Any]:
@@ -223,6 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
     route.add_argument("--project", required=True)
     route.add_argument("--host")
     route.add_argument("--request", required=True)
+    route.add_argument("--apply", action="store_true", help="Record the decision so `exec acquire` can find it; without this the decision is a preview only")
     route.add_argument("--output")
     for name, help_text in (
         ("route-status", "Report every typed route this project can reach: servers and commands alike"),
@@ -333,6 +367,15 @@ def main(argv: list[str] | None = None) -> int:
                 result = host_set(args.project, args.host, apply=bool(args.apply))
         elif args.command == "route":
             result = route_work(args.project, args.request, args.host)
+            root, _ = project_root(args.project)
+            recorded = record_route_decision(root, result, str(active_profile(root, args.host)["id"])) if args.apply else None
+            result = {
+                **result,
+                "recorded": bool(recorded),
+                "recorded_at": recorded["recorded_at"] if recorded else None,
+                "ledger": str(route_decisions_path(root)),
+                "freshness_minutes": decision_freshness_minutes(),
+            }
         elif args.command == "exec":
             if args.exec_command == "acquire":
                 result = execute_acquire(args.project, args.packet, args.owner, apply=bool(args.apply), host_override=args.host, route_value=getattr(args, "route", None))

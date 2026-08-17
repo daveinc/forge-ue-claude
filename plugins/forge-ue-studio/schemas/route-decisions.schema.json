@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forge.route-decisions/v1",
+  "type": "object",
+  "required": ["schema", "decisions"],
+  "properties": {
+    "schema": {"const": "forge.route-decisions/v1"},
+    "decisions": {
+      "type": "array",
+      "description": "One recorded routing decision per canonical work order, written by `forge.py route --apply`. `forge.py exec acquire` resolves the decision authorising a packet from this ledger, so a packet whose work order has no entry here is refused rather than acquired on trust. A later decision for the same work order replaces the earlier one.",
+      "items": {
+        "type": "object",
+        "required": ["canonical_work_order", "recorded_at", "decision"],
+        "properties": {
+          "canonical_work_order": {"type": "string", "minLength": 1},
+          "recorded_at": {"type": "string", "minLength": 1},
+          "recorded_by": {"type": ["string", "null"]},
+          "decision": {
+            "type": "object",
+            "description": "The forge.route-decision/v1 payload exactly as `route` emitted it, including lanes, leases, isolation_mode and tool_access.",
+            "required": ["schema", "canonical_work_order"],
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "updated_at": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}

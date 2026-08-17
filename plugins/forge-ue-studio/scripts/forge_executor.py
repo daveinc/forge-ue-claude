@@ -85,20 +85,23 @@ def read_lease_state(root: Path) -> dict[str, Any]:
     return document
 
 
-def write_lease_state(root: Path, document: dict[str, Any]) -> None:
-    """Replace the ledger atomically so a crash mid-write cannot truncate it."""
-    path = lease_state_path(root)
+def write_state_atomically(path: Path, document: dict[str, Any]) -> None:
+    """Replace a state ledger atomically so a crash mid-write cannot truncate it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     staging = path.with_suffix(f".{os.getpid()}.tmp")
     staging.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(staging, path)
 
 
-class StateMutex:
-    """Cross-process mutual exclusion over the lease ledger."""
+def write_lease_state(root: Path, document: dict[str, Any]) -> None:
+    write_state_atomically(lease_state_path(root), document)
 
-    def __init__(self, root: Path, wait_seconds: int = MUTEX_WAIT_SECONDS):
-        self.path = lease_state_path(root).with_suffix(".mutex")
+
+class StateMutex:
+    """Cross-process mutual exclusion over one state ledger."""
+
+    def __init__(self, root: Path, wait_seconds: int = MUTEX_WAIT_SECONDS, state_path: Path | None = None):
+        self.path = (state_path or lease_state_path(root)).with_suffix(".mutex")
         self.wait_seconds = wait_seconds
         self.handle: int | None = None
 

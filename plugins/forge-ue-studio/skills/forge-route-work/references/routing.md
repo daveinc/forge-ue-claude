@@ -19,6 +19,8 @@ For concurrent text or code mutation, start each worker from the same clean immu
 
 `forge.py exec acquire` establishes all of that, and nothing else may. It holds the ledger under a cross-process mutex while it checks the exclusive groups in `.forge/state/leases.json`, so two workers racing one lane produce a holder and a refusal rather than two writers. It rolls back on partial failure, so a lock it could not take never becomes a lease it appears to hold. A refusal is a routing input, not an obstacle to work around.
 
+It also refuses work routing never authorised. `forge.py route --apply` records its decision in `.forge/state/route-decisions.json` under the canonical work order, and `exec acquire` resolves the decision for the packet's work order from there rather than being handed one. So an agent that skipped routing cannot acquire by omitting a flag, and a decision the environment has outlived cannot authorise a lane it no longer describes. Scoring the route and holding the lane are one path, not two.
+
 Every packet declares immutable revision, referrals, write scope, lane leases, context budget, output contract, verification and invalidation hashes. Every result separates observations from inference and lists touched artifacts, evidence, residual risk and next action.
 
 The work order is resolved against `.forge/state/packet-registry.json` before provider scoring. A route request with an unknown ID fails closed. An alias resolves to its canonical ID and does not create a new packet identity.

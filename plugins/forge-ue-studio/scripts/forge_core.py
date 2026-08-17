@@ -58,6 +58,8 @@ ERROR_REASON = MappingProxyType(
         "AGENT_INVALID": "agent_invalid",
         "OVERLAY_MISSING": "overlay_missing",
         "ROUTE_PACKET_MISMATCH": "route_packet_mismatch",
+        "ROUTE_DECISION_MISSING": "route_decision_missing",
+        "ROUTE_DECISION_STALE": "route_decision_stale",
         "USAGE": "usage",
         "UNKNOWN": "unknown",
         **executor.ERROR_REASONS,
