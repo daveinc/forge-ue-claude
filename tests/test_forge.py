@@ -2743,6 +2743,103 @@ class EditorClosedRouteTests(unittest.TestCase):
             closed = contracts["ue.python.commandlet"]["status"].startswith("AVAILABLE")
             self.assertFalse(live and closed, "one project cannot offer both editor lanes at once")
 
+    @contextmanager
+    def process_table(self, table):
+        original = forge.executor.process_table
+        forge.executor.process_table = lambda: table
+        try:
+            yield
+        finally:
+            forge.executor.process_table = original
+
+    def editor_process(self, root, name="UnrealEditor.exe", command_line=None):
+        descriptor = str((root / "MyGame.uproject").resolve())
+        return {
+            "pid": 4242,
+            "name": name,
+            "command_line": command_line if command_line is not None else f'"C:\\UE\\{name}" "{descriptor}"',
+            "started_at": "",
+        }
+
+    def test_a_frozen_editor_still_holds_the_project(self):
+        """MCP goes quiet exactly when the editor hangs, which is when a commandlet is most dangerous."""
+        with self.game(engine_present=True) as root:
+            (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
+            table = {"resolved": True, "mechanism": "Win32_Process", "processes": [self.editor_process(root)]}
+            with self.process_table(table):
+                ownership = forge.live_editor_holds_project(root)
+                self.assertEqual(ownership["ownership"], "HELD")
+                self.assertEqual(ownership["holder"]["pid"], 4242)
+                probe = forge.probe_process_route(root, self.row)
+                self.assertFalse(probe["lane_clear"])
+                self.assertEqual(probe["status"], "UNAVAILABLE_OPTIONAL")
+                self.assertEqual(self.contracts(root)["ue.python.commandlet"]["status"], "UNAVAILABLE_OPTIONAL")
+
+    def test_an_editor_holding_a_different_project_does_not_close_this_lane(self):
+        with self.game(engine_present=True) as root:
+            (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
+            other = self.editor_process(root, command_line='"C:\\UE\\UnrealEditor.exe" "D:\\Other\\Other.uproject"')
+            table = {"resolved": True, "mechanism": "Win32_Process", "processes": [other]}
+            with self.process_table(table):
+                ownership = forge.live_editor_holds_project(root)
+                self.assertEqual(ownership["ownership"], "FREE")
+                self.assertTrue(forge.probe_process_route(root, self.row)["lane_clear"])
+
+    def test_an_empty_machine_is_positive_evidence_of_absence(self):
+        with self.game(engine_present=True) as root:
+            (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
+            with self.process_table({"resolved": True, "mechanism": "Win32_Process", "processes": []}):
+                ownership = forge.live_editor_holds_project(root)
+                self.assertEqual(ownership["ownership"], "FREE")
+                self.assertTrue(any(item["signal"] == "process-inspection" and item["conclusive"]
+                                    for item in ownership["evidence"]))
+
+    def test_inspection_that_cannot_answer_shuts_the_lane_and_asks_the_user(self):
+        """Absence of evidence is not evidence of absence, so Forge refuses rather than guessing."""
+        with self.game(engine_present=True) as root:
+            (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
+            broken = {"resolved": False, "mechanism": None, "processes": [], "detail": "WMI did not answer"}
+            with self.process_table(broken):
+                ownership = forge.live_editor_holds_project(root)
+                self.assertEqual(ownership["ownership"], "UNDETERMINED")
+                self.assertIsNone(ownership["held"])
+                self.assertIn("will not guess", ownership["human_action"])
+                probe = forge.probe_process_route(root, self.row)
+                self.assertFalse(probe["lane_clear"])
+                self.assertEqual(probe["status"], "UNAVAILABLE_BLOCKING")
+                self.assertIn("human_action", probe)
+                self.assertFalse(self.contracts(root)["ue.python.commandlet"]["status"].startswith("AVAILABLE"))
+
+    def test_a_mechanism_without_command_lines_cannot_conclude_either(self):
+        """tasklist names processes but not their arguments, so it cannot say which project is held."""
+        with self.game(engine_present=True) as root:
+            (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
+            blind = {
+                "resolved": True,
+                "mechanism": "tasklist",
+                "processes": [self.editor_process(root, command_line="")],
+            }
+            with self.process_table(blind):
+                ownership = forge.live_editor_holds_project(root)
+                self.assertEqual(ownership["ownership"], "UNDETERMINED")
+                self.assertEqual(forge.probe_process_route(root, self.row)["status"], "UNAVAILABLE_BLOCKING")
+
+    def test_a_live_mcp_answer_settles_ownership_without_inspecting_anything(self):
+        """The cheap conclusive signal short-circuits: an editor that answers is an editor that is live."""
+        with local_server(McpHandler) as url:
+            with self.game(engine_present=True) as root:
+                path = root / ".forge" / "mcp.json"
+                document = json.loads(path.read_text(encoding="utf-8"))
+                for entry in document["servers"]:
+                    if entry["id"] == "unreal-native-mcp":
+                        entry["transport"] = {"type": "http", "url": f"{url}/mcp"}
+                path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+                broken = {"resolved": False, "mechanism": None, "processes": [], "detail": "WMI did not answer"}
+                with self.process_table(broken):
+                    ownership = forge.live_editor_holds_project(root)
+                self.assertEqual(ownership["ownership"], "HELD")
+                self.assertEqual(ownership["evidence"][0]["signal"], "mcp-handshake")
+
 
 class RoutedAcquisitionTests(unittest.TestCase):
     """Routing resolves what the work needs; acquiring may not hold less than that."""

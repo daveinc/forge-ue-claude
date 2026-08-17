@@ -11,6 +11,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+import forge_executor as executor
 from forge_core import (
     ERROR_REASON,
     EXIT_USAGE,
@@ -280,21 +281,116 @@ def _apply_handshake(root: Path, result: dict[str, Any], provider: dict[str, Any
     return enriched
 
 
+EDITOR_PROCESS_NAMES = ("unrealeditor", "ue4editor", "ue5editor")
+
+
+def project_descriptors(root: Path) -> list[str]:
+    return [str(path.resolve()) for path in sorted(root.glob("*.uproject"))]
+
+
+def editor_process_holding(root: Path, table: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Any Unreal editor process with this project's descriptor on its command line.
+
+    MCP answering proves an editor is live. MCP being silent proves nothing: a
+    frozen editor stops servicing requests while still holding every file it has
+    open, and that is exactly when a commandlet must not be let near the project.
+    """
+    resolved = table if table is not None else executor.process_table()
+    if not resolved["resolved"]:
+        return {"determined": False, "holder": None, "detail": str(resolved.get("detail", "process inspection did not answer"))}
+    descriptors = project_descriptors(root)
+    names = {str(root.resolve()).lower(), *(item.lower() for item in descriptors)}
+    stems = {Path(item).stem.lower() for item in descriptors}
+    for process in resolved["processes"]:
+        if not any(marker in process["name"].lower() for marker in EDITOR_PROCESS_NAMES):
+            continue
+        command_line = process["command_line"].lower().replace("/", "\\")
+        if any(needle.lower().replace("/", "\\") in command_line for needle in names):
+            return {
+                "determined": True,
+                "holder": {"pid": process["pid"], "name": process["name"]},
+                "detail": f"{process['name']} (pid {process['pid']}) has this project open",
+            }
+        if not process["command_line"] and stems:
+            return {
+                "determined": False,
+                "holder": {"pid": process["pid"], "name": process["name"]},
+                "detail": (
+                    f"{process['name']} (pid {process['pid']}) is running but {resolved['mechanism']} did not expose "
+                    "its command line, so whether it holds this project cannot be told apart from whether it holds another"
+                ),
+            }
+    return {
+        "determined": True,
+        "holder": None,
+        "detail": f"{resolved['mechanism']} found no Unreal editor process holding this project",
+    }
+
+
 def live_editor_holds_project(root: Path) -> dict[str, Any]:
-    """Whether a live editor is answering for this project, which closes the editor-closed lane."""
+    """Whether an editor owns this project: HELD, FREE, or honestly UNDETERMINED.
+
+    Absence of evidence is not evidence of absence. The editor-closed lane may be
+    entered only on a positive finding that nothing holds the project, because a
+    commandlet run against a project a live editor has open is the corruption the
+    super-lock exists to prevent.
+    """
     endpoints = [
         url
         for url in (mcp_endpoint_url(root, provider) for provider in mcp_providers())
         if url
     ]
+    evidence: list[dict[str, Any]] = []
     for url in endpoints:
         handshake = probe_mcp_endpoint(url, timeout=1.5)
         if handshake["speaks_mcp"]:
-            return {"held": True, "endpoint": url, "detail": f"a live editor answered an MCP initialize at {url}"}
+            return {
+                "ownership": "HELD",
+                "held": True,
+                "endpoint": url,
+                "evidence": [{"signal": "mcp-handshake", "conclusive": True, "detail": f"a live editor answered an MCP initialize at {url}"}],
+                "detail": f"a live editor answered an MCP initialize at {url}",
+            }
+    evidence.append(
+        {
+            "signal": "mcp-handshake",
+            "conclusive": False,
+            "detail": "no editor answered on any declared endpoint, which does not prove none is running: "
+                      "a frozen editor stops answering while still holding the project",
+        }
+    )
+    process = editor_process_holding(root)
+    evidence.append({"signal": "process-inspection", "conclusive": process["determined"], "detail": process["detail"]})
+    if process["determined"] and process["holder"]:
+        return {
+            "ownership": "HELD",
+            "held": True,
+            "endpoint": endpoints[0] if endpoints else None,
+            "holder": process["holder"],
+            "evidence": evidence,
+            "detail": process["detail"],
+        }
+    if not process["determined"]:
+        return {
+            "ownership": "UNDETERMINED",
+            "held": None,
+            "endpoint": endpoints[0] if endpoints else None,
+            "evidence": evidence,
+            "detail": process["detail"],
+            "human_action": (
+                "Forge cannot tell whether an editor holds this project, and will not guess. Resolve the process "
+                "check first: confirm process inspection works on this machine, then re-run. If it cannot be "
+                "repaired, decide by hand whether the editor is closed and say how to proceed — Forge will not "
+                "decide this for you, because the cost of being wrong is a commandlet writing into a project the "
+                "editor has open."
+            ),
+        }
     return {
+        "ownership": "FREE",
         "held": False,
         "endpoint": endpoints[0] if endpoints else None,
-        "detail": "no live editor answered on any declared endpoint, so the project is free for editor-closed work",
+        "evidence": evidence,
+        "detail": "no editor answered and no Unreal editor process holds this project, so the editor-closed lane is enterable",
     }
 
 
@@ -317,26 +413,45 @@ def probe_process_route(root: Path, provider: dict[str, Any]) -> dict[str, Any]:
             "searched": [command],
         }
     editor = live_editor_holds_project(root)
-    if editor["held"]:
+    if editor["ownership"] == "HELD":
         return {
             "found": True,
             "status": "UNAVAILABLE_OPTIONAL",
-            "reason": "the live editor holds this project, so the editor-closed lane is not enterable",
+            "reason": "an editor holds this project, so the editor-closed lane is not enterable",
             "note": f"{editor['detail']}. Close the editor, or route this work to the live typed surface instead.",
             "command": command,
             "resolved": resolved,
             "lane_clear": False,
+            "ownership": editor["ownership"],
+            "ownership_evidence": editor["evidence"],
+            "endpoint": editor["endpoint"],
+            "searched": [command],
+        }
+    if editor["ownership"] == "UNDETERMINED":
+        return {
+            "found": True,
+            "status": "UNAVAILABLE_BLOCKING",
+            "reason": "whether an editor holds this project could not be determined, so the editor-closed lane stays shut",
+            "note": editor["human_action"],
+            "command": command,
+            "resolved": resolved,
+            "lane_clear": False,
+            "ownership": editor["ownership"],
+            "ownership_evidence": editor["evidence"],
+            "human_action": editor["human_action"],
             "endpoint": editor["endpoint"],
             "searched": [command],
         }
     return {
         "found": True,
         "status": "AVAILABLE_UNVERIFIED",
-        "reason": f"{command} resolved and no live editor holds the project",
+        "reason": f"{command} resolved, and no editor answered or holds this project",
         "note": "Resolving the command is not a round trip. Only an acceptance suite that runs a commandlet and reads its result file earns more than UNVERIFIED.",
         "command": command,
         "resolved": resolved,
         "lane_clear": True,
+        "ownership": editor["ownership"],
+        "ownership_evidence": editor["evidence"],
         "endpoint": editor["endpoint"],
         "searched": [command],
     }

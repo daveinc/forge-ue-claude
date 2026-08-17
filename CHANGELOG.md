@@ -4,6 +4,13 @@ Every section below is dated from the tag that released it. One tag is not a rel
 
 ## 0.6.0 - 2026-08-17
 
+### A silent editor is not a closed editor
+
+- The editor-closed lane was entered whenever no MCP endpoint answered: "no live editor answered … so the project is free for editor-closed work". Silence is not absence. An editor that is open but whose MCP plugin is disabled, crashed, firewalled or simply frozen stops answering while still holding every file it has open — and a frozen editor is *exactly* when MCP goes quiet, so the most likely failure was also the undetected one. Forge would then let `UnrealEditor-Cmd` run against a project the live editor held, which is the corruption the super-lock exists to prevent.
+- `live_editor_holds_project` now answers `HELD`, `FREE` or `UNDETERMINED` and carries the evidence for it. An MCP handshake is conclusive proof an editor is live and short-circuits everything else. Otherwise Forge looks for an Unreal editor process with this project's `.uproject` on its command line. Only a *positive* finding that nothing holds the project opens the lane.
+- `UNDETERMINED` reports `UNAVAILABLE_BLOCKING` with a stated human action rather than a guess. A failed process check is a fault to resolve, not a condition to route around, and if it cannot be resolved the user decides — Forge does not, because the cost of being wrong is a commandlet writing into an open project. `forge-route-work` step 8 stops and asks.
+- A mechanism that lists processes without their command lines cannot tell which project is held, so it reports `UNDETERMINED` too rather than answering from a process name alone.
+
 ### A lease is held by a process, not by a clock
 
 - `LEASE_TTL_MINUTES = 120` with no way to renew meant a lane could be freed while its worker was still writing. A Nanite rebuild, a cook, a mass retarget or a large import legitimately outruns two hours; at the TTL the lease was marked `EXPIRED` and the next acquire admitted a second writer, which defeats the isolation the lease exists to provide.
