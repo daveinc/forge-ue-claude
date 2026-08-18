@@ -1252,6 +1252,7 @@ class FailureContractTests(unittest.TestCase):
         self.assertEqual(sorted(declared - used), [])
 
     def test_only_a_reason_vocabulary_may_raise_a_bare_value_error(self):
+        self.assertLessEqual(set(REASON_OWNERS), set(MODULE_PATHS))
         for path in MODULE_PATHS:
             sites = re.findall(r"raise ValueError\(", path.read_text(encoding="utf-8"))
             expected = 1 if path in REASON_OWNERS else 0
@@ -1312,6 +1313,7 @@ class ResultContractTests(unittest.TestCase):
             "lifecycle": (forge.lifecycle_state(str(root), "status"), False),
             "mcp-status": (forge.mcp_status(root, profile), False),
             "install": (forge.install_overlay(str(root), apply=False), False),
+            "validate": (forge.validate_payload("project-mcp", str(root / ".forge" / "mcp.json")), True),
         }
 
     def test_verdict_commands_emit_ok_and_reporting_commands_do_not(self):
@@ -1326,6 +1328,7 @@ class ResultContractTests(unittest.TestCase):
 
     def test_the_declared_set_matches_what_the_payloads_actually_carry(self):
         with self.game() as root:
+            self.assertLessEqual(forge.VERDICT_COMMANDS, set(self._payloads(root)))
             for name, (payload, _) in self._payloads(root).items():
                 self.assertEqual(
                     name in forge.VERDICT_COMMANDS, "ok" in payload,
@@ -1337,6 +1340,7 @@ class ResultContractTests(unittest.TestCase):
             completed = self._run("bootstrap-check", "--project", str(root))
             self.assertEqual(completed.returncode, forge.EXIT_CONTRACT)
             self.assertFalse(json.loads(completed.stdout)["ok"])
+            self.assertNotIn(forge.EXIT_CONTRACT, {forge.EXIT_OK, forge.EXIT_USAGE})
 
     def test_a_verdict_command_returning_no_ok_is_refused(self):
         source = FORGE_PATH.read_text(encoding="utf-8")
@@ -1407,8 +1411,8 @@ class UserScopeMcpTests(unittest.TestCase):
             forge.install_overlay(str(root), apply=True)
             profile = json.loads(json.dumps(forge.host_profile(host)))
             surface = profile.get("mcp", {}).get("user_surface")
-            if surface:
-                surface["path"] = str(temp / "userconfig.json")
+            assert surface, f"{host} declares no user_surface; the redirect would silently no-op"
+            surface["path"] = str(temp / "userconfig.json")
             yield root, profile, temp / "userconfig.json"
 
     def test_project_scope_stays_out_of_user_scope(self):
@@ -3638,6 +3642,7 @@ class WorkflowReachabilityTests(unittest.TestCase):
         text = (ROOT / "install.ps1").read_text(encoding="utf-8")
         declared = re.search(r"\$verbMap = @\{([^}]*)\}", text)
         pairs = re.findall(r"'([^']+)'\s*=\s*'([^']+)'", declared.group(1) if declared else "")
+        assert pairs, "install.ps1 verbMap did not parse; the translation would silently be empty"
         return dict(pairs)
 
     def invoked(self):
@@ -3652,6 +3657,7 @@ class WorkflowReachabilityTests(unittest.TestCase):
                         found.add(f"{verb} {subcommand}")
                 for mode in re.findall(r"install\.ps1\s+-Mode\s+(\w+)", text):
                     found.add(verb_map.get(mode, mode.lower()))
+        assert "install" in found, "no prose invoked install; PROSE_ROOTS no longer reaches the workflows"
         return found
 
     def test_every_declared_command_is_reachable_from_a_workflow(self):
