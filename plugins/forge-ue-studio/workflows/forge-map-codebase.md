@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: map-codebase
+consumes: source tree, Content/, .uproject plugins
+produces: codebase map extended with Unreal structure
+-->
+
 # Forge Map Codebase — workflow
 
 ## CORE — GSD

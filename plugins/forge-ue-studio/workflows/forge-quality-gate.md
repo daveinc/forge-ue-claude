@@ -1,6 +1,21 @@
+<!-- forge:workflow
+name: quality-gate
+consumes: requirement, work packet, artifact or diff, .forge/acceptance/registry.json, route contract, returned evidence
+produces: attempt-result contract with findings ordered by severity
+-->
+
 # Forge Quality Gate — workflow
 
-## Workflow
+<purpose>
+Grade returned work against acceptance evidence and return a typed attempt result.
+</purpose>
+
+<core_principle>
+Never let a review finding grant permission to apply its own fix. Never replace a human decision on
+primary art direction, likeness, appeal, game feel or release.
+</core_principle>
+
+<process>
 
 1. Read the requirement, work packet, artifact or diff, acceptance registry, route contract, and returned evidence. Read builder reasoning only when investigating a failure after the independent pass.
 2. Select the smallest sufficient test layers from schema/static, unit, contract, integration, editor/commandlet, PIE/runtime, asset structural, performance, cook/package, platform, visual, and human subjective.
@@ -11,3 +26,5 @@
 7. Accept only when every required criterion has current evidence and every required human gate is signed. Never let a review finding grant permission to apply its own fix.
 8. On `FAIL`, `PARTIAL`, `BLOCKED`, or `INDETERMINATE`, preserve the attempt and route the next action through `forge-route-work` or `forge-retrospective`.
 9. Never replace a human decision on primary art direction, likeness, appeal, game feel, or release.
+
+</process>

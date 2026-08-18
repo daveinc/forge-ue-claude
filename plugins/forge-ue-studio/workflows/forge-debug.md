@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: debug
+consumes: Saved/Logs, PIE output, crash logs, the reproduction lane
+produces: .forge/learnings/
+-->
+
 # Forge Debug — workflow
 
 ## PRE — Forge

@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: onboard
+consumes: existing project tree, Content/, Blueprint dependencies, enabled plugins
+produces: codebase map, registered asset interfaces
+-->
+
 # Forge Onboard — workflow
 
 ## PRE — Forge

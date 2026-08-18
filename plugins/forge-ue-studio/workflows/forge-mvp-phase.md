@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: mvp-phase
+consumes: GDD decision ledger, phase entry
+produces: .forge/acceptance/ slice criteria, registered asset interfaces
+-->
+
 # Forge Mvp Phase — workflow
 
 ## PRE — Forge

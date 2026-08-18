@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: verify-work
+consumes: acceptance criteria, the running build
+produces: UAT results
+-->
+
 # Forge Verify Work — workflow
 
 ## PRE — Forge

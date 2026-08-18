@@ -1,6 +1,20 @@
+<!-- forge:workflow
+name: gameplay-gauntlet
+consumes: a runnable loop, named reference, comparison rubric, current baseline
+produces: the winning change, attempt result
+-->
+
 # Forge Gameplay Gauntlet — workflow
 
-## Workflow
+<purpose>
+Compare bounded gameplay alternatives against a frozen rubric until the human owner accepts the feel.
+</purpose>
+
+<core_principle>
+Never invent an automatic quality threshold. The stop gate is human-owned.
+</core_principle>
+
+<process>
 
 1. Require a runnable loop, named target or reference, comparison dimensions, fixed capture conditions, current baseline, and a human-owned stop gate.
 2. Freeze the comparison rubric and choose one bottleneck. Keep unrelated systems outside the round.
@@ -9,3 +23,5 @@
 5. Have `gameplay-critic` score play evidence and in-engine frames harshly against the rubric, isolated from the agents that built the alternatives. Run blind A/B whenever labels could bias judgment.
 6. Integrate only the winning change, then run regression and performance checks and record the attempt result.
 7. Stop when the human owner accepts the feel, the round limit is reached, or improvement stalls. Escalate unresolved tradeoffs; never invent an automatic quality threshold.
+
+</process>

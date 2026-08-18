@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: ingest-docs
+consumes: design sources named in signals.design_sources
+produces: GDD decision ledger
+-->
+
 # Forge Ingest Docs — workflow
 
 ## PRE — Forge

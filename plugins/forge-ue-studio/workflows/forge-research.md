@@ -1,6 +1,22 @@
+<!-- forge:workflow
+name: research
+consumes: candidate sources, .forge/research/index.json
+produces: capability or research contract, .forge/research/index.json
+-->
+
 # Forge Research — workflow
 
-## Workflow
+<purpose>
+Absorb an external source into a capability or research contract, without importing it into
+approved project state.
+</purpose>
+
+<core_principle>
+Request capabilities in recipes, never product names. Never grant `AVAILABLE_VERIFIED` on a detection
+probe alone.
+</core_principle>
+
+<process>
 
 1. Discover candidate sources without importing them into approved project state. Identify exact source, version, licence, trust boundary, update signal, and intended task classes.
 2. Present the discovered set for approval. Prefer authoritative local schemas, help output, reflection, headers, generated API references, and configured tools. Browse only when current external documentation is required.
@@ -11,3 +27,5 @@
 7. Link enabled workflow steps to fallbacks and acceptance suites. Request capabilities in recipes, never product names.
 8. Generate small domain cards, relationship graphs where useful, and retrieval keys. Compile minimal offload packets so local workers never receive whole manuals, the complete GDD, or the resident conversation.
 9. Record invalidation triggers and re-probe after a version, schema, model, plugin, engine, hardware, or path change. Route installation and activation through `forge-capability-admin`.
+
+</process>

@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: plan-phase
+consumes: CONTEXT.md, .forge/state/packet-registry.json
+produces: PLAN.md carrying required_lanes and mutation_risk, registered asset interfaces
+-->
+
 # Forge Plan Phase — workflow
 
 ## PRE — Forge

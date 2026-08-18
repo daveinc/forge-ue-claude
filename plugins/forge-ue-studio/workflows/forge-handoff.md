@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: handoff
+consumes: .forge/state/leases.json, editor state, .forge/runtime.json
+produces: handoff context including held write-locks and the producing host
+-->
+
 # Forge Handoff — workflow
 
 ## CORE — GSD

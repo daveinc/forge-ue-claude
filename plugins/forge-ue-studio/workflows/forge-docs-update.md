@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: docs-update
+consumes: project docs, GDD ledger, asset-interface registry
+produces: GDD ledger and asset-interface registry consistency
+-->
+
 # Forge Docs Update — workflow
 
 ## CORE — GSD

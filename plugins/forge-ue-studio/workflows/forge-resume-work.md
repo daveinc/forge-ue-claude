@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: resume-work
+consumes: .forge/state/leases.json, .forge/runtime.json, the handoff record
+produces: reclaimed or released lane leases
+-->
+
 # Forge Resume Work — workflow
 
 ## PRE — Forge

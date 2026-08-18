@@ -1,6 +1,21 @@
+<!-- forge:workflow
+name: retrospective
+consumes: revision history, work orders, attempts, leases, capability snapshots, review cycles, phase artifacts, acceptance evidence
+produces: .forge/learnings/registry.json, forensic report
+-->
+
 # Forge Retrospective — workflow
 
-## Workflow
+<purpose>
+Investigate a failure read-only, then promote what it taught into durable learning records.
+</purpose>
+
+<core_principle>
+Never repair during the forensic pass, and never give it to the agent that produced the work under
+investigation.
+</core_principle>
+
+<process>
 
 1. Freeze repair work. Inspect revision history, work orders, attempts, leases, capability snapshots, review cycles, phase artifacts, acceptance evidence, tool outputs, and filesystem state read-only.
 2. Detect stuck loops, missing artifacts, partial-plan drift, abandoned work, interruption, scope drift, undeclared writes, stale capability evidence, test regression, and broken handoffs.
@@ -10,3 +25,5 @@
 6. Quarantine new records. Promote a recipe only after repeated independent success under a declared scope, and retain failed attempts and contradictory evidence.
 7. Invalidate learning after a relevant environment, engine, provider, schema, hardware, or workflow change.
 8. Keep production metrics in canonical JSON. Generate a derived XLSX or CSV scorecard on request and verify it visually; never make the spreadsheet the source of truth.
+
+</process>

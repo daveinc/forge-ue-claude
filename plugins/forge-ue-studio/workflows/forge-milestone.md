@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: milestone
+consumes: phase verification results, GDD decisions, capability routes
+produces: milestone artifacts carried forward
+-->
+
 # Forge Milestone — workflow
 
 ## PRE — Forge

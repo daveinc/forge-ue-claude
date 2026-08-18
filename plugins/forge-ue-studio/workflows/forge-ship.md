@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: ship
+consumes: phase verification, acceptance registry
+produces: PR and release artifacts
+-->
+
 # Forge Ship — workflow
 
 ## PRE — Forge

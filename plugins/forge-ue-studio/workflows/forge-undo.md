@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: undo
+consumes: the phase manifest, .forge/state/work-orders.json
+produces: reverted commits
+-->
+
 # Forge Undo — workflow
 
 ## PRE — Forge

@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: progress
+consumes: .planning/ (authoritative for phase status), .forge/capabilities/qualifications.json
+produces: nothing — reporting only, never mutates phase state
+-->
+
 # Forge Progress — workflow
 
 ## CORE — GSD

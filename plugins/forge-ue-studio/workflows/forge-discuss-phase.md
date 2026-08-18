@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: discuss-phase
+consumes: .forge/directives.md, GDD decision ledger, roadmap phase entry, .forge/capabilities/registry.json, .forge/capabilities/detected.json
+produces: GDD decision ledger (CONTEXT.md is GSD's)
+-->
+
 # Forge Discuss Phase — workflow
 
 ## PRE — Forge

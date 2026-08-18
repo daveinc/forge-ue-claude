@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: phase
+consumes: .forge/state/packet-registry.json, ROADMAP.md
+produces: .forge/state/packet-registry.json (alias and derived_from records only)
+-->
+
 # Forge Phase — workflow
 
 ## PRE — Forge

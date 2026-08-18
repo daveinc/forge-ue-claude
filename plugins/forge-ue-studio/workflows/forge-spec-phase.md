@@ -1,3 +1,9 @@
+<!-- forge:workflow
+name: spec-phase
+consumes: roadmap phase entry, GDD decision ledger
+produces: SPEC.md
+-->
+
 # Forge Spec Phase — workflow
 
 ## PRE — Forge
