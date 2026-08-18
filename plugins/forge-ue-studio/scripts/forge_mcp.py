@@ -180,7 +180,7 @@ def agent_route_briefing(definition: dict[str, Any], engine_version: str | None 
                 lines.append(f"- `{name}` — {spec.get('purpose')} Arguments: {shape}. Returns: {spec.get('returns')}")
                 for known in spec.get("known_errors", []):
                     lines.append(f"  - {known}")
-        sections.append("\n\n".join(lines))
+        sections.append(lines[0] + "\n\n" + "\n".join(lines[1:]))
     if not sections:
         return ""
     return "## The routes this agent operates\n\n" + "\n\n".join(sections)

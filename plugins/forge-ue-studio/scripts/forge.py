@@ -158,6 +158,7 @@ from forge_routing import (
     resolve_route_decision,
     resolve_tool_access,
     route_conflicts,
+    unreal_shape_lane,
     route_decisions_path,
     route_drift,
     route_policy,

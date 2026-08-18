@@ -295,6 +295,16 @@ def route_conflicts(packet: dict[str, Any], decision: dict[str, Any], work_order
     return conflicts
 
 
+def unreal_shape_lane(task_class: str, policy: dict[str, Any]) -> str | None:
+    """The lane route-policy's unreal_routing implies for this shape of work."""
+    routing = policy.get("unreal_routing", {})
+    if task_class in set(routing.get("prefer_editor_closed_for", [])):
+        return "lane.ue-editor-closed"
+    if task_class in set(routing.get("prefer_live_editor_for", [])):
+        return "lane.ue-editor"
+    return None
+
+
 def route_work(project_value: str, request_value: str, host_override: str | None = None) -> dict[str, Any]:
     root, _ = project_root(project_value)
     profile = active_profile(root, host_override)
@@ -401,6 +411,12 @@ def route_work(project_value: str, request_value: str, host_override: str | None
     else:
         selected = RESIDENT_PROVIDER
         decision = "no-qualified-positive-advantage"
+    shape_lane = unreal_shape_lane(str(request["task_class"]), policy)
+    shape_conflict = {
+        lane
+        for lane in set(request.get("required_lanes", [])) | set(lanes)
+        if lane.startswith("lane.ue-editor") and lane != shape_lane
+    } if shape_lane else set()
     return {
         "schema": "forge.route-decision/v1",
         "project": str(root.resolve()),
@@ -423,6 +439,15 @@ def route_work(project_value: str, request_value: str, host_override: str | None
         "lane_warnings": (
             [f"route implies lane {lane!r}, which the request did not declare in required_lanes" for lane in undeclared_lanes]
             + [f"request declares lane {lane!r}, which no bound route serves" for lane in unserved_lanes]
+            + (
+                [
+                    f"route-policy puts task class {request['task_class']!r} on {shape_lane!r}, and this request "
+                    f"names {sorted(shape_conflict)!r}; the two Unreal lanes are mutually exclusive, so confirm the "
+                    "shape of the work before taking a lane it does not imply"
+                ]
+                if shape_lane and shape_conflict
+                else []
+            )
         ),
         "requires_independent_verification": True,
     }
