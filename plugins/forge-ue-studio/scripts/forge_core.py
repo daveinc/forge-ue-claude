@@ -112,8 +112,24 @@ def expand_host_path(value: str) -> Path:
     return Path(value).expanduser()
 
 
+_TOML_ESCAPES = MappingProxyType(
+    {codepoint: f"\\u{codepoint:04X}" for codepoint in range(0x20)}
+    | {
+        0x08: "\\b",
+        0x09: "\\t",
+        0x0A: "\\n",
+        0x0C: "\\f",
+        0x0D: "\\r",
+        0x22: '\\"',
+        0x5C: "\\\\",
+        0x7F: "\\u007F",
+    }
+)
+
+
 def toml_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+    """Escape a value for a TOML basic string, including every control character the spec forbids raw."""
+    return value.translate(_TOML_ESCAPES)
 
 
 def executable(*names: str) -> str | None:
