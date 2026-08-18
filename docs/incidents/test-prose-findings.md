@@ -4,8 +4,11 @@ Task 5 of the v0.7.0 plan. Every docstring, comment and restating assertion mess
 from `tests/`. This file is what those removals *cost*: 23 places where the prose asserted something
 the code does not.
 
-**Nothing here has been converted yet.** This list is for approval. Line numbers are post-deletion
-(`tests/test_forge.py` is now 3,598 lines, down from 3,845).
+**All 23 are converted.** Tier 1 landed in `3371b21`, Tier 2 in `2d0eb67`, Tiers 3 and 4 in
+`30e01e1`. Two proposals in this list were wrong and are corrected in those commits: A1 expected
+`rendered_to_host` to read False when it reads True, and A19 assumed every verdict command already
+appeared in the in-process payload sweep when `validate` did not — that gap is now closed rather
+than asserted around. A4 and A13 are written but unverified: both need a real UE 5.8 editor.
 
 Ordered by value. Tier 1 assertions currently prove nothing at all.
 
