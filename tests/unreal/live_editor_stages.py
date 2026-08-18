@@ -50,9 +50,6 @@ def advertised_toolsets(session: McpSession) -> set[str]:
 
 
 def blueprint_stage(session: McpSession) -> dict[str, str]:
-    """Create a Blueprint, prove it exists, compile it, and save it."""
-    # A name unique to the run, so pointing this at a project that has been probed
-    # before reports what the editor did rather than that the last run left a file.
     asset_name = f"BP_ForgeProbe_{int(time.time())}"
     try:
         created = session.toolset_result(
@@ -75,7 +72,6 @@ def blueprint_stage(session: McpSession) -> dict[str, str]:
 
 
 def pie_stage(session: McpSession) -> dict[str, str]:
-    """Run PIE, read actor state out of the running world, and capture the viewport."""
     started = False
     try:
         if session.toolset_result(APP_TOOLSET, "IsPIERunning") is True:
@@ -115,7 +111,6 @@ def pie_stage(session: McpSession) -> dict[str, str]:
 
 
 def _image_bytes(result: dict[str, Any]) -> int:
-    """Size of the PNG a capture returned, whether framed as an image part or inline JSON."""
     for part in result.get("content", []):
         if part.get("type") == "image" and part.get("data"):
             return len(part["data"])

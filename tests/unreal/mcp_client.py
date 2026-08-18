@@ -25,7 +25,7 @@ PROTOCOL_VERSION = "2025-06-18"
 
 
 class McpError(Exception):
-    """A failure that names which call broke, so a caller can report it."""
+    pass
 
 
 class McpSession:
@@ -37,13 +37,6 @@ class McpSession:
         self._next_id = 0
 
     def _post(self, payload: dict[str, Any], expect_reply: bool = True) -> dict[str, Any] | None:
-        """One request over http.client, deliberately not urllib.
-
-        Unreal answers on a keep-alive `text/event-stream` with no content length
-        and no chunked encoding, and urllib reads that as an empty body. Reading
-        the socket in chunks until a frame completes is what makes these calls
-        work at all.
-        """
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
@@ -104,17 +97,12 @@ class McpSession:
         return self.call("tools/call", {"name": name, "arguments": arguments or {}}) or {}
 
     def call_toolset(self, toolset: str, tool: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Reach a toolset tool through `call_tool`, which is how discovery mode dispatches.
-
-        `tool_name` carries no toolset prefix; `toolset_name` selects the toolset.
-        """
         return self.call_tool(
             "call_tool",
             {"toolset_name": toolset, "tool_name": tool, "arguments": arguments or {}},
         )
 
     def toolset_result(self, toolset: str, tool: str, arguments: dict[str, Any] | None = None) -> Any:
-        """The decoded return value of a toolset tool, or its text when it is not JSON."""
         text = text_of(self.call_toolset(toolset, tool, arguments))
         try:
             decoded = json.loads(text)
@@ -126,15 +114,6 @@ class McpSession:
 
 
 def _read_frame(response: Any, expect_reply: bool, message_id: Any = None) -> str:
-    """Read until this call's reply parses, not until the stream ends.
-
-    The connection stays open after the reply, so waiting for EOF waits forever.
-    Guessing at a terminator does not work either: a chunk boundary can land on a
-    closing brace inside the payload and truncate a large answer. The only
-    reliable stop is a frame that actually decodes. `read1` is required rather
-    than `read`, because a plain `read(n)` on a buffered socket waits for exactly
-    n bytes and a short reply never supplies them.
-    """
     if not expect_reply:
         return ""
     reader = getattr(response, "read1", response.read)
@@ -151,7 +130,6 @@ def _read_frame(response: Any, expect_reply: bool, message_id: Any = None) -> st
 
 
 def _try_decode(text: str) -> dict[str, Any] | None:
-    """One complete JSON-RPC reply out of `text`, or None while it is still partial."""
     stripped = text.strip()
     if stripped.startswith("{"):
         try:
@@ -173,7 +151,6 @@ def _try_decode(text: str) -> dict[str, Any] | None:
 
 
 def _decode(raw: str, method: str) -> dict[str, Any]:
-    """One JSON-RPC reply, whether it arrived bare or inside SSE framing."""
     if not raw.strip():
         raise McpError(f"{method} returned an empty body")
     decoded = _try_decode(raw)
@@ -183,7 +160,6 @@ def _decode(raw: str, method: str) -> dict[str, Any]:
 
 
 def text_of(result: dict[str, Any]) -> str:
-    """The text payload of a tools/call result, which is where Unreal puts its answer."""
     parts = [item.get("text", "") for item in result.get("content", []) if item.get("type") == "text"]
     return "\n".join(part for part in parts if part)
 

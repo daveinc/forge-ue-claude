@@ -11,12 +11,8 @@
 
       - the first-party MCP route answers a real initialize handshake
       - an open editor is detected as holding the project
-      - a frozen editor -- alive but not answering MCP -- is still detected
       - the live and editor-closed lanes swap as the editor opens and closes
       - a commandlet runs against the closed project and writes its result file
-
-    Stages it cannot yet settle are reported NOT_IMPLEMENTED with the reason,
-    rather than skipped silently or asserted on faith.
 
 .PARAMETER EnginePath
     Engine root, e.g. "C:\Program Files\Epic Games\UE_5.8".
@@ -48,12 +44,6 @@ function Add-Result {
 }
 
 function Invoke-Native {
-    <#
-      Windows PowerShell turns a native command's stderr into ErrorRecords, and
-      under ErrorActionPreference Stop that makes any warning terminating -- git's
-      routine "LF will be replaced by CRLF" is enough to abort the run. Exit codes
-      decide success here; stderr is captured, not obeyed.
-    #>
     param([string]$Exe, [string[]]$NativeArgs, [switch]$AllowFailure)
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -77,7 +67,6 @@ function Invoke-Forge {
 }
 
 function Get-Route {
-    <# route-status rows key on `provider`, which is the registry id. #>
     param($Status, [string]$Provider)
     if (-not $Status -or -not $Status.routes) { return $null }
     return ($Status.routes | Where-Object { $_.provider -eq $Provider } | Select-Object -First 1)
@@ -143,15 +132,9 @@ try {
         }
 
         Write-Host "`n  launching the editor (this takes a while on first run)..." -ForegroundColor DarkGray
-        # The MCP server does not listen unless it is asked to: ShouldAutoStartServer
-        # honours -ModelContextProtocolStartServer, then the bAutoStartServer setting,
-        # which is off by default. Enabling the plugin is necessary and not sufficient.
         $editor = Start-Process -FilePath $editorExe -PassThru -ArgumentList @(
             "`"$uproject`"", "-ModelContextProtocolStartServer"
         )
-        # The process appears well before the MCP server finishes binding its port, so
-        # these are two waits and not one. Stopping at the first HELD would report the
-        # handshake as unproven whenever process inspection simply answered first.
         $deadline = (Get-Date).AddMinutes(10)
         $held = $null
         $ownedAt = $null
@@ -289,7 +272,7 @@ $summary = [pscustomobject]@{
     stages = $results
     passed = @($results | Where-Object { $_.status -eq 'PASS' }).Count
     failed = $failed.Count
-    unproven = @($results | Where-Object { $_.status -in @('NOT_PROVEN', 'NOT_IMPLEMENTED') }).Count
+    unproven = @($results | Where-Object { $_.status -in @('NOT_PROVEN') }).Count
 }
 $summary | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $PSScriptRoot "acceptance-result.json")
 Write-Host ("{0} passed, {1} failed, {2} unproven" -f $summary.passed, $summary.failed, $summary.unproven) -ForegroundColor Cyan

@@ -23,6 +23,12 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 
+try:
+    import tomllib
+except ImportError:
+    tomllib = None
+
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = ROOT / "plugins" / "forge-ue-studio" / "scripts"
 FORGE_PATH = SCRIPTS_DIR / "forge.py"
@@ -412,6 +418,13 @@ class ForgeInstallerTests(unittest.TestCase):
             toml_text = (project / ".codex" / "agents" / "studio-director.toml").read_text(encoding="utf-8")
             self.assertIn("developer_instructions = ", toml_text)
             self.assertIn("$forge-plan-convergence", toml_text)
+
+            if tomllib is not None:
+                rendered = sorted((project / ".codex" / "agents").glob("*.toml"))
+                self.assertTrue(rendered, "no codex agent file was written; the parse below would assert over nothing")
+                for path in rendered:
+                    document = tomllib.loads(path.read_text(encoding="utf-8"))
+                    self.assertTrue(str(document["developer_instructions"]).strip(), path.name)
 
             self.assertFalse((project / "CLAUDE.md").exists())
             self.assertFalse((project / ".claude").exists())
@@ -902,7 +915,6 @@ class ForgeInstallerTests(unittest.TestCase):
 
 
 class McpRouteTests(unittest.TestCase):
-    """Typed tool routes: composition, host neutrality, probing, and the gates."""
 
     def setUp(self):
         self.registry = forge.route_registry()
@@ -919,7 +931,6 @@ class McpRouteTests(unittest.TestCase):
             self.assertIn(provider["id"], declared, provider["id"])
 
     def test_registry_names_no_host_spelling(self):
-        """Canon declares servers; only the host registry spells a namespace."""
         text = (ROOT / "plugins" / "forge-ue-studio" / "dependencies" / "route-registry.json").read_text(encoding="utf-8")
         self.assertNotIn("mcp__", text)
 
@@ -933,7 +944,6 @@ class McpRouteTests(unittest.TestCase):
         self.assertIn("Read", surface)
 
     def test_agent_tool_surface_degrades_on_a_host_without_an_mcp_client(self):
-        """generic declares no mcp-client, so no typed tool may be rendered."""
         surface = forge.agent_tool_surface(self.agents["unreal-operator"], forge.host_profile("generic"))
         self.assertFalse([item for item in surface if item.startswith("mcp__")])
         self.assertIn("Read", surface)
@@ -1006,7 +1016,6 @@ class McpRouteTests(unittest.TestCase):
 
 
 class ProjectMcpTests(unittest.TestCase):
-    """The game project owns its routes; the machine's config is not the truth."""
 
     def setUp(self):
         self.original_command_probe = forge.command_probe
@@ -1027,7 +1036,6 @@ class ProjectMcpTests(unittest.TestCase):
             yield root
 
     def test_a_new_project_ships_the_first_party_unreal_route(self):
-        """The Unreal layer is not left for the user to choose: the template declares it."""
         with self.game() as root:
             self.assertTrue((root / ".forge" / "mcp.json").is_file())
             declared = forge.resolve_project_servers(root)
@@ -1043,7 +1051,6 @@ class ProjectMcpTests(unittest.TestCase):
             self.assertEqual(surface["mcpServers"]["blender-mcp"]["command"], "uvx")
 
     def test_a_declared_route_whose_probe_fails_is_unavailable_not_unverified(self):
-        """Knowing a route is dead must degrade it to its fallback, not leave it dispatchable."""
         with self.game() as root:
             route = next(
                 item for item in forge.mcp_status(root, self.profile)["routes"]
@@ -1099,7 +1106,6 @@ class ProjectMcpTests(unittest.TestCase):
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["MCP_INCOMPLETE_DECLARATION"])
 
     def test_a_fully_declared_project_local_server_routes(self):
-        """Any other app: adoptable without shipping a catalog change."""
         with self.game() as root:
             path = root / ".forge" / "mcp.json"
             document = json.loads(path.read_text(encoding="utf-8"))
@@ -1175,8 +1181,6 @@ class ProjectMcpTests(unittest.TestCase):
             self.assertFalse(route["subagent_visible"])
 
     def test_the_project_surface_is_tracked_like_every_other_rendered_surface(self):
-        """A hand-edited surface is a LOCAL_VARIANT like any rendered file, and
-        status reports the lost server by probing rather than diffing."""
         with self.game() as root:
             surface_path = str((root / ".mcp.json").resolve())
             checks = {c["path"]: c for c in forge.verify_overlay(str(root), "claude")["checks"]}
@@ -1201,7 +1205,6 @@ class ProjectMcpTests(unittest.TestCase):
 
 
 class FailureContractTests(unittest.TestCase):
-    """Every declared failure carries a typed reason and an exit code."""
 
     def test_reason_vocabulary_is_frozen(self):
         with self.assertRaises(TypeError):
@@ -1238,7 +1241,6 @@ class FailureContractTests(unittest.TestCase):
         self.assertEqual(payload["command"], "host")
 
     def test_every_declared_reason_is_reachable_from_a_call_site(self):
-        """A reason may be raised from any module, so every module is scanned."""
         source = "\n".join(path.read_text(encoding="utf-8") for path in MODULE_PATHS)
         declared = set(forge.ERROR_REASON)
         used = {
@@ -1248,15 +1250,12 @@ class FailureContractTests(unittest.TestCase):
         self.assertEqual(sorted(declared - used), [])
 
     def test_only_a_reason_vocabulary_may_raise_a_bare_value_error(self):
-        """Two modules declare a reason enum; each guards its own, and nothing else does."""
         for path in MODULE_PATHS:
             sites = re.findall(r"raise ValueError\(", path.read_text(encoding="utf-8"))
             expected = 1 if path in REASON_OWNERS else 0
             self.assertEqual(len(sites), expected, f"unexpected ValueError count in {path.name}")
 
     def test_logic_never_calls_sys_exit(self):
-        """Checked structurally: a textual scan would match the prose explaining
-        the rule and pass or fail for the wrong reason."""
         tree = ast.parse(FORGE_PATH.read_text(encoding="utf-8"))
         calls = [
             node for node in ast.walk(tree)
@@ -1270,7 +1269,6 @@ class FailureContractTests(unittest.TestCase):
 
 
 class ResultContractTests(unittest.TestCase):
-    """`ok` means a verdict everywhere, or it means nothing anywhere."""
 
     def setUp(self):
         self.original_command_probe = forge.command_probe
@@ -1302,10 +1300,6 @@ class ResultContractTests(unittest.TestCase):
             self.assertIn(f'"{head}"', source, command)
 
     def _payloads(self, root):
-        """Every result the CLI can emit, produced in-process.
-
-        Not subprocesses: a spawned CLI re-runs live host probes, which is slow
-        and varies with whatever happens to be installed."""
         profile = forge.host_profile("claude")
         return {
             "verify": (forge.verify_overlay(str(root), None), True),
@@ -1337,7 +1331,6 @@ class ResultContractTests(unittest.TestCase):
                 )
 
     def test_a_failing_verdict_exits_contract_not_failure(self):
-        """Ran-and-said-no must stay distinguishable from could-not-run."""
         with self.game() as root:
             completed = self._run("bootstrap-check", "--project", str(root))
             self.assertEqual(completed.returncode, forge.EXIT_CONTRACT)
@@ -1351,11 +1344,8 @@ class ResultContractTests(unittest.TestCase):
 
 
 class ActionSurfaceTests(unittest.TestCase):
-    """A routed action is a Forge verb, ids included. What Forge does not route
-    stays available as the GSD command it is."""
 
     def test_no_routed_action_id_carries_a_gsd_prefix(self):
-        """The command is translated at dispatch, but the id is displayed too."""
         source = (SCRIPTS_DIR / "forge_lifecycle.py").read_text(encoding="utf-8")
         ids = re.findall(r"forge_action\(\s*\"([^\"]+)\"", source)
         self.assertTrue(ids, "no forge_action ids found; the guard would assert over nothing")
@@ -1368,9 +1358,6 @@ class ActionSurfaceTests(unittest.TestCase):
             self.assertEqual(len(ids), len(set(ids)), f"duplicate action id in block: {ids}")
 
     def test_no_situation_offers_the_same_command_twice(self):
-        """Two ids that translate to one verb are a choice the user does not have.
-        Distinct ids are not enough: the registry fronts GSD verbs with Forge ones,
-        so an alternative naming the fronted verb collapses onto the recommended one."""
         profile = forge.host_profile("claude")
         tree = ast.parse((SCRIPTS_DIR / "forge_lifecycle.py").read_text(encoding="utf-8"))
         blocks = 0
@@ -1400,8 +1387,6 @@ class ActionSurfaceTests(unittest.TestCase):
 
 
 class UserScopeMcpTests(unittest.TestCase):
-    """Publishing to user scope: planned by default, consented when applied, and
-    never destructive to what it finds."""
 
     def setUp(self):
         self.original_command_probe = forge.command_probe
@@ -1414,8 +1399,6 @@ class UserScopeMcpTests(unittest.TestCase):
 
     @contextmanager
     def game(self, host="claude"):
-        """Yield a project plus a profile whose user surface points at a sandbox
-        file, so no test writes the developer's real config."""
         with workspace_tempdir() as temp:
             root = temp / "MyGame"
             root.mkdir()
@@ -1523,10 +1506,8 @@ class UserScopeMcpTests(unittest.TestCase):
 
 
 class McpGateTests(unittest.TestCase):
-    """Each validator gate must fail on a planted violation."""
 
     def _validate(self, mutate):
-        """Run the repo validator against a mutated copy of the repository."""
         with workspace_tempdir() as root:
             copy = root / "repo"
             shutil.copytree(
@@ -1895,7 +1876,6 @@ GIT_LFS_PRESENT = subprocess.run(
 
 
 class RecordingHandler(BaseHTTPRequestHandler):
-    """Base for the local servers the probes actually talk to."""
 
     def log_message(self, *args):
         pass
@@ -1917,7 +1897,6 @@ class RecordingHandler(BaseHTTPRequestHandler):
 
 
 class LfsLockHandler(RecordingHandler):
-    """The Git LFS locking API, enough of it that `git lfs lock` is a real lock."""
 
     locks = {}
 
@@ -1957,12 +1936,6 @@ class LfsLockHandler(RecordingHandler):
 
 
 class McpHandler(RecordingHandler):
-    """An endpoint that answers an MCP initialize the way a live server does.
-
-    `segmented-sse` is how Unreal actually answers: an event stream with no
-    content length, delivered in pieces, connection kept open afterwards. A
-    single bounded read sees only the first segment.
-    """
 
     behaviour = "json"
 
@@ -2006,9 +1979,6 @@ class McpHandler(RecordingHandler):
 
 @contextmanager
 def local_server(handler_class):
-    """A threaded server, because a single-threaded one cannot represent a real
-    endpoint: a handler holding its connection open would block every later
-    request, and holding connections open is what these servers do."""
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler_class)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -2021,7 +1991,6 @@ def local_server(handler_class):
 
 
 class ExecutorTests(unittest.TestCase):
-    """Isolation is a property of the runtime, not of an agent following instructions."""
 
     @contextmanager
     def game(self):
@@ -2054,7 +2023,6 @@ class ExecutorTests(unittest.TestCase):
         ]
 
     def authorise(self, root, *work_orders):
-        """Record the routing decision the CLI now requires before it will acquire."""
         for work_order in work_orders:
             forge.record_route_decision(
                 root,
@@ -2064,7 +2032,6 @@ class ExecutorTests(unittest.TestCase):
             )
 
     def test_two_workers_in_one_exclusive_group_cannot_both_hold(self):
-        """The group is declared in leases.json; the runtime, not the workflow, enforces it."""
         with self.game() as root:
             forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
             with self.assertRaises(forge.executor.ExecutorError) as caught:
@@ -2092,7 +2059,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
 
     def orphan_the_owner(self, root, pid=999999, machine=None):
-        """Rewrite the ledger so the owning process looks gone, without killing anything."""
         path = forge.executor.lease_state_path(root)
         document = json.loads(path.read_text(encoding="utf-8"))
         for lease in document["leases"]:
@@ -2115,7 +2081,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(forge.executor.status(root)["active"][0]["work_order"], "WO-2")
 
     def test_an_expired_lease_whose_owner_still_runs_keeps_its_lane(self):
-        """The Nanite-rebuild case: work outrunning the TTL must not have its isolation withdrawn."""
         with self.game() as root:
             forge.executor.acquire(
                 root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
@@ -2128,7 +2093,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(forge.executor.status(root)["active"][0]["work_order"], "WO-1")
 
     def test_an_owner_that_stopped_reporting_is_named_rather_than_hidden(self):
-        """A live owner keeps the lane, so the missed heartbeat has to be visible."""
         with self.game() as root:
             forge.executor.acquire(
                 root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
@@ -2139,7 +2103,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(forge.executor.status(root)["expired_awaiting_recovery"], [])
 
     def test_a_reused_pid_does_not_read_as_the_original_owner(self):
-        """Over a two-hour lease a pid can be recycled; the start time is what separates them."""
         with self.game() as root:
             forge.executor.acquire(
                 root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
@@ -2157,7 +2120,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertIn("pid was reused", recovered["release_note"])
 
     def test_a_lease_from_another_machine_waits_for_its_grace_window(self):
-        """Liveness is not checkable from here, so the clock alone must not free the lane."""
         with self.game() as root:
             forge.executor.acquire(
                 root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True, ttl_minutes=-1
@@ -2195,7 +2157,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_NOT_RENEWABLE"])
 
     def test_a_worktree_that_will_not_go_quarantines_the_lane_too(self):
-        """Rollback already reported this; the ordinary release path used to discard it."""
         with self.game() as root:
             forge.executor.acquire(
                 root,
@@ -2227,7 +2188,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(forge.executor.status(root)["quarantined"], [])
 
     def test_a_release_interrupted_mid_teardown_is_recoverable(self):
-        """RELEASING is a real state, so a crash between the ledger and the resource is visible."""
         with self.game() as root:
             forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
             path = forge.executor.lease_state_path(root)
@@ -2260,7 +2220,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(result["base_revision"], result["leases"][0]["isolation"]["base_revision"])
 
     def test_failed_isolation_leaves_no_lease_behind(self):
-        """Rollback is the point: a half-entered transaction is worse than a refusal."""
         with self.game() as root:
             packet = self.packet("WO-1", "project-files", mode="git-worktree")
             packet["isolation"]["base_revision"] = "no-such-revision"
@@ -2269,7 +2228,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(self.active_lanes(root), [])
 
     def test_a_lock_that_cannot_be_taken_never_becomes_a_held_lease(self):
-        """No LFS remote here, so the lock fails. The lease must fail with it."""
         with self.game() as root:
             packet = self.packet(
                 "WO-1", "generated-assets", mode="lfs-lock", lock_targets=["Content/Maps/Main.umap"]
@@ -2311,7 +2269,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_UNKNOWN"])
 
     def test_a_preview_and_a_result_carry_the_same_fields(self):
-        """A consumer reading a dry run must not hit a missing key on the real thing."""
         with self.game() as root:
             forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
             preview = forge.executor.release(root, "WO-1", outcome="passed", apply=False)
@@ -2343,7 +2300,6 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["PACKET_INVALID"])
 
     def test_two_processes_racing_the_same_lane_produce_exactly_one_holder(self):
-        """The ledger is guarded by a real mutex, so the race has one winner, not two."""
         with self.game() as root:
             self.authorise(root, "WO-A", "WO-B")
             packets = []
@@ -2373,7 +2329,6 @@ class ExecutorTests(unittest.TestCase):
 
 @unittest.skipUnless(GIT_LFS_PRESENT, "git-lfs is not installed on this machine")
 class LfsLockTests(unittest.TestCase):
-    """Binary ownership is refused by git, not by convention, so git has to be in the test."""
 
     def setUp(self):
         LfsLockHandler.locks = {}
@@ -2419,7 +2374,6 @@ class LfsLockTests(unittest.TestCase):
             self.assertEqual(forge.executor.status(root)["active"][0]["status"], "ACTIVE")
 
     def test_a_lock_another_writer_holds_refuses_the_lease(self):
-        """The point of a lock: refusal comes from git, across machines Forge cannot see."""
         with self.game() as root:
             LfsLockHandler.locks["other"] = {
                 "id": "other",
@@ -2436,7 +2390,6 @@ class LfsLockTests(unittest.TestCase):
             self.assertEqual(self.held_paths(), ["Content/Main.umap"])
 
     def test_a_partial_lock_set_is_rolled_back_completely(self):
-        """The second path is already locked, so the first must not stay locked either."""
         with self.game() as root:
             (root / "Content" / "Second.umap").write_bytes(b"another package")
             LfsLockHandler.locks["other"] = {
@@ -2456,7 +2409,6 @@ class LfsLockTests(unittest.TestCase):
             self.assertEqual(forge.executor.status(root)["active"], [])
 
     def test_a_rollback_that_cannot_undo_a_lock_says_so(self):
-        """Silence here would mean a lock held on the server that Forge no longer tracks."""
         with self.game() as root:
             (root / "Content" / "Second.umap").write_bytes(b"another package")
             subprocess.run(["git", "add", "-A"], cwd=str(root), capture_output=True, check=True)
@@ -2503,13 +2455,11 @@ class LfsLockTests(unittest.TestCase):
             self.assertEqual(self.held_paths(), [])
 
     def strand_the_lock_server(self, root):
-        """Point LFS at a dead endpoint so unlock fails the way a real outage does."""
         subprocess.run(
             ["git", "config", "lfs.url", "http://127.0.0.1:1"], cwd=str(root), capture_output=True, check=True
         )
 
     def test_a_lock_that_will_not_release_quarantines_the_lane(self):
-        """The lane must not read as free while the path it protects is still locked."""
         with self.game() as root:
             forge.executor.acquire(
                 root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
@@ -2525,7 +2475,6 @@ class LfsLockTests(unittest.TestCase):
             self.assertEqual([item["work_order"] for item in status["quarantined"]], ["WO-MAP"])
 
     def test_a_quarantined_write_scope_still_refuses_the_next_writer(self):
-        """Forge stops depending on the LFS server rediscovering the orphan for it."""
         with self.game() as root:
             forge.executor.acquire(
                 root, self.packet("WO-MAP", ["Content/Main.umap"]), owner="worker-a", apply=True
@@ -2586,7 +2535,6 @@ class LfsLockTests(unittest.TestCase):
 
 
 class McpHandshakeTests(unittest.TestCase):
-    """A route is verified by an answer from a running server, never by a config file."""
 
     def setUp(self):
         McpHandler.behaviour = "json"
@@ -2630,24 +2578,18 @@ class McpHandshakeTests(unittest.TestCase):
                 self.assertEqual(self.contract(root)["health"], "HEALTHY")
 
     def test_an_event_stream_answer_is_verified_too(self):
-        """The first-party server speaks HTTP and SSE, so the SSE framing must count."""
         McpHandler.behaviour = "sse"
         with local_server(McpHandler) as url:
             with self.game(url) as root:
                 self.assertEqual(self.route(root)["status"], "AVAILABLE_VERIFIED")
 
     def test_an_answer_on_a_stream_that_stays_open_is_still_verified(self):
-        """How Unreal actually answers: an event stream with no content length,
-        kept open after the reply. Reading to EOF never returns, so a probe that
-        waits for one reports a live editor as a route that did not answer."""
         McpHandler.behaviour = "held-open-sse"
         with local_server(McpHandler) as url:
             with self.game(url) as root:
                 self.assertEqual(self.route(root)["status"], "AVAILABLE_VERIFIED")
 
     def test_a_json_rpc_server_that_is_not_mcp_is_not_verified(self):
-        """`result` present is not `result` being an MCP initialize payload. Deciding
-        this by substring accepted any JSON-RPC server as Unreal's typed route."""
         McpHandler.behaviour = "jsonrpc-not-mcp"
         with local_server(McpHandler) as url:
             with self.game(url) as root:
@@ -2665,7 +2607,6 @@ class McpHandshakeTests(unittest.TestCase):
                 self.assertEqual(self.contract(root)["health"], "UNAVAILABLE")
 
     def test_something_listening_that_is_not_mcp_is_not_a_route(self):
-        """A port answering is not a server speaking. Only the handshake decides."""
         McpHandler.behaviour = "not-mcp"
         with local_server(McpHandler) as url:
             with self.game(url) as root:
@@ -2693,7 +2634,6 @@ class McpHandshakeTests(unittest.TestCase):
 
 
 class EditorClosedRouteTests(unittest.TestCase):
-    """The editor-closed API is a peer route, not the live route's fallback."""
 
     def setUp(self):
         self.profile = forge.host_profile("claude")
@@ -2724,10 +2664,9 @@ class EditorClosedRouteTests(unittest.TestCase):
         self.assertEqual(self.row["lane"], "lane.ue-editor-closed")
         self.assertEqual(self.row["lease"], "ue-editor-closed-api")
         live = next(row for row in forge.mcp_providers() if row["id"] == "unreal-native-mcp")
-        self.assertNotEqual(self.row["lane"], live["lane"], "peer routes must not share a lane")
+        self.assertNotEqual(self.row["lane"], live["lane"])
 
     def test_its_capabilities_are_servable_at_all(self):
-        """They were catalog-declared and route-less, so no contract could ever bind them."""
         index = forge.mcp_capability_index()
         for capability in ("ue.python.commandlet", "ue.batch"):
             self.assertIn(capability, index)
@@ -2758,11 +2697,6 @@ class EditorClosedRouteTests(unittest.TestCase):
             self.assertEqual(self.contracts(root)["ue.python.commandlet"]["status"], "AVAILABLE_UNVERIFIED")
 
     def test_a_live_editor_closes_the_lane(self):
-        """The inverse handshake: a commandlet must not run against a project the editor holds.
-
-        A live editor is both an endpoint that answers and a process that holds the
-        project. The fixture supplies both, because either alone is a different case.
-        """
         with local_server(McpHandler) as url:
             with self.game(engine_present=True) as root:
                 (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
@@ -2790,7 +2724,7 @@ class EditorClosedRouteTests(unittest.TestCase):
             contracts = self.contracts(root)
             live = contracts["ue.live.typed"]["status"].startswith("AVAILABLE")
             closed = contracts["ue.python.commandlet"]["status"].startswith("AVAILABLE")
-            self.assertFalse(live and closed, "one project cannot offer both editor lanes at once")
+            self.assertFalse(live and closed)
 
     @contextmanager
     def process_table(self, table):
@@ -2811,7 +2745,6 @@ class EditorClosedRouteTests(unittest.TestCase):
         }
 
     def test_a_frozen_editor_still_holds_the_project(self):
-        """MCP goes quiet exactly when the editor hangs, which is when a commandlet is most dangerous."""
         with self.game(engine_present=True) as root:
             (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
             table = {"resolved": True, "mechanism": "Win32_Process", "processes": [self.editor_process(root)]}
@@ -2844,7 +2777,6 @@ class EditorClosedRouteTests(unittest.TestCase):
                                     for item in ownership["evidence"]))
 
     def test_inspection_that_cannot_answer_shuts_the_lane_and_asks_the_user(self):
-        """Absence of evidence is not evidence of absence, so Forge refuses rather than guessing."""
         with self.game(engine_present=True) as root:
             (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
             broken = {"resolved": False, "mechanism": None, "processes": [], "detail": "WMI did not answer"}
@@ -2860,7 +2792,6 @@ class EditorClosedRouteTests(unittest.TestCase):
                 self.assertFalse(self.contracts(root)["ue.python.commandlet"]["status"].startswith("AVAILABLE"))
 
     def test_a_mechanism_without_command_lines_cannot_conclude_either(self):
-        """tasklist names processes but not their arguments, so it cannot say which project is held."""
         with self.game(engine_present=True) as root:
             (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
             blind = {
@@ -2875,7 +2806,6 @@ class EditorClosedRouteTests(unittest.TestCase):
 
     @contextmanager
     def answering_editor(self, root):
-        """Point this project's declared endpoint at a server that answers MCP."""
         McpHandler.behaviour = "json"
         with local_server(McpHandler) as url:
             path = root / ".forge" / "mcp.json"
@@ -2887,8 +2817,6 @@ class EditorClosedRouteTests(unittest.TestCase):
             yield url
 
     def test_an_answer_with_no_editor_process_at_all_is_a_contradiction(self):
-        """Something serves MCP while no editor exists. Two signals disagreeing is
-        not evidence the project is free, so the lane stays shut and asks."""
         with self.game(engine_present=True) as root:
             (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
             with self.answering_editor(root):
@@ -2900,7 +2828,6 @@ class EditorClosedRouteTests(unittest.TestCase):
                     self.assertFalse(forge.probe_process_route(root, self.row)["lane_clear"])
 
     def test_an_mcp_answer_with_no_attributable_process_is_held(self):
-        """An editor is live and nothing can say whose project it holds: fail closed."""
         with self.game(engine_present=True) as root:
             (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
             with self.answering_editor(root):
@@ -2911,8 +2838,6 @@ class EditorClosedRouteTests(unittest.TestCase):
                 self.assertEqual(ownership["evidence"][0]["signal"], "mcp-handshake")
 
     def test_an_editor_answering_for_another_project_does_not_hold_this_one(self):
-        """The MCP endpoint is a machine port, not a project's. On a workstation
-        running two editors, one project's session must not shut another's lane."""
         with self.game(engine_present=True) as root:
             (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
             elsewhere = self.editor_process(
@@ -2939,7 +2864,6 @@ class EditorClosedRouteTests(unittest.TestCase):
 
 
 class RoutedAcquisitionTests(unittest.TestCase):
-    """Routing resolves what the work needs; acquiring may not hold less than that."""
 
     def setUp(self):
         self.profile = forge.host_profile("claude")
@@ -2981,7 +2905,6 @@ class RoutedAcquisitionTests(unittest.TestCase):
         return forge.route_work(str(root), str(root / "request.json"))
 
     def record(self, root, **overrides):
-        """Put a decision in the ledger, the way `route --apply` does."""
         decision = {**self.decision(root), **overrides}
         forge.record_route_decision(root, decision, "test")
         return decision
@@ -3008,7 +2931,6 @@ class RoutedAcquisitionTests(unittest.TestCase):
             self.assertEqual(decision["lane_warnings"], [])
 
     def test_routing_reads_the_live_contract_not_a_stale_snapshot(self):
-        """The probe decides, so an absent engine degrades the route to its fallback."""
         with self.game(engine_present=False) as root:
             decision = self.decision(root)
             self.assertTrue(decision["tool_access_degraded"])
@@ -3072,7 +2994,6 @@ class RoutedAcquisitionTests(unittest.TestCase):
             self.assertEqual(result["route"], str(route_path))
 
     def test_a_lease_in_no_exclusive_group_is_reported_not_silent(self):
-        """A typo'd lane still leases, but it protects nothing, so it must be visible."""
         with self.game() as root:
             self.record(root, leases=["ue-editor-closed-api-typo"])
             packet_path = self.packet(root, "typo.json", leases=["ue-editor-closed-api-typo"])
@@ -3090,7 +3011,6 @@ class RoutedAcquisitionTests(unittest.TestCase):
             self.assertEqual(status["lane_groups"]["ue-editor-closed-api"], "unreal-project-super-lock")
 
     def test_a_packet_no_decision_covers_is_refused_and_changes_nothing(self):
-        """The seam the review named: an unrouted packet used to be taken on trust."""
         with self.game() as root:
             ledger = forge.executor.lease_state_path(root)
             before = ledger.read_bytes()
@@ -3109,7 +3029,6 @@ class RoutedAcquisitionTests(unittest.TestCase):
             self.assertTrue(result["route_recorded_at"])
 
     def test_a_recorded_decision_still_refuses_a_packet_holding_less(self):
-        """Reading the decision instead of being handed it does not relax the check."""
         with self.game() as root:
             self.record(root)
             with self.assertRaises(forge.ForgeExit) as caught:
@@ -3118,7 +3037,6 @@ class RoutedAcquisitionTests(unittest.TestCase):
             self.assertEqual(forge.executor.status(root)["active"], [])
 
     def test_a_decision_the_environment_has_outlived_is_refused(self):
-        """The two Unreal routes swap as the editor opens, so an old decision names a lane that may protect nothing."""
         with self.game() as root:
             self.record(root)
             document = forge.read_route_decisions(root)
@@ -3151,7 +3069,6 @@ class RoutedAcquisitionTests(unittest.TestCase):
             self.assertEqual(len(forge.read_route_decisions(root)["decisions"]), 1)
 
     def test_a_packet_naming_an_alias_finds_the_canonical_decision(self):
-        """Aliases are display compatibility, so they must not split the decision from the packet."""
         with self.game() as root:
             registry_path = root / ".forge" / "state" / "packet-registry.json"
             registry = json.loads(registry_path.read_text(encoding="utf-8"))
@@ -3194,7 +3111,6 @@ class RoutedAcquisitionTests(unittest.TestCase):
 
 
 class ProfileStabilityTests(unittest.TestCase):
-    """The detected profile describes the machine, so how the path was typed cannot change it."""
 
     @contextmanager
     def game(self):
@@ -3215,10 +3131,9 @@ class ProfileStabilityTests(unittest.TestCase):
                     os.chdir(original)
                 self.assertEqual(result["action"], "unchanged", f"{spelling!r} proposed a change")
             proposals = list((root / ".forge" / "capabilities").glob("*.forge-proposed"))
-            self.assertEqual(proposals, [], "re-profiling wrote a proposal a human must resolve")
+            self.assertEqual(proposals, [])
 
     def test_the_invocation_record_is_kept_but_never_compared(self):
-        """`requested` stays in the file as provenance; it just cannot cause a proposal."""
         with self.game() as root:
             detected = json.loads((root / ".forge" / "capabilities" / "detected.json").read_text(encoding="utf-8"))
             self.assertIn("requested", detected["project"])
@@ -3228,7 +3143,6 @@ class ProfileStabilityTests(unittest.TestCase):
             self.assertEqual(forge.stable_profile(detected), forge.stable_profile(widened))
 
     def test_a_real_capability_change_still_proposes(self):
-        """Stripping the invocation must not blind the comparison to the machine."""
         with self.game() as root:
             detected = json.loads((root / ".forge" / "capabilities" / "detected.json").read_text(encoding="utf-8"))
             changed = json.loads(json.dumps(detected))
@@ -3237,8 +3151,6 @@ class ProfileStabilityTests(unittest.TestCase):
 
 
 class CommandSurfaceTests(unittest.TestCase):
-    """Every verb the parser declares is dispatched at least once, through main, so a
-    payload that violates the result contract cannot reach a user unexercised."""
 
     @classmethod
     def leaf_commands(cls):
@@ -3342,7 +3254,6 @@ class CommandSurfaceTests(unittest.TestCase):
         }
 
     def strand_a_lease(self, root):
-        """A quarantined lease for reconcile to answer about, held read-only so it blocks nothing else."""
         path = forge.executor.lease_state_path(root)
         document = json.loads(path.read_text(encoding="utf-8"))
         document["leases"].append({
@@ -3361,7 +3272,6 @@ class CommandSurfaceTests(unittest.TestCase):
         return code, stream.getvalue()
 
     def test_every_declared_command_is_exercised(self):
-        """A new verb with no invocation here is a verb nothing ever ran."""
         self.assertEqual(sorted(self.leaf_commands() - set(self.invocations(Path(".")))), [])
 
     def test_every_command_answers_with_an_identified_payload(self):
@@ -3381,7 +3291,6 @@ class CommandSurfaceTests(unittest.TestCase):
                     self.assertIn("schema", payload, f"{name} returned a payload with no schema identity")
 
     def test_a_read_only_invocation_stays_a_preview(self):
-        """None of the above may write without --apply, or the surface sweep is destructive."""
         with self.game() as root:
             before = {p: p.read_bytes() for p in sorted((root / ".forge").rglob("*")) if p.is_file()}
             for name, argv in sorted(self.invocations(root).items()):
@@ -3389,14 +3298,11 @@ class CommandSurfaceTests(unittest.TestCase):
                     continue
                 self.run_command(argv)
             after = {p: p.read_bytes() for p in sorted((root / ".forge").rglob("*")) if p.is_file()}
-            self.assertEqual(sorted(before), sorted(after), "a preview created or removed a file")
+            self.assertEqual(sorted(before), sorted(after))
             self.assertEqual([p.name for p in before if before[p] != after[p]], [])
 
 
 class UnrealMcpSettingsTests(unittest.TestCase):
-    """Forge probes an endpoint the project declares; the editor serves one its own
-    settings declare. A project that moved the port used to read exactly like a
-    project whose editor was closed."""
 
     @contextmanager
     def game(self):
@@ -3419,7 +3325,7 @@ class UnrealMcpSettingsTests(unittest.TestCase):
             settings = forge.unreal_mcp_settings(root)
             self.assertFalse(settings["declared_by_project"])
             self.assertEqual(settings["port"], 8000)
-            self.assertFalse(settings["auto_start"], "bAutoStartServer is off unless a project turns it on")
+            self.assertFalse(settings["auto_start"])
 
     def test_the_project_default_config_is_read(self):
         with self.game() as root:
@@ -3432,7 +3338,6 @@ class UnrealMcpSettingsTests(unittest.TestCase):
             self.assertTrue(settings["auto_start"])
 
     def test_the_saved_per_user_file_wins_over_the_project_default(self):
-        """Unreal layers these, and the saved file is what the editor actually ran with."""
         with self.game() as root:
             self.write_settings(root, "Config/DefaultEditorPerProjectUserSettings.ini", "ServerPortNumber=8800\n")
             self.write_settings(
@@ -3467,11 +3372,9 @@ class UnrealMcpSettingsTests(unittest.TestCase):
                 root, "Config/DefaultEditorPerProjectUserSettings.ini",
                 "; a comment\n+ServerPortNumber=8800\n\n[/Script/Other.Thing]\nServerPortNumber=1234\n",
             )
-            self.assertEqual(forge.unreal_mcp_settings(root)["port"], 8800,
-                             "a later section must not leak into this one")
+            self.assertEqual(forge.unreal_mcp_settings(root)["port"], 8800)
 
     def test_a_failed_handshake_names_the_port_before_anything_else(self):
-        """The port is checked first because it is the one cause that looks like every other."""
         with self.game() as root:
             self.write_settings(root, "Config/DefaultEditorPerProjectUserSettings.ini", "ServerPortNumber=8800\n")
             row = next(item for item in forge.mcp_status(root, forge.host_profile("claude"))["routes"]
@@ -3480,12 +3383,10 @@ class UnrealMcpSettingsTests(unittest.TestCase):
             self.assertIn("THE PORT", row["note"])
             self.assertIn("restart", row["note"])
             self.assertEqual(row["engine_settings"]["port"], 8800)
-            self.assertTrue(row["endpoint_disagreement"]["port_differs"],
-                            "an agent must be able to read this without parsing the prose")
+            self.assertTrue(row["endpoint_disagreement"]["port_differs"])
 
 
 class StateVersionTests(unittest.TestCase):
-    """`.forge` carries months of decisions, so upgrading Forge over it is a real operation."""
 
     @contextmanager
     def game(self):
@@ -3502,7 +3403,6 @@ class StateVersionTests(unittest.TestCase):
         path.write_text(json.dumps(document, indent=2), encoding="utf-8")
 
     def test_the_shipped_template_states_the_version_this_build_supports(self):
-        """The number in the template and the number in the code were never tied together."""
         template = json.loads(
             (ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state" /
              "install-state.json").read_text(encoding="utf-8")
@@ -3521,10 +3421,9 @@ class StateVersionTests(unittest.TestCase):
             self.assertEqual(state["status"], "MIGRATABLE")
             self.assertEqual(state["found"], 1)
             self.assertTrue(state["migrations"])
-            self.assertTrue(forge.verify_overlay(str(root))["ok"], "migratable state is not a failure")
+            self.assertTrue(forge.verify_overlay(str(root))["ok"])
 
     def test_newer_state_is_refused_rather_than_guessed_at(self):
-        """A newer .forge knows things this build does not, and would be silently dropped."""
         with self.game() as root:
             self.set_state_version(root, forge.STATE_SCHEMA_VERSION + 1)
             state = forge.state_version(root)
@@ -3539,15 +3438,12 @@ class StateVersionTests(unittest.TestCase):
             self.assertEqual(forge.state_version(root)["status"], "ABSENT")
 
     def test_every_migration_step_below_the_current_version_is_documented(self):
-        """A version bump with no migration note leaves an upgrade nobody can perform."""
         documented = set(forge.STATE_MIGRATIONS)
         expected = set(range(1, forge.STATE_SCHEMA_VERSION))
         self.assertEqual(sorted(expected - documented), [])
 
 
 class DispatchAdmissionTests(unittest.TestCase):
-    """Admission is one decision. Nothing is acquired unless every check passed,
-    and nothing is recorded unless it was acquired."""
 
     def setUp(self):
         self.profile = forge.host_profile("claude")
@@ -3644,7 +3540,6 @@ class DispatchAdmissionTests(unittest.TestCase):
                              json.loads(forge.work_orders_path(root).read_text(encoding="utf-8"))["orders"])
 
     def test_a_capability_that_cannot_be_reached_now_refuses_admission(self):
-        """The decision was scored when the engine was present; it is not any more."""
         with self.game(engine_present=True) as root:
             self.record(root)
             os.environ["PATH"] = ""
@@ -3671,7 +3566,6 @@ class DispatchAdmissionTests(unittest.TestCase):
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_DECISION_MISSING"])
 
     def test_routes_that_drifted_since_the_decision_refuse_admission(self):
-        """Recorded and live must agree at admission, not merely have agreed once."""
         with self.game() as root:
             decision = self.record(root)
             stale = {**decision, "tool_access": [
@@ -3696,14 +3590,6 @@ class DispatchAdmissionTests(unittest.TestCase):
 
 
 class WorkflowReachabilityTests(unittest.TestCase):
-    """Every verb is reachable from a workflow, not merely runnable.
-
-    `CommandSurfaceTests` proves each verb runs. Nothing proved any verb is ever
-    reached, and a verb no workflow invokes is a verb that only rots: `route`
-    produced the decision `exec acquire` wanted and no step ran it, `profile` was
-    named in prose while every other command around it was named by path, and
-    `validate` going unrun is why six shipped schemas were never exercised.
-    """
 
     EXEMPT = {
         "mcp-status": "the retained spelling of route-status, kept so callers do not break; "
@@ -3717,14 +3603,12 @@ class WorkflowReachabilityTests(unittest.TestCase):
 
     @classmethod
     def install_modes(cls):
-        """The -Mode spellings install.ps1 accepts, mapped the way install.ps1 maps them."""
         text = (ROOT / "install.ps1").read_text(encoding="utf-8")
         declared = re.search(r"\$verbMap = @\{([^}]*)\}", text)
         pairs = re.findall(r"'([^']+)'\s*=\s*'([^']+)'", declared.group(1) if declared else "")
         return dict(pairs)
 
     def invoked(self):
-        """Every command the prose actually tells someone to run, in either spelling."""
         verb_map = self.install_modes()
         found = set()
         for root in self.PROSE_ROOTS:
@@ -3752,19 +3636,15 @@ class WorkflowReachabilityTests(unittest.TestCase):
         )
 
     def test_every_exemption_names_a_command_that_exists(self):
-        """An exemption outliving its command would silently excuse a real gap."""
         declared = CommandSurfaceTests.leaf_commands()
         self.assertEqual(sorted(set(self.EXEMPT) - declared), [])
 
     def test_no_exemption_covers_a_command_the_prose_already_invokes(self):
-        """An exemption that is not needed is a claim the repo no longer makes."""
         invoked = self.invoked()
         self.assertEqual(sorted(command for command in self.EXEMPT if command in invoked), [])
 
 
 class ModuleBoundaryTests(unittest.TestCase):
-    """The split holds: every reference resolves, the layering stays acyclic, and
-    the command line still names the whole public surface."""
 
     def loaded(self):
         return {path.stem: sys.modules[path.stem] for path in MODULE_PATHS if path.stem in sys.modules}
@@ -3790,7 +3670,6 @@ class ModuleBoundaryTests(unittest.TestCase):
         return found
 
     def test_every_name_a_module_references_is_defined_or_imported(self):
-        """Catches a reference the split left behind before a rare path raises NameError."""
         modules = self.loaded()
         self.assertIn("forge_core", modules, "modules did not load; the rest would assert over nothing")
         for name, module in sorted(modules.items()):
@@ -3821,7 +3700,6 @@ class ModuleBoundaryTests(unittest.TestCase):
                         pending.append(nxt)
 
     def test_the_command_line_names_every_public_verb(self):
-        """`forge.X` has to keep resolving, so the split cannot quietly drop a name."""
         for path in MODULE_PATHS:
             if path.stem in {"forge", "forge_executor"}:
                 continue
@@ -3829,7 +3707,6 @@ class ModuleBoundaryTests(unittest.TestCase):
                 self.assertTrue(hasattr(forge, name), f"forge.py does not re-export {name} from {path.name}")
 
     def test_no_module_imports_the_command_line(self):
-        """forge.py is the entry point; nothing underneath may depend on it."""
         for path in MODULE_PATHS:
             if path.stem == "forge":
                 continue
@@ -3837,7 +3714,6 @@ class ModuleBoundaryTests(unittest.TestCase):
                              f"{path.name} imports the CLI it is supposed to sit below")
 
     def test_the_executor_stays_independent_of_the_rest(self):
-        """It is the transactional core; a dependency on the CLI layers would undo that."""
         self.assertEqual(self.imported_modules(EXECUTOR_PATH), set())
 
 

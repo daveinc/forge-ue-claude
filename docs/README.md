@@ -29,6 +29,7 @@ Start with a tutorial if you have not run Forge before. Reach for a how-to when 
 - [GSD independence map](gsd-independence-map.md) — what GSD does, what Forge fronts, and what replacing it would cost.
 - [The Forge counterplan](COUNTERPLAN.md) — the full architecture and staged build proposal.
 - [Incidents](incidents/2026-08-15-runnerroyale-lifecycle-drift.md) — post-mortems that changed a Forge rule.
+- [Test-prose findings](incidents/test-prose-findings.md) — the 23 claims that were prose in `tests/`, and what each should assert.
 
 ## Related
 
