@@ -220,7 +220,8 @@
         "mcp-server-version-change",
         "export-contract-change",
         "host-swap"
-      ]
+      ],
+      "tool_surface": "Never probed against a live server, so nothing here is a confirmed contract, unlike the Unreal routes. No tool catalogue ships for this route: discover the exact call names from the bound namespace rather than assuming them, and verify the export contract the asset must satisfy rather than the call that produced it."
     }
   ]
 }

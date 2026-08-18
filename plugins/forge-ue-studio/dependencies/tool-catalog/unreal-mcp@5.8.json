@@ -1,0 +1,100 @@
+{
+  "schema": "forge.tool-catalog/v1",
+  "server": "unreal-mcp",
+  "engine_version": "5.8",
+  "provenance": "Read off a live UE 5.8 handshake on 2026-08-17. tests/unreal/live_editor_stages.py calls these names against a real editor, so a drifted name fails the acceptance run rather than rotting here.",
+  "discovery": {
+    "verbs": ["list_toolsets", "describe_toolset", "call_tool"],
+    "note": "Every toolset tool is reached through call_tool with toolset_name plus an unprefixed tool_name. describe_toolset returns the authoritative parameter schema; this catalogue is what to expect, not a substitute for reading it when a call is refused."
+  },
+  "toolsets": {
+    "editor_toolset.toolsets.blueprint.BlueprintTools": {
+      "purpose": "Author and compile Blueprint assets in the open editor.",
+      "tools": {
+        "create": {
+          "capability": "ue.live.typed",
+          "purpose": "Create a Blueprint asset of a given parent class.",
+          "parameters": {
+            "folder_path": "Content-relative folder, for example /Game/ForgeAcceptance",
+            "asset_name": "Asset name without a path",
+            "asset_type": "{\"refPath\": \"<full class object path>\"} — never a bare class name"
+          },
+          "returns": "An object carrying refPath for the created asset.",
+          "known_errors": ["Refuses once per missing argument, naming only the next missing one.", "A bare class name such as Actor is rejected; pass /Script/CoreUObject.Class'/Script/Engine.Actor'."]
+        },
+        "compile_blueprint": {
+          "capability": "ue.live.typed",
+          "purpose": "Compile a Blueprint and report whether it succeeded.",
+          "parameters": {
+            "blueprint": "The object returned by create, or {\"refPath\": \"...\"}",
+            "warnings_as_errors": "Boolean; must be supplied even though the schema marks it optional"
+          },
+          "returns": "Null on success, which is not a failure.",
+          "known_errors": ["Returns null when it succeeds; read a follow-up query rather than the absence of an error."]
+        }
+      }
+    },
+    "editor_toolset.toolsets.asset.AssetTools": {
+      "purpose": "Inspect and persist assets in the open editor.",
+      "tools": {
+        "exists": {
+          "capability": "ue.live.typed",
+          "purpose": "Whether an asset path resolves in the content tree.",
+          "parameters": {"path": "Full content path, for example /Game/ForgeAcceptance/BP_Thing"},
+          "returns": "Boolean.",
+          "known_errors": []
+        },
+        "save_assets": {
+          "capability": "ue.live.typed",
+          "purpose": "Persist modified assets to disk.",
+          "parameters": {"asset_paths": "Array of full content paths"},
+          "returns": "Boolean true when every path saved.",
+          "known_errors": ["An unsaved Blueprint reads as existing but does not survive an editor restart; save before claiming the work landed."]
+        }
+      }
+    },
+    "EditorToolset.EditorAppToolset": {
+      "purpose": "Drive Play In Editor and capture viewport evidence.",
+      "tools": {
+        "StartPIE": {
+          "capability": "ue.pie",
+          "purpose": "Begin a Play In Editor session.",
+          "parameters": {"options": "{\"bSimulate\": false} — must be supplied"},
+          "returns": "Null on success.",
+          "known_errors": ["Starting while PIE already runs is an error; check IsPIERunning first.", "PIE does not report running immediately; poll IsPIERunning rather than assuming."]
+        },
+        "StopPIE": {
+          "capability": "ue.pie",
+          "purpose": "End the current Play In Editor session.",
+          "parameters": {},
+          "returns": "Null on success.",
+          "known_errors": ["Always stop PIE before releasing the lane; a left-running session holds the editor."]
+        },
+        "IsPIERunning": {
+          "capability": "ue.pie",
+          "purpose": "Whether a PIE session is currently running.",
+          "parameters": {},
+          "returns": "Boolean.",
+          "known_errors": []
+        },
+        "GetVisibleActors": {
+          "capability": "ue.pie",
+          "purpose": "Read actor state from the running world.",
+          "parameters": {},
+          "returns": "Array of actor records; empty means nothing readable, which is a failure for evidence purposes.",
+          "known_errors": ["Returns an empty array outside a running PIE session rather than erroring."]
+        },
+        "CaptureViewport": {
+          "capability": "ue.viewport",
+          "purpose": "Capture a viewport image as visual evidence.",
+          "parameters": {
+            "captureTransform": "{\"location\": {x,y,z}, \"rotation\": {pitch,yaw,roll}, \"scale\": {x,y,z}} — every field required",
+            "annotations": "Array; pass [] when none"
+          },
+          "returns": "Content parts including an image part carrying PNG data.",
+          "known_errors": ["Refuses once per missing argument until every declared field is passed.", "A result with no image part is a failed capture even when no error was raised."]
+        }
+      }
+    }
+  }
+}

@@ -9,7 +9,7 @@ from typing import Any
 import forge_executor as executor
 from forge_core import ERROR_REASON, EXIT_CONTRACT, EXIT_USAGE, RESIDENT_PROVIDER, fail, load_json, plugin_root, project_root, utc_now
 from forge_hosts import active_profile
-from forge_mcp import mcp_capability_contracts
+from forge_mcp import catalog_tool_names, mcp_capability_contracts
 
 
 ISOLATION_STRENGTH = ("read-only", "git-worktree", "lfs-lock", "project-exclusive")
@@ -229,6 +229,8 @@ def resolve_tool_access(contracts: dict[str, Any], required_capabilities: set[st
                     "lease": None,
                     "isolation_mode": None,
                     "fallbacks": [],
+                    "tool_surface": None,
+                    "tools": [],
                     "detail": "no typed route serves this capability; the resident host or an engine prerequisite answers it",
                 }
             )
@@ -246,6 +248,8 @@ def resolve_tool_access(contracts: dict[str, Any], required_capabilities: set[st
                 "lease": contract.get("lease"),
                 "isolation_mode": contract.get("isolation_mode"),
                 "fallbacks": contract.get("fallbacks", []),
+                "tool_surface": contract.get("tool_surface"),
+                "tools": catalog_tool_names(contract.get("provider"), [name]),
                 "detail": contract.get("detection_note"),
             }
         )

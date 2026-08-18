@@ -12,6 +12,7 @@ from forge_core import (
     EXIT_USAGE,
     ForgeExit,
     fail,
+    find_uproject,
     load_json,
     plugin_root,
     proposal_payload_path,
@@ -19,7 +20,7 @@ from forge_core import (
     toml_escape,
     utc_now,
 )
-from forge_mcp import agent_tool_surface, render_project_mcp
+from forge_mcp import agent_route_briefing, agent_tool_surface, project_engine_version, render_project_mcp
 
 
 def host_registry() -> dict[str, Any]:
@@ -63,7 +64,7 @@ def render_tokens(text: str, profile: dict[str, Any]) -> str:
     return rendered
 
 
-def render_agent(definition: dict[str, Any], profile: dict[str, Any]) -> str:
+def render_agent(definition: dict[str, Any], profile: dict[str, Any], engine_version: str | None = None) -> str:
     """Render a neutral agent definition into the active host's agent format."""
     name = str(definition.get("name", "")).strip()
     description = render_tokens(str(definition.get("description", "")).strip(), profile)
@@ -71,6 +72,9 @@ def render_agent(definition: dict[str, Any], profile: dict[str, Any]) -> str:
     if not name:
         raise fail("Agent definition is missing a name", reason=ERROR_REASON["AGENT_INVALID"])
     tools = agent_tool_surface(definition, profile)
+    briefing = agent_route_briefing(definition, engine_version)
+    if briefing:
+        instructions = f"{instructions}\n\n{briefing}"
     fmt = profile.get("project_surface", {}).get("agent_format", "markdown-frontmatter")
     if fmt == "toml":
         rendered = (
@@ -114,6 +118,7 @@ def rendered_surfaces(
     """Build every host-specific file this project needs, from the neutral canon."""
     canon = canon_root or canon_source(root)
     surface = profile.get("project_surface", {})
+    engine_version = project_engine_version(find_uproject(root))
     outputs: list[tuple[Path, bytes]] = []
 
     template = canon / ".forge" / "templates" / "project-instructions.md"
@@ -125,7 +130,7 @@ def rendered_surfaces(
     extension = str(surface.get("agent_extension", ".md"))
     for definition in agent_definitions(canon):
         target = agent_dir / f"{definition['name']}{extension}"
-        outputs.append((target, render_agent(definition, profile).encode("utf-8")))
+        outputs.append((target, render_agent(definition, profile, engine_version).encode("utf-8")))
 
     mcp_surface = render_project_mcp(root, profile, canon)
     if mcp_surface is not None:

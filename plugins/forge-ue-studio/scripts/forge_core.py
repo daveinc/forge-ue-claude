@@ -49,6 +49,8 @@ ERROR_REASON = MappingProxyType(
         "RESULT_CONTRACT_VIOLATED": "result_contract_violated",
         "JSON_UNREADABLE": "json_unreadable",
         "MCP_UNKNOWN_CAPABILITY": "mcp_unknown_capability",
+        "CATALOG_MISSING": "tool_catalog_missing",
+        "CATALOG_STALE": "tool_catalog_stale",
         "MCP_FIELD_RESTATED": "mcp_field_restated",
         "MCP_INCOMPLETE_DECLARATION": "mcp_incomplete_declaration",
         "MCP_ALREADY_DECLARED": "mcp_already_declared",

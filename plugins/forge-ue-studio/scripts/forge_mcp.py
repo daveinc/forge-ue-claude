@@ -94,6 +94,98 @@ def agent_tool_surface(definition: dict[str, Any], profile: dict[str, Any]) -> l
     return tools
 
 
+def project_engine_version(uproject: Path | None) -> str | None:
+    """The engine a project is associated with, which is what a catalogue is keyed by."""
+    if not uproject or not uproject.exists():
+        return None
+    value = str(load_json(uproject).get("EngineAssociation", "")).strip()
+    return value or None
+
+
+def tool_catalog(server: str, engine_version: str | None = None) -> dict[str, Any]:
+    """The shipped tool catalogue for a server, newest engine first when none is named."""
+    if not server:
+        return {}
+    folder = plugin_root() / "dependencies" / "tool-catalog"
+    if not folder.is_dir():
+        return {}
+    candidates = sorted(folder.glob(f"{server}@*.json"), reverse=True)
+    if engine_version:
+        exact = folder / f"{server}@{engine_version}.json"
+        if exact.exists():
+            return load_json(exact)
+    return load_json(candidates[0]) if candidates else {}
+
+
+def catalog_staleness(server: str, engine_version: str | None) -> dict[str, Any] | None:
+    """Whether the shipped catalogue was written for the engine actually in use."""
+    catalogue = tool_catalog(server, engine_version)
+    if not catalogue:
+        return {"reason": ERROR_REASON["CATALOG_MISSING"], "server": server, "engine_version": engine_version, "catalog_version": None,
+                "note": f"No shipped tool catalogue for {server!r}; the agent must discover every tool name through list_toolsets."}
+    catalogued = str(catalogue.get("engine_version", ""))
+    if engine_version and catalogued and catalogued != engine_version:
+        return {"reason": ERROR_REASON["CATALOG_STALE"], "server": server, "engine_version": engine_version, "catalog_version": catalogued,
+                "note": f"The catalogue for {server!r} was read off UE {catalogued} and this project is associated with UE {engine_version}; "
+                        "confirm names through describe_toolset before trusting them."}
+    return None
+
+
+def catalog_tools_for(server: str, capabilities: list[str], engine_version: str | None = None) -> dict[str, dict[str, Any]]:
+    """Toolset -> the tools within it that serve these capabilities, and nothing else."""
+    catalogue = tool_catalog(server, engine_version)
+    wanted = {str(item) for item in capabilities}
+    assorted: dict[str, dict[str, Any]] = {}
+    for toolset, body in catalogue.get("toolsets", {}).items():
+        tools = {name: spec for name, spec in body.get("tools", {}).items() if str(spec.get("capability")) in wanted}
+        if tools:
+            assorted[str(toolset)] = {"purpose": body.get("purpose"), "tools": tools}
+    return assorted
+
+
+def catalog_tool_names(provider_id: str | None, capabilities: list[str], engine_version: str | None = None) -> list[str]:
+    """Just the call names a capability reaches, for a payload that should stay small."""
+    index = {str(row.get("id")): row for row in route_providers()}
+    provider = index.get(str(provider_id))
+    if not provider:
+        return []
+    assorted = catalog_tools_for(str(provider.get("server", "")), capabilities, engine_version)
+    return sorted(name for body in assorted.values() for name in body["tools"])
+
+
+def agent_route_briefing(definition: dict[str, Any], engine_version: str | None = None) -> str:
+    """What every route this agent's declared capabilities reach is like to call."""
+    declared = [str(item) for item in definition.get("mcp_capabilities", []) if str(item).strip()]
+    if not declared:
+        return ""
+    index = mcp_capability_index()
+    rows: dict[str, dict[str, Any]] = {}
+    for name in declared:
+        row = index.get(name)
+        if row is not None:
+            rows.setdefault(str(row.get("id")), row)
+    sections: list[str] = []
+    for row in rows.values():
+        served = [name for name in declared if name in set(row.get("capabilities", []))]
+        surface = str(row.get("tool_surface", "") or "").strip()
+        lines = [f"### `{row.get('id')}` on `{row.get('lane')}` — {', '.join(f'`{item}`' for item in served)}"]
+        if surface:
+            lines.append(surface)
+        assorted = catalog_tools_for(str(row.get("server", "")), served, engine_version)
+        for toolset, body in assorted.items():
+            lines.append(f"**`{toolset}`** — {body['purpose']}")
+            for name, spec in body["tools"].items():
+                parameters = spec.get("parameters") or {}
+                shape = "; ".join(f"`{key}`: {value}" for key, value in parameters.items()) or "no arguments"
+                lines.append(f"- `{name}` — {spec.get('purpose')} Arguments: {shape}. Returns: {spec.get('returns')}")
+                for known in spec.get("known_errors", []):
+                    lines.append(f"  - {known}")
+        sections.append("\n\n".join(lines))
+    if not sections:
+        return ""
+    return "## The routes this agent operates\n\n" + "\n\n".join(sections)
+
+
 def _toml_table_header_declares(text: str, server_key: str, server: str) -> bool:
     """Whether an unparsed TOML config carries the `[key.server]` table header."""
     header = rf"^\s*\[{re.escape(server_key)}\.{re.escape(server)}\]"
@@ -707,6 +799,7 @@ def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[s
                     "acceptance_suites": provider.get("acceptance_suites", []),
                     "invalidation_triggers": provider.get("invalidation_triggers", []),
                     "subagent_visible": probe["subagent_visible"],
+                    "tool_surface": provider.get("tool_surface"),
                     "detection_note": probe.get("note") or probe.get("reason"),
                 }
             )
@@ -745,6 +838,7 @@ def _process_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, An
                     "invalidation_triggers": provider.get("invalidation_triggers", []),
                     "subagent_visible": "shell-execution" in profile.get("provides", []),
                     "lane_clear": probe.get("lane_clear"),
+                    "tool_surface": provider.get("tool_surface"),
                     "detection_note": probe.get("note") or probe.get("reason"),
                 }
             )

@@ -50,7 +50,13 @@ from forge_core import (
     validate_payload,
 )
 from forge_mcp import (
+    agent_route_briefing,
     agent_tool_surface,
+    catalog_staleness,
+    catalog_tool_names,
+    catalog_tools_for,
+    project_engine_version,
+    tool_catalog,
     endpoint_is_listening,
     host_speaks_mcp,
     EDITOR_PROCESS_NAMES,

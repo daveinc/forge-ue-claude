@@ -23,7 +23,7 @@ These directives are host-neutral. "The resident host" means whichever runtime i
 
 - Do not mutate Unreal packages without the project write lane and a VCS-safe rollback route.
 - Keep native MCP, live Python, editor-closed commandlets, and human editor work mutually exclusive under the project super-lock.
-- Ask for capabilities, never named tools. Select only AVAILABLE_VERIFIED routes.
+- Ask for capabilities, never named tools: a packet requests a capability so a fallback route can serve it. Named tools are what Forge supplies back, per capability, in the routes section of your own instructions. Select only AVAILABLE_VERIFIED routes.
 - Treat detection status and task qualification separately. Optional providers begin UNQUALIFIED and pass only the tested task/complexity tier.
 - Register executable surfaces, permissions, integrity, provenance, licence, health, cost, context cost, fallbacks, consent and invalidation triggers before activation.
 - Activate optional skills, MCPs, APIs and model surfaces only for phases and packets that need them; keep one canonical surface for duplicate capabilities.

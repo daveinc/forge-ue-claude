@@ -274,6 +274,15 @@ def main() -> int:
                 "agent, so route-work step 7 can never dispatch it; the route would be reachable only by hand",
                 failures,
             )
+            continue
+        row = next((item for item in mcp_providers if str(item.get("id")) == seen_capabilities[capability]), None)
+        if row is not None and not str(row.get("tool_surface", "") or "").strip():
+            fail(
+                f"Route {seen_capabilities[capability]!r} serves capability {capability!r}, which an agent declares, "
+                "and carries no tool_surface; the agent would be told the route exists and nothing about how it is "
+                "called",
+                failures,
+            )
 
     project_mcp_path = PLUGIN / "assets" / "project-template" / ".forge" / "mcp.json"
     project_mcp = parsed.get(project_mcp_path, {})
