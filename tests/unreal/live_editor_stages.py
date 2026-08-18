@@ -110,6 +110,25 @@ def pie_stage(session: McpSession) -> dict[str, str]:
                 pass
 
 
+def schema_defaults_stage(session: McpSession) -> dict[str, str]:
+    try:
+        session.call_toolset(APP_TOOLSET, "CaptureViewport", {"captureTransform": CAPTURE_POSE})
+    except McpError as exc:
+        if "annotations" in str(exc):
+            return stage(
+                "schema-defaults-absent", "PASS",
+                "omitting an optional parameter failed naming it: " + str(exc)[:200],
+            )
+        return stage(
+            "schema-defaults-absent", "NOT_PROVEN",
+            "omitting an optional parameter failed without naming it: " + str(exc)[:200],
+        )
+    return stage(
+        "schema-defaults-absent", "FAIL",
+        "CaptureViewport succeeded with annotations omitted, so the server does apply schema defaults",
+    )
+
+
 def _image_bytes(result: dict[str, Any]) -> int:
     for part in result.get("content", []):
         if part.get("type") == "image" and part.get("data"):
@@ -141,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             stages.append(blueprint_stage(session))
             stages.append(pie_stage(session))
+            stages.append(schema_defaults_stage(session))
     except McpError as exc:
         detail = str(exc)[:300]
         stages = [stage("blueprint-create-compile", "FAIL", detail), stage("pie-and-viewport-evidence", "FAIL", detail)]

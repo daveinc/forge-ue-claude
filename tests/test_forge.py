@@ -336,6 +336,8 @@ class ForgeInstallerTests(unittest.TestCase):
             result = forge.forge_next(str(project), gsd)
             self.assertEqual(result["situation"], "greenfield-ready")
             self.assertEqual(result["actions"][0]["command"], "/forge-init")
+            self.assertTrue(result["actions"])
+            self.assertTrue(all(item.get("id") for item in result["actions"]))
             self.assertEqual(result["authority"]["phase_state"], "gsd")
 
     def test_forge_next_routes_existing_docs_to_ingest(self):
@@ -2033,6 +2035,12 @@ class ExecutorTests(unittest.TestCase):
 
     def test_two_workers_in_one_exclusive_group_cannot_both_hold(self):
         with self.game() as root:
+            groups = json.loads(
+                (root / ".forge" / "state" / "leases.json").read_text(encoding="utf-8")
+            )["exclusive_groups"]
+            shared = [name for name, lanes in groups.items()
+                      if "ue-live-native-mcp" in lanes and "human-editor" in lanes]
+            self.assertEqual(len(shared), 1)
             forge.executor.acquire(root, self.packet("WO-1", "ue-live-native-mcp"), owner="worker-a", apply=True)
             with self.assertRaises(forge.executor.ExecutorError) as caught:
                 forge.executor.acquire(root, self.packet("WO-2", "human-editor"), owner="worker-b", apply=True)
@@ -2442,6 +2450,7 @@ class LfsLockTests(unittest.TestCase):
             self.assertIn("Content/Main.umap", leaked[0])
             self.assertIn("rollback_note", caught.exception.extra)
             self.assertEqual(forge.executor.status(root)["active"], [])
+            self.assertIn("Content/Main.umap", self.held_paths())
 
     def test_releasing_gives_the_lock_back(self):
         with self.game() as root:
@@ -2488,6 +2497,7 @@ class LfsLockTests(unittest.TestCase):
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
             self.assertEqual(caught.exception.extra["conflicts"][0]["status"], "ORPHANED_EXTERNAL_LOCK")
             self.assertIn("quarantined", caught.exception.extra["conflicts"][0]["reason"])
+            self.assertEqual(self.held_paths(), ["Content/Main.umap"])
 
     def test_reconciling_frees_the_lane_once_the_lock_actually_goes(self):
         with self.game() as root:
@@ -2827,7 +2837,9 @@ class EditorClosedRouteTests(unittest.TestCase):
                     ownership = forge.live_editor_holds_project(root)
                     self.assertEqual(ownership["ownership"], "UNDETERMINED")
                     self.assertIn("contradict", ownership["detail"])
-                    self.assertFalse(forge.probe_process_route(root, self.row)["lane_clear"])
+                    probe = forge.probe_process_route(root, self.row)
+                    self.assertFalse(probe["lane_clear"])
+                    self.assertTrue(probe.get("human_action"))
 
     def test_an_mcp_answer_with_no_attributable_process_is_held(self):
         with self.game(engine_present=True) as root:
@@ -3014,6 +3026,11 @@ class RoutedAcquisitionTests(unittest.TestCase):
             preview = forge.execute_acquire(str(root), str(packet_path), None, apply=False)
             self.assertEqual(preview["ungrouped_lanes"], ["ue-editor-closed-api-typo"])
             self.assertIn("no exclusive group", preview["ungrouped_note"])
+
+            applied = forge.execute_acquire(str(root), str(packet_path), None, apply=True)
+            self.assertEqual(applied["ungrouped_lanes"], ["ue-editor-closed-api-typo"])
+            held = [lease["lane"] for lease in forge.executor.status(root)["active"]]
+            self.assertEqual(held, ["ue-editor-closed-api-typo"])
 
     def test_a_known_lane_names_the_group_it_joined(self):
         with self.game() as root:
@@ -3396,6 +3413,7 @@ class UnrealMcpSettingsTests(unittest.TestCase):
             self.assertEqual(row["status"], "UNAVAILABLE_OPTIONAL")
             self.assertIn("THE PORT", row["note"])
             self.assertIn("restart", row["note"])
+            self.assertLess(row["note"].index("THE PORT"), row["note"].index("restart"))
             self.assertEqual(row["engine_settings"]["port"], 8800)
             self.assertTrue(row["endpoint_disagreement"]["port_differs"])
 

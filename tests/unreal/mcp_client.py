@@ -183,6 +183,7 @@ def main(argv: list[str] | None = None) -> int:
             "toolsets": [],
         }
         names = {str(item.get("name")) for item in tools}
+        report["discovery_mode"] = names == {"list_toolsets", "describe_toolset", "call_tool"}
         if "list_toolsets" in names:
             listed = session.call_tool("list_toolsets")
             report["list_toolsets"] = text_of(listed)
