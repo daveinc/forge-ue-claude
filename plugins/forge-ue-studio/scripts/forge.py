@@ -148,11 +148,19 @@ from forge_install import (
     write_profile,
 )
 from forge_routing import (
+    BLOCKED_LANE_DEFAULTS,
     DEFAULT_FRESHNESS_MINUTES,
     ISOLATION_STRENGTH,
     ROUTE_DECISIONS_SCHEMA,
+    WORK_ORDERS_SCHEMA,
+    blocked_lane_policy,
     canonical_order,
+    clear_lane_failures,
+    confirm_autonomous_entry,
+    decide_blocked_lane,
     decision_freshness_minutes,
+    lane_failure_counts,
+    record_blocked_lane,
     read_route_decisions,
     record_dispatch,
     record_route_decision,
@@ -230,6 +238,7 @@ def dispatch_work(
     apply: bool,
     host_override: str | None = None,
     route_value: str | None = None,
+    policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Admit a packet to execution, or refuse it, as one decision.
 
@@ -272,25 +281,32 @@ def dispatch_work(
     required = {str(item) for item in packet.get("capabilities", []) if str(item).strip()}
     live = resolve_tool_access(contracts, required)
     blocked = [item for item in live if item["routed"] and item.get("status") == "UNAVAILABLE_BLOCKING"]
+    autonomy: dict[str, Any] | None = None
     if blocked:
-        raise fail(
-            f"{len(blocked)} capability the packet declares sits on a lane whose state could not be determined; "
-            "this is a fault to resolve, not a route to fall back from, because the cost of guessing wrong is a "
-            "commandlet writing into a project an editor still holds",
-            reason=ERROR_REASON["ROUTE_BLOCKED"],
-            code=EXIT_CONTRACT,
-            blocked=[
-                {
-                    "capability": item["capability"],
-                    "status": item.get("status"),
-                    "ownership": item.get("ownership"),
-                    "human_action": item.get("human_action"),
-                }
-                for item in blocked
-            ],
-            packet=str(packet_path),
-        )
-    unreachable = [item for item in live if item["routed"] and not item["bound"]]
+        autonomy = decide_blocked_lane(root, packet, blocked, policy)
+        if not autonomy["proceed"]:
+            raise fail(
+                f"{len(blocked)} capability the packet declares sits on a lane whose state could not be "
+                f"determined, and {autonomy['reason']}",
+                reason=ERROR_REASON["ROUTE_BLOCKED"],
+                code=EXIT_CONTRACT,
+                blocked=[
+                    {
+                        "capability": item["capability"],
+                        "status": item.get("status"),
+                        "ownership": item.get("ownership"),
+                        "human_action": item.get("human_action"),
+                    }
+                    for item in blocked
+                ],
+                autonomy=autonomy,
+                packet=str(packet_path),
+            )
+    accepted = {item["capability"] for item in blocked} if (autonomy and autonomy["proceed"]) else set()
+    unreachable = [
+        item for item in live
+        if item["routed"] and not item["bound"] and item["capability"] not in accepted
+    ]
     if unreachable:
         raise fail(
             f"{len(unreachable)} capability the packet declares has no reachable route right now; dispatching "
@@ -303,7 +319,7 @@ def dispatch_work(
             ],
             packet=str(packet_path),
         )
-    drift = route_drift(admission["decision"], live)
+    drift = route_drift(admission["decision"], [item for item in live if item["capability"] not in accepted])
     if drift:
         raise fail(
             f"The routes available now differ from the ones routing scored in {len(drift)} way(s); re-run route "
@@ -316,7 +332,9 @@ def dispatch_work(
         )
 
     result = executor.acquire(root, packet, owner or str(profile["id"]), apply=apply)
-    recorded = record_dispatch(root, packet, admission, result["leases"]) if apply else None
+    if apply and not blocked:
+        clear_lane_failures(root, [str(item.get("lane")) for item in live if item.get("lane")])
+    recorded = record_dispatch(root, packet, admission, result["leases"], autonomy) if apply else None
     return {
         "schema": "forge.dispatch/v1",
         "mode": "apply" if apply else "dry-run",
@@ -327,6 +345,7 @@ def dispatch_work(
         "route": admission["source"],
         "route_recorded_at": admission["recorded_at"],
         "contract": {"kind": "work-packet", "ok": True},
+        "autonomy": autonomy,
         "tool_access": live,
         "drift": [],
         "isolation_mode": result["isolation_mode"],

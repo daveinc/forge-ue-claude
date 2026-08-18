@@ -4,6 +4,20 @@ Every section below is dated from the tag that released it. One tag is not a rel
 
 ## 0.7.0 - 2026-08-18
 
+### An undetermined lane is diagnosed, then decided under a posture
+
+- Ownership answered `UNDETERMINED` and stopped there, and the two functions that could have explained it were wired only into the MCP route's own handshake. Forge held a reader for the project's `ModelContextProtocolSettings` and never consulted it when deciding whether an editor was live.
+- The ownership decision now reads those settings. Silence from a server whose `bAutoStartServer` is off is reported as **proving nothing**, rather than counted as evidence that no editor is running — an open, healthy editor answers nothing until the server is started. And an answer arriving from an endpoint the project's editor is not configured to serve no longer contradicts an empty process table: it is not that editor, so the lane is `FREE` rather than undecidable.
+- `_run_probe` swallowed `OSError`, a timeout and any non-zero exit into one `None` and discarded stderr, so a permission denial, a missing binary and a hung mechanism were indistinguishable. Each now names itself, and an unresolved table carries the attempts that failed. An agent cannot attempt a resolution it cannot name.
+
+### What Forge does with a lane it cannot settle is now the project's decision
+
+- `blocked_lane` in `route-policy.json` decides. `posture: autonomous`, the default, diagnoses, warns, and enters the lane anyway; `posture: fail-closed` refuses and hands it back, which is 0.6.0's behaviour. Dialling back is one key, not a release.
+- Autonomy is bounded three ways, because an unstable editor is what turns one fault into a loop. A countdown of `interrupt_seconds` offers a human the lane back before Forge takes it. A lane whose diagnosis fails `consecutive_failure_limit` times running stops being entered until a clean acquire resets the count. And every outcome — refused, intervened, or entered — is written to `.forge/state/work-orders.json` as a `BLOCKED` order, which finally gives that ledger's declared terminal states a writer, and lets the next session resume from state rather than repeat the attempt.
+- The prompt and its countdown print to **stderr**, so the payload on stdout stays parseable while the warning shows.
+- A run nobody is watching never waits. `stdin.isatty()` alone was not a safe test: on Windows it reports a terminal even when stdin is a null device, so trusting it stalled an unattended run for the entire window. The prompt must be visible on the stream it is printed to and answerable on stdin, and a run declaring `CI` is neither — each case skips the wait and records which one it was.
+- **This is the one setting whose cost is measured in lost work.** Entering a lane whose ownership could not be settled can run a commandlet into a project a frozen editor still holds. Diagnosis shrinks how often that is reached and the breaker stops it being retried into, but neither removes it.
+
 ### A lane whose state is unknown refuses differently from one that is merely busy
 
 - `UNDETERMINED` reported `UNAVAILABLE_BLOCKING`, and then `resolve_tool_access` collapsed every status to `bound = startswith("AVAILABLE")`, so admission raised the same `route_unreachable` for an editor legitimately holding the lane and for a machine that could not say whether one did. The first is a normal condition to route around; the second is a fault, and the difference was carried only by a sentence in `forge-route-work`.

@@ -2945,6 +2945,111 @@ class EditorClosedRouteTests(unittest.TestCase):
                 self.assertEqual(ownership["holder"]["pid"], 4242)
 
 
+class BlockedLanePostureTests(unittest.TestCase):
+
+    @contextmanager
+    def game(self):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
+            yield root
+
+    def packet(self):
+        return {"work_order": "PKT-BLOCKED-01", "revision": "abc123", "role": "unreal-operator"}
+
+    def blocked(self):
+        return [{
+            "capability": "ue.python.commandlet",
+            "status": "UNAVAILABLE_BLOCKING",
+            "lane": "lane.ue-editor-closed",
+            "ownership": "UNDETERMINED",
+            "human_action": "resolve the process check",
+        }]
+
+    def orders(self, root):
+        return forge.load_json(forge.work_orders_path(root))
+
+    @contextmanager
+    def quiet(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            yield
+
+    def test_a_probe_that_could_not_run_names_the_mechanism_and_the_cause(self):
+        output, why = forge.executor._run_probe(["forge-no-such-binary-at-all"])
+        self.assertIsNone(output)
+        self.assertIn("not on PATH", why)
+
+    def test_silence_is_reported_as_unproven_when_the_server_never_autostarts(self):
+        with self.game() as root:
+            table = {"resolved": True, "mechanism": "Win32_Process", "processes": []}
+            verdict = forge.live_editor_holds_project(root, table)
+            settings = [item for item in verdict["evidence"] if item["signal"] == "mcp-settings"]
+            self.assertEqual(1, len(settings))
+            self.assertIn("bAutoStartServer is off", settings[0]["detail"])
+
+    def test_a_fail_closed_project_refuses_rather_than_deciding(self):
+        with self.game() as root:
+            closed = dict(forge.blocked_lane_policy(), posture="fail-closed")
+            verdict = forge.decide_blocked_lane(root, self.packet(), self.blocked(), {"blocked_lane": closed})
+            self.assertFalse(verdict["proceed"])
+            self.assertIn("fail-closed", verdict["reason"])
+            self.assertEqual("BLOCKED", self.orders(root)["orders"][0]["status"])
+
+    def test_an_unattended_run_proceeds_without_waiting_for_an_answer(self):
+        with self.game() as root, self.quiet():
+            started = time.monotonic()
+            verdict = forge.decide_blocked_lane(root, self.packet(), self.blocked())
+            self.assertTrue(verdict["proceed"])
+            self.assertLess(time.monotonic() - started, 5)
+            self.assertIn("not a terminal", verdict["reason"])
+            self.assertEqual("entered-autonomously", self.orders(root)["orders"][0]["decision"])
+
+    def test_a_lane_that_keeps_failing_stops_being_entered(self):
+        with self.game() as root, self.quiet():
+            limit = forge.blocked_lane_policy()["consecutive_failure_limit"]
+            for _ in range(limit - 1):
+                self.assertTrue(forge.decide_blocked_lane(root, self.packet(), self.blocked())["proceed"])
+            tripped = forge.decide_blocked_lane(root, self.packet(), self.blocked())
+            self.assertFalse(tripped["proceed"])
+            self.assertEqual(["lane.ue-editor-closed"], tripped["breaker_tripped"])
+            self.assertEqual(limit, forge.lane_failure_counts(root)["lane.ue-editor-closed"])
+
+    def test_a_clean_acquire_lets_the_lane_be_entered_again(self):
+        with self.game() as root, self.quiet():
+            limit = forge.blocked_lane_policy()["consecutive_failure_limit"]
+            for _ in range(limit):
+                forge.decide_blocked_lane(root, self.packet(), self.blocked())
+            self.assertFalse(forge.decide_blocked_lane(root, self.packet(), self.blocked())["proceed"])
+            forge.clear_lane_failures(root, ["lane.ue-editor-closed"])
+            self.assertEqual({}, forge.lane_failure_counts(root))
+            self.assertTrue(forge.decide_blocked_lane(root, self.packet(), self.blocked())["proceed"])
+
+    def test_a_ci_run_never_waits_for_an_answer_nobody_is_there_to_give(self):
+        stream = io.StringIO()
+        started = time.monotonic()
+        original = os.environ.get("CI")
+        os.environ["CI"] = "true"
+        try:
+            answer = forge.confirm_autonomous_entry(["lane.ue-editor-closed"], 600, stream=stream)
+        finally:
+            os.environ.pop("CI", None) if original is None else os.environ.__setitem__("CI", original)
+        self.assertFalse(answer["waited"])
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertIn("CI", answer["reason"])
+
+    def test_the_prompt_goes_to_stderr_so_the_payload_stays_parseable(self):
+        stream = io.StringIO()
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            answer = forge.confirm_autonomous_entry(["lane.ue-editor-closed"], 60, stream=stream)
+        self.assertEqual("proceed", answer["choice"])
+        self.assertFalse(answer["waited"])
+        self.assertIn("self-diagnosing", stream.getvalue())
+        self.assertEqual("", captured.getvalue())
+
+
 class RoutedAcquisitionTests(unittest.TestCase):
 
     def setUp(self):
@@ -3653,6 +3758,35 @@ class DispatchAdmissionTests(unittest.TestCase):
         declarer = dict(reader, capabilities=["ue.python.commandlet"])
         self.assertIn("degraded", " ".join(forge.route_conflicts(declarer, decision)))
 
+    def test_a_clean_dispatch_clears_the_breaker_for_the_lane_it_used(self):
+        with self.game(engine_present=True) as root:
+            self.record(root)
+            forge.record_blocked_lane(
+                root, {"work_order": "PKT-OLD-01"},
+                [{"capability": "ue.python.commandlet", "lane": "lane.ue-editor-closed"}], "refused")
+            self.assertEqual(1, forge.lane_failure_counts(root)["lane.ue-editor-closed"])
+            forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertEqual({}, forge.lane_failure_counts(root))
+    def test_an_autonomous_project_enters_the_undetermined_lane_it_was_warned_about(self):
+        with self.game(engine_present=True) as root:
+            self.record(root)
+            blind = {"resolved": False, "mechanism": None, "processes": [],
+                     "detail": "neither Win32_Process nor tasklist answered"}
+            original = forge.executor.process_table
+            forge.executor.process_table = lambda: blind
+            try:
+                with contextlib.redirect_stderr(io.StringIO()):
+                    result = forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            finally:
+                forge.executor.process_table = original
+            self.assertTrue(result["autonomy"]["proceed"])
+            self.assertEqual(["lane.ue-editor-closed"], result["autonomy"]["lanes"])
+            self.assertNotEqual([], forge.executor.status(root)["active"])
+            orders = forge.load_json(forge.work_orders_path(root))["orders"]
+            entered = [item for item in orders if item.get("entered_undetermined_lane")]
+            self.assertEqual(1, len(entered))
+            self.assertEqual(["lane.ue-editor-closed"], entered[0]["entered_undetermined_lane"]["lanes"])
+            self.assertEqual(1, forge.lane_failure_counts(root)["lane.ue-editor-closed"])
     def test_a_lane_whose_state_is_unknown_refuses_differently_from_one_that_is_merely_busy(self):
         with self.game(engine_present=True) as root:
             self.record(root)
@@ -3662,7 +3796,10 @@ class DispatchAdmissionTests(unittest.TestCase):
             forge.executor.process_table = lambda: blind
             try:
                 with self.assertRaises(forge.ForgeExit) as caught:
-                    forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+                    forge.dispatch_work(
+                        str(root), str(self.packet(root)), None, apply=True,
+                        policy={"blocked_lane": dict(forge.blocked_lane_policy(), posture="fail-closed")},
+                    )
             finally:
                 forge.executor.process_table = original
             self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_BLOCKED"])

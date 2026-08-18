@@ -77,8 +77,12 @@ def this_machine() -> str:
     return platform.node() or "unknown-machine"
 
 
-def _run_probe(command: list[str]) -> str | None:
-    """Output of one process-inspection mechanism, or None when it did not run."""
+def _run_probe(command: list[str]) -> tuple[str | None, str]:
+    """Output of one process-inspection mechanism, and why it failed when it did.
+
+    A caller that is told only None cannot attempt a resolution: a permission
+    denial, a missing binary and a hung mechanism all need different answers.
+    """
     try:
         completed = subprocess.run(
             command,
@@ -89,11 +93,18 @@ def _run_probe(command: list[str]) -> str | None:
             encoding="utf-8",
             errors="replace",
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
+    except FileNotFoundError:
+        return None, f"{command[0]} is not on PATH"
+    except PermissionError as exc:
+        return None, f"{command[0]} refused to run: {exc}"
+    except subprocess.TimeoutExpired:
+        return None, f"{command[0]} did not answer within {PROCESS_PROBE_TIMEOUT}s"
+    except OSError as exc:
+        return None, f"{command[0]} could not be started: {exc}"
     if completed.returncode != 0:
-        return None
-    return completed.stdout
+        detail = (completed.stderr or "").strip().splitlines()
+        return None, f"{command[0]} exited {completed.returncode}: {detail[0] if detail else 'no error text'}"
+    return completed.stdout, ""
 
 
 def process_table() -> dict[str, Any]:
@@ -109,7 +120,10 @@ def process_table() -> dict[str, Any]:
             "Select-Object ProcessId,Name,CommandLine,CreationDate | "
             "ConvertTo-Json -Compress -Depth 3"
         )
-        raw = _run_probe(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script])
+        attempts: list[dict[str, str]] = []
+        raw, why = _run_probe(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script])
+        if why:
+            attempts.append({"mechanism": "Win32_Process", "detail": why})
         if raw and raw.strip():
             try:
                 parsed = json.loads(raw)
@@ -131,7 +145,11 @@ def process_table() -> dict[str, Any]:
                         if isinstance(row, dict) and row.get("ProcessId") is not None
                     ],
                 }
-        raw = _run_probe(["tasklist", "/FO", "CSV", "/NH"])
+        if raw is not None and not attempts:
+            attempts.append({"mechanism": "Win32_Process", "detail": "answered but returned no parseable process rows"})
+        raw, why = _run_probe(["tasklist", "/FO", "CSV", "/NH"])
+        if why:
+            attempts.append({"mechanism": "tasklist", "detail": why})
         if raw:
             processes = []
             for line in raw.splitlines():
@@ -150,15 +168,18 @@ def process_table() -> dict[str, Any]:
             "resolved": False,
             "mechanism": None,
             "processes": [],
-            "detail": "neither Win32_Process nor tasklist answered; process ownership cannot be determined on this machine",
+            "attempts": attempts,
+            "detail": "neither Win32_Process nor tasklist answered; process ownership cannot be determined on this "
+                      "machine. " + "; ".join(f"{item['mechanism']}: {item['detail']}" for item in attempts),
         }
-    raw = _run_probe(["ps", "-eo", "pid=,lstart=,comm=,args="])
+    raw, why = _run_probe(["ps", "-eo", "pid=,lstart=,comm=,args="])
     if raw is None:
         return {
             "resolved": False,
             "mechanism": None,
             "processes": [],
-            "detail": "ps did not answer; process ownership cannot be determined on this machine",
+            "attempts": [{"mechanism": "ps", "detail": why}],
+            "detail": f"ps did not answer, so process ownership cannot be determined on this machine: {why}",
         }
     processes = []
     for line in raw.splitlines():

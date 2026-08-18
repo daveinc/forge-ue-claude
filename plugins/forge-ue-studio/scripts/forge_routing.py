@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
+import platform
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +20,9 @@ ISOLATION_STRENGTH = ("read-only", "git-worktree", "lfs-lock", "project-exclusiv
 
 
 ROUTE_DECISIONS_SCHEMA = "forge.route-decisions/v1"
+
+
+WORK_ORDERS_SCHEMA = "forge.work-orders/v1"
 
 
 DEFAULT_FRESHNESS_MINUTES = 30
@@ -171,7 +178,194 @@ def work_orders_path(root: Path) -> Path:
     return root / ".forge" / "state" / "work-orders.json"
 
 
-def record_dispatch(root: Path, packet: dict[str, Any], admission: dict[str, Any], leases: list[dict[str, Any]]) -> dict[str, Any]:
+BLOCKED_LANE_DEFAULTS = {"posture": "autonomous", "interrupt_seconds": 60, "consecutive_failure_limit": 3}
+
+
+def blocked_lane_policy(policy: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The posture Forge takes on a lane whose ownership it could not determine."""
+    settings = dict(BLOCKED_LANE_DEFAULTS)
+    settings.update((policy or route_policy()).get("blocked_lane") or {})
+    return settings
+
+
+def lane_failure_counts(root: Path) -> dict[str, int]:
+    path = work_orders_path(root)
+    document = load_json(path) if path.is_file() else {}
+    return {str(lane): int(row.get("consecutive", 0)) for lane, row in (document.get("blocked_lanes") or {}).items()}
+
+
+def _write_orders(root: Path, mutate) -> dict[str, Any]:
+    path = work_orders_path(root)
+    with executor.StateMutex(root, state_path=path) as _mutex:
+        document = load_json(path) if path.is_file() else {"schema": WORK_ORDERS_SCHEMA, "orders": []}
+        document.setdefault("schema", WORK_ORDERS_SCHEMA)
+        mutate(document)
+        document["updated_at"] = utc_now()
+        executor.write_state_atomically(path, document)
+    return document
+
+
+def record_blocked_lane(root: Path, packet: dict[str, Any], blocked: list[dict[str, Any]], decision: str) -> dict[str, Any]:
+    """Persist that a lane could not be determined, and count it against the breaker.
+
+    A refusal that leaves no trace cannot be resumed from and cannot be counted,
+    so the next session repeats it and the breaker has nothing to break on.
+    """
+    order = str(packet.get("work_order", ""))
+    lanes = sorted({str(item.get("lane")) for item in blocked if item.get("lane")})
+    moment = utc_now()
+    entry = {
+        "work_order": order,
+        "status": "BLOCKED",
+        "decision": decision,
+        "revision": packet.get("revision"),
+        "role": packet.get("role"),
+        "blocked_at": moment,
+        "lanes": lanes,
+        "capabilities": [str(item.get("capability")) for item in blocked],
+        "ownership": [str(item.get("ownership")) for item in blocked],
+        "human_action": next((str(item.get("human_action")) for item in blocked if item.get("human_action")), None),
+    }
+
+    def mutate(document: dict[str, Any]) -> None:
+        document["orders"] = [
+            item for item in document.get("orders", []) if str(item.get("work_order")) != order
+        ] + [entry]
+        counts = document.setdefault("blocked_lanes", {})
+        for lane in lanes:
+            row = counts.setdefault(lane, {"consecutive": 0})
+            row["consecutive"] = int(row.get("consecutive", 0)) + 1
+            row["last_at"] = moment
+            row["last_work_order"] = order
+
+    _write_orders(root, mutate)
+    return entry
+
+
+def clear_lane_failures(root: Path, lanes: list[str]) -> None:
+    """A lane that admitted work is a lane that is working; the count starts over."""
+    wanted = {str(lane) for lane in lanes if lane}
+    if not wanted:
+        return
+    path = work_orders_path(root)
+    if not path.is_file():
+        return
+    if not set(load_json(path).get("blocked_lanes") or {}) & wanted:
+        return
+
+    def mutate(document: dict[str, Any]) -> None:
+        counts = document.get("blocked_lanes") or {}
+        document["blocked_lanes"] = {lane: row for lane, row in counts.items() if lane not in wanted}
+
+    _write_orders(root, mutate)
+
+
+def _read_choice(seconds: int) -> str | None:
+    """One keystroke within the window, or None when nobody answered."""
+    if platform.system() == "Windows":
+        import msvcrt
+
+        deadline = time.monotonic() + seconds
+        typed = ""
+        while time.monotonic() < deadline:
+            if msvcrt.kbhit():
+                char = msvcrt.getwch()
+                if ord(char) in (10, 13):
+                    return typed.strip()
+                typed += char
+            time.sleep(0.05)
+        return None
+    import select
+
+    ready, _, _ = select.select([sys.stdin], [], [], seconds)
+    return sys.stdin.readline().strip() if ready else None
+
+
+def _nobody_can_answer(stream) -> str:
+    """Whether a prompt on this stream could actually be answered.
+
+    stdin.isatty() alone is not enough: on Windows it reports a terminal even
+    when stdin is a null device, so trusting it stalls an unattended run for the
+    whole window. The prompt has to be visible on the stream it is printed to
+    and answerable on stdin, and a declared CI run is neither.
+    """
+    if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+        return "this run declares itself CI, so no one is watching the prompt"
+    try:
+        if not stream.isatty():
+            return "the prompt stream is not a terminal, so the warning would not be seen"
+        if not sys.stdin.isatty():
+            return "stdin is not a terminal, so an answer could not be typed"
+    except (AttributeError, ValueError):
+        return "the prompt stream is closed"
+    return ""
+
+
+def confirm_autonomous_entry(lanes: list[str], seconds: int, stream=None) -> dict[str, Any]:
+    """Offer a human the chance to take an undetermined lane back, then proceed.
+
+    The prompt is on stderr because the payload on stdout has to stay
+    machine-readable while it is showing, and a run nobody is watching must
+    never wait for an answer that cannot arrive.
+    """
+    stream = stream or sys.stderr
+    named = ", ".join(lanes) or "an undetermined lane"
+    unattended = _nobody_can_answer(stream)
+    if unattended:
+        print(
+            f"Problem encountered on {named} - self-diagnosing. The {seconds}s interrupt window is skipped "
+            f"because {unattended}; Forge proceeds and records why.",
+            file=stream,
+            flush=True,
+        )
+        return {"choice": "proceed", "interrupted": False, "waited": False, "reason": unattended}
+    print(f"Problem encountered on {named} - self-diagnosing.", file=stream, flush=True)
+    print("  [1] intervene    [enter] skip the wait", file=stream, flush=True)
+    print(f"  Otherwise: attempt the fix and enter the lane in {seconds}s.", file=stream, flush=True)
+    answer = _read_choice(seconds)
+    if answer == "1":
+        return {"choice": "intervene", "interrupted": True, "waited": True, "reason": "the user intervened"}
+    if answer is None:
+        return {"choice": "proceed", "interrupted": False, "waited": True, "reason": f"nobody answered within {seconds}s"}
+    return {"choice": "proceed", "interrupted": False, "waited": True, "reason": "the user skipped the wait"}
+
+
+def decide_blocked_lane(root: Path, packet: dict[str, Any], blocked: list[dict[str, Any]], policy: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Whether to enter a lane whose ownership could not be determined.
+
+    Three bounds sit between an undetermined lane and a commandlet: the posture
+    the project declares, a breaker that stops an unstable editor being retried
+    into a loop, and a window in which a human can take the lane back. The record
+    is written either way, because a refusal nobody can resume from is repeated.
+    """
+    policy = blocked_lane_policy(policy)
+    lanes = sorted({str(item.get("lane")) for item in blocked if item.get("lane")})
+    limit = int(policy["consecutive_failure_limit"])
+    counts = lane_failure_counts(root)
+    tripped = sorted(lane for lane in lanes if counts.get(lane, 0) + 1 >= limit)
+    posture = str(policy["posture"])
+
+    if posture != "autonomous":
+        record_blocked_lane(root, packet, blocked, "refused")
+        return {"proceed": False, "posture": posture, "lanes": lanes, "prompted": False,
+                "reason": f"the project's blocked_lane posture is {posture!r}, so Forge refuses rather than deciding"}
+    if tripped:
+        record_blocked_lane(root, packet, blocked, "breaker-tripped")
+        return {"proceed": False, "posture": posture, "lanes": lanes, "prompted": False, "breaker_tripped": tripped,
+                "reason": f"diagnosis has now failed {limit} times running on {', '.join(tripped)}, so Forge stops "
+                          "deciding and hands the lane back rather than retrying an unstable editor into a loop"}
+
+    answer = confirm_autonomous_entry(lanes, int(policy["interrupt_seconds"]))
+    if answer["interrupted"]:
+        record_blocked_lane(root, packet, blocked, "user-intervened")
+        return {"proceed": False, "posture": posture, "lanes": lanes, "prompted": True,
+                "reason": "the user intervened within the interrupt window"}
+    record_blocked_lane(root, packet, blocked, "entered-autonomously")
+    return {"proceed": True, "posture": posture, "lanes": lanes, "prompted": answer["waited"],
+            "reason": answer["reason"], "risk": "entered a lane whose ownership could not be determined"}
+
+
+def record_dispatch(root: Path, packet: dict[str, Any], admission: dict[str, Any], leases: list[dict[str, Any]], autonomy: dict[str, Any] | None = None) -> dict[str, Any]:
     """Write the order transition in the same breath as the acquisition that earned it."""
     path = work_orders_path(root)
     order = str(packet.get("work_order", ""))
@@ -186,10 +380,11 @@ def record_dispatch(root: Path, packet: dict[str, Any], admission: dict[str, Any
         "isolation_mode": str((packet.get("isolation") or {}).get("mode", "")),
         "route_source": admission["source"],
         "route_recorded_at": admission["recorded_at"],
+        "entered_undetermined_lane": autonomy if autonomy and autonomy.get("proceed") else None,
     }
     with executor.StateMutex(root, state_path=path) as _mutex:
-        document = load_json(path) if path.is_file() else {"schema": "forge.work-orders/v1", "orders": []}
-        document.setdefault("schema", "forge.work-orders/v1")
+        document = load_json(path) if path.is_file() else {"schema": WORK_ORDERS_SCHEMA, "orders": []}
+        document.setdefault("schema", WORK_ORDERS_SCHEMA)
         document["orders"] = [
             item for item in document.get("orders", []) if str(item.get("work_order")) != order
         ] + [entry]

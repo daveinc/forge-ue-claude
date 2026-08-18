@@ -103,16 +103,32 @@ Before taking `lane.ue-editor-closed`, read `ownership` on the route:
 |---|---|---|
 | `HELD` | An MCP handshake answered, or an Unreal editor process holds this `.uproject` | Do not take the lane |
 | `FREE` | Neither is true | The lane is enterable |
-| `UNDETERMINED` | Process inspection could not answer; the route reports `UNAVAILABLE_BLOCKING` | **Stop and ask the user** |
+| `UNDETERMINED` | Ownership could not be settled; the route reports `UNAVAILABLE_BLOCKING` | `blocked_lane.posture` decides |
 
-On `UNDETERMINED`: take neither lane and do not re-probe until it answers differently. Never treat a
-silent MCP endpoint as proof the editor is closed. Resolving the process check is the fix.
+Never treat a silent MCP endpoint as proof the editor is closed. Forge diagnoses first: it reads the
+project's own MCP settings, so silence from a server that never autostarts is reported as proving
+nothing, and an answer from an endpoint the editor is not configured to serve no longer contradicts an
+empty process table.
 
-`dispatch` enforces this rather than trusting the workflow: a packet whose capability sits on an
-`UNAVAILABLE_BLOCKING` route is refused as `route_blocked`, separately from `route_unreachable`,
-and the refusal carries the `human_action` describing what to resolve.
+What happens after diagnosis is `blocked_lane` in [route-policy.json](../dependencies/route-policy.json):
 
-> **Why:** CHANGELOG.md 0.6.0 § *A silent editor is not a closed editor* · § *An editor answering is not this project's editor answering* — 0.4.0 § *The editor-closed Unreal API is a route, not a fallback string* — 0.4.1 § *Routing decides what a packet must hold, and acquiring checks it*
+| `posture` | On an unresolved `UNDETERMINED` |
+|---|---|
+| `autonomous` (default) | Warn on stderr, count down `interrupt_seconds`, then enter the lane anyway |
+| `fail-closed` | Refuse as `route_blocked` and hand the lane back, which is the 0.6.0 behaviour |
+
+Two bounds hold in either posture. A lane whose diagnosis fails `consecutive_failure_limit` times running
+stops being entered until a clean acquire resets it, so an unstable editor cannot be retried into a loop.
+And every outcome is written to `.forge/state/work-orders.json` as a `BLOCKED` order with the lane and the
+`human_action`, so the next session resumes from state rather than repeating the attempt.
+
+The countdown prints to stderr; the payload on stdout stays machine-readable while it shows. A run with no
+terminal, or one declaring `CI`, skips the wait rather than stalling and records why.
+
+`dispatch` enforces all of this rather than trusting the workflow: it consults the posture, the breaker and
+the ledger before a lease is taken, and a refusal carries the `human_action` describing what to resolve.
+
+> **Why:** CHANGELOG.md 0.7.0 § *An undetermined lane is diagnosed, then decided under a posture* — 0.6.0 § *A silent editor is not a closed editor* · § *An editor answering is not this project's editor answering* — 0.4.0 § *The editor-closed Unreal API is a route, not a fallback string* — 0.4.1 § *Routing decides what a packet must hold, and acquiring checks it*
 </step>
 
 <step name="declare_isolation">

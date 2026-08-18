@@ -128,6 +128,13 @@
     "freshness_rationale": "The two Unreal routes swap availability as the editor opens and closes, so a decision scored against a live editor names a lane that protects nothing once the editor is gone. Re-run route rather than acquiring on a decision the environment has outlived.",
     "override_flag": "--route, for a decision stored outside the ledger. It replaces the lookup; it never relaxes it."
   },
+  "blocked_lane": {
+    "note": "What Forge does when it cannot determine whether an editor holds the project. posture 'autonomous' diagnoses, warns on a countdown, and enters the lane anyway; posture 'fail-closed' refuses and asks, which is the 0.6.0 behaviour. Entering an undetermined lane can run a commandlet into a project a frozen editor still holds, so this is the one setting whose cost is measured in lost work rather than lost time.",
+    "posture": "autonomous",
+    "interrupt_seconds": 60,
+    "consecutive_failure_limit": 3,
+    "limit_rationale": "An editor that fails diagnosis repeatedly is unstable, and retrying into it is how an autonomous run turns one fault into a loop. At the limit Forge stops deciding and hands the lane back to the user. A clean acquire resets the count."
+  },
   "unreal_routing": {
     "note": "The live editor and the editor-closed API are peer routes on mutually exclusive lanes, not a primary and its fallback. Pick by the shape of the work, then take the lane.",
     "prefer_editor_closed_for": [

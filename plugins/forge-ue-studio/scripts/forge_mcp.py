@@ -596,6 +596,23 @@ def editor_process_holding(root: Path, table: dict[str, Any] | None = None) -> d
     }
 
 
+def _silence_explained(settings: dict[str, Any], disagreement: dict[str, Any] | None) -> str:
+    """Why a silent endpoint is silent, so silence is not read as absence."""
+    if disagreement:
+        return (
+            "silence proves nothing here: " + disagreement["detail"]
+        )
+    if not settings["auto_start"]:
+        return (
+            "silence proves nothing here: bAutoStartServer is off in this project's settings, so an editor that is "
+            "open and healthy still answers nothing until the server is started by hand or by launch flag"
+        )
+    return (
+        "the server is configured to start with the editor and the probed endpoint matches the configured one, so "
+        "silence is weak evidence that no editor is running, but a frozen editor is silent too"
+    )
+
+
 def live_editor_holds_project(root: Path, table: dict[str, Any] | None = None) -> dict[str, Any]:
     """Whether an editor owns this project: HELD, FREE, or honestly UNDETERMINED.
 
@@ -612,6 +629,8 @@ def live_editor_holds_project(root: Path, table: dict[str, Any] | None = None) -
     evidence: list[dict[str, Any]] = []
     answering = next((url for url in endpoints if probe_mcp_endpoint(url, timeout=1.5)["speaks_mcp"]), None)
     process = editor_process_holding(root, table)
+    settings = unreal_mcp_settings(root)
+    disagreement = endpoint_disagreement(root, answering or (endpoints[0] if endpoints else None))
     if answering:
         evidence.append(
             {
@@ -636,13 +655,15 @@ def live_editor_holds_project(root: Path, table: dict[str, Any] | None = None) -
                 "ownership": "UNDETERMINED",
                 "endpoint": answering,
                 "evidence": evidence,
+                "settings": settings,
+                "endpoint_disagreement": disagreement,
                 "detail": f"something answered an MCP initialize at {answering} while no Unreal editor process "
                           "exists at all; the two signals contradict each other",
                 "human_action": (
                     f"Something is serving MCP at {answering} that is not an Unreal editor this machine can see. "
                     "Find out what: another tool on the port, an editor running as a different user, or an "
-                    "engine build process inspection does not recognise. Forge will not enter the editor-closed "
-                    "lane while a signal it cannot explain says an editor is live."
+                    "engine build process inspection does not recognise."
+                    + (f" Start here: {disagreement['detail']}" if disagreement else "")
                 ),
             }
         return {
@@ -662,6 +683,7 @@ def live_editor_holds_project(root: Path, table: dict[str, Any] | None = None) -
         }
     )
     evidence.append({"signal": "process-inspection", "conclusive": process["determined"], "detail": process["detail"]})
+    evidence.append({"signal": "mcp-settings", "conclusive": False, "detail": _silence_explained(settings, disagreement)})
     if process["determined"] and process["holder"]:
         return {
             "ownership": "HELD",
@@ -675,6 +697,8 @@ def live_editor_holds_project(root: Path, table: dict[str, Any] | None = None) -
             "ownership": "UNDETERMINED",
             "endpoint": endpoints[0] if endpoints else None,
             "evidence": evidence,
+            "settings": settings,
+            "attempts": process.get("attempts", []),
             "detail": process["detail"],
             "human_action": (
                 "Forge cannot tell whether an editor holds this project, and will not guess. Resolve the process "
