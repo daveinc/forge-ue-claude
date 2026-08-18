@@ -967,6 +967,59 @@ class McpRouteTests(unittest.TestCase):
         rendered = forge.render_agent(self.agents["studio-director"], forge.host_profile("claude"))
         self.assertNotIn("tools:", rendered)
 
+    def test_a_declared_route_surface_reaches_the_agent_and_is_not_copied_into_it(self):
+        index = forge.mcp_capability_index()
+        profile = forge.host_profile("claude")
+        for definition in self.agents.values():
+            declared = definition.get("mcp_capabilities") or []
+            if not declared:
+                continue
+            rendered = forge.render_agent(definition, profile)
+            own = str(definition.get("instructions", ""))
+            for name in declared:
+                surface = str(index[name].get("tool_surface", "") or "").strip()
+                self.assertTrue(surface, name)
+                self.assertIn(surface, rendered)
+                self.assertNotIn(surface, own)
+
+    def test_the_catalogue_assorts_tools_by_capability(self):
+        live = forge.catalog_tool_names("unreal-native-mcp", ["ue.live.typed"])
+        pie = forge.catalog_tool_names("unreal-native-mcp", ["ue.pie"])
+        viewport = forge.catalog_tool_names("unreal-native-mcp", ["ue.viewport"])
+        self.assertIn("create", live)
+        self.assertIn("StartPIE", pie)
+        self.assertEqual(["CaptureViewport"], viewport)
+        self.assertFalse(set(live) & set(pie))
+        self.assertNotIn("create", forge.catalog_tool_names("unreal-python", ["ue.python.commandlet"]))
+
+    def test_a_commandlet_packet_is_told_nothing_about_blueprint_tools(self):
+        contracts = {
+            "ue.python.commandlet": {
+                "provider": "unreal-python",
+                "kind": "process",
+                "status": "AVAILABLE_UNVERIFIED",
+                "lane": "lane.ue-editor-closed",
+                "tool_surface": "result file is the authority",
+            }
+        }
+        rows = forge.resolve_tool_access(contracts, {"ue.python.commandlet"})
+        self.assertEqual([], rows[0]["tools"])
+        self.assertIn("result file", rows[0]["tool_surface"])
+
+    def test_a_catalogue_written_for_another_engine_reports_itself_stale(self):
+        self.assertIsNone(forge.catalog_staleness("unreal-mcp", "5.8"))
+        stale = forge.catalog_staleness("unreal-mcp", "5.9")
+        self.assertEqual(forge.ERROR_REASON["CATALOG_STALE"], stale["reason"])
+        self.assertEqual("5.8", stale["catalog_version"])
+        missing = forge.catalog_staleness("blender-mcp", "5.8")
+        self.assertEqual(forge.ERROR_REASON["CATALOG_MISSING"], missing["reason"])
+
+    def test_an_unreal_task_shape_resolves_to_the_lane_policy_names(self):
+        policy = forge.route_policy()
+        self.assertEqual("lane.ue-editor-closed", forge.unreal_shape_lane("ik-retarget", policy))
+        self.assertEqual("lane.ue-editor", forge.unreal_shape_lane("viewport-evidence", policy))
+        self.assertIsNone(forge.unreal_shape_lane("something-unlisted", policy))
+
     def test_probe_reports_absence_without_guessing(self):
         with workspace_tempdir() as root:
             result = forge.probe_mcp_server(root, forge.host_profile("claude"), "unreal-mcp")

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import time
 from typing import Any
 
@@ -129,6 +130,43 @@ def schema_defaults_stage(session: McpSession) -> dict[str, str]:
     )
 
 
+CATALOGUE = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "plugins" / "forge-ue-studio" / "dependencies" / "tool-catalog" / "unreal-mcp@5.8.json"
+)
+
+
+def catalogue_stage(session: McpSession, advertised: set[str]) -> dict[str, str]:
+    try:
+        catalogue = json.loads(CATALOGUE.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return stage("catalogue-matches-engine", "FAIL", f"no catalogue to check: {exc}")
+    toolsets = catalogue["toolsets"]
+    gone = sorted(set(toolsets) - advertised)
+    if gone:
+        return stage(
+            "catalogue-matches-engine", "FAIL",
+            f"catalogued toolsets no longer advertised: {', '.join(gone)}",
+        )
+    undescribed = []
+    for name, body in toolsets.items():
+        try:
+            described = text_of(session.call_tool("describe_toolset", {"toolset_name": name}))
+        except McpError as exc:
+            return stage("catalogue-matches-engine", "FAIL", f"describe_toolset({name}) failed: {str(exc)[:200]}")
+        undescribed += [f"{name}.{tool}" for tool in body["tools"] if tool not in described]
+    if undescribed:
+        return stage(
+            "catalogue-matches-engine", "FAIL",
+            f"catalogued tools no longer described: {', '.join(undescribed)}",
+        )
+    total = sum(len(body["tools"]) for body in toolsets.values())
+    return stage(
+        "catalogue-matches-engine", "PASS",
+        f"{len(toolsets)} catalogued toolsets and {total} tools are still advertised by the engine",
+    )
+
+
 def _image_bytes(result: dict[str, Any]) -> int:
     for part in result.get("content", []):
         if part.get("type") == "image" and part.get("data"):
@@ -156,11 +194,13 @@ def main(argv: list[str] | None = None) -> int:
         if missing:
             detail = f"the server does not advertise {', '.join(missing)}; AllToolsets may be disabled"
             stages = [stage("blueprint-create-compile", "NOT_PROVEN", detail),
-                      stage("pie-and-viewport-evidence", "NOT_PROVEN", detail)]
+                      stage("pie-and-viewport-evidence", "NOT_PROVEN", detail),
+                      stage("catalogue-matches-engine", "NOT_PROVEN", detail)]
         else:
             stages.append(blueprint_stage(session))
             stages.append(pie_stage(session))
             stages.append(schema_defaults_stage(session))
+            stages.append(catalogue_stage(session, advertised))
     except McpError as exc:
         detail = str(exc)[:300]
         stages = [stage("blueprint-create-compile", "FAIL", detail), stage("pie-and-viewport-evidence", "FAIL", detail)]
