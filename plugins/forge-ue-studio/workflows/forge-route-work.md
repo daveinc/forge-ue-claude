@@ -108,6 +108,10 @@ Before taking `lane.ue-editor-closed`, read `ownership` on the route:
 On `UNDETERMINED`: take neither lane and do not re-probe until it answers differently. Never treat a
 silent MCP endpoint as proof the editor is closed. Resolving the process check is the fix.
 
+`dispatch` enforces this rather than trusting the workflow: a packet whose capability sits on an
+`UNAVAILABLE_BLOCKING` route is refused as `route_blocked`, separately from `route_unreachable`,
+and the refusal carries the `human_action` describing what to resolve.
+
 > **Why:** CHANGELOG.md 0.6.0 § *A silent editor is not a closed editor* · § *An editor answering is not this project's editor answering* — 0.4.0 § *The editor-closed Unreal API is a route, not a fallback string* — 0.4.1 § *Routing decides what a packet must hold, and acquiring checks it*
 </step>
 

@@ -2761,7 +2761,7 @@ class EditorClosedRouteTests(unittest.TestCase):
     def test_a_clear_lane_makes_it_available(self):
         with self.game(engine_present=True) as root:
             probe = forge.probe_process_route(root, self.row)
-            self.assertTrue(probe["lane_clear"])
+            self.assertEqual(probe["ownership"], "FREE")
             self.assertEqual(probe["status"], "AVAILABLE_UNVERIFIED")
             self.assertEqual(self.contracts(root)["ue.python.commandlet"]["status"], "AVAILABLE_UNVERIFIED")
 
@@ -2781,7 +2781,7 @@ class EditorClosedRouteTests(unittest.TestCase):
                 table = {"resolved": True, "mechanism": "Win32_Process", "processes": [self.editor_process(root)]}
                 with self.process_table(table):
                     probe = forge.probe_process_route(root, self.row)
-                    self.assertFalse(probe["lane_clear"])
+                    self.assertEqual(probe["ownership"], "HELD")
                     self.assertEqual(probe["status"], "UNAVAILABLE_OPTIONAL")
 
                     contracts = self.contracts(root)
@@ -2822,7 +2822,7 @@ class EditorClosedRouteTests(unittest.TestCase):
                 self.assertEqual(ownership["ownership"], "HELD")
                 self.assertEqual(ownership["holder"]["pid"], 4242)
                 probe = forge.probe_process_route(root, self.row)
-                self.assertFalse(probe["lane_clear"])
+                self.assertEqual(probe["ownership"], "HELD")
                 self.assertEqual(probe["status"], "UNAVAILABLE_OPTIONAL")
                 self.assertEqual(self.contracts(root)["ue.python.commandlet"]["status"], "UNAVAILABLE_OPTIONAL")
 
@@ -2834,7 +2834,7 @@ class EditorClosedRouteTests(unittest.TestCase):
             with self.process_table(table):
                 ownership = forge.live_editor_holds_project(root)
                 self.assertEqual(ownership["ownership"], "FREE")
-                self.assertTrue(forge.probe_process_route(root, self.row)["lane_clear"])
+                self.assertEqual(forge.probe_process_route(root, self.row)["ownership"], "FREE")
 
     def test_an_empty_machine_is_positive_evidence_of_absence(self):
         with self.game(engine_present=True) as root:
@@ -2852,10 +2852,9 @@ class EditorClosedRouteTests(unittest.TestCase):
             with self.process_table(broken):
                 ownership = forge.live_editor_holds_project(root)
                 self.assertEqual(ownership["ownership"], "UNDETERMINED")
-                self.assertIsNone(ownership["held"])
                 self.assertIn("will not guess", ownership["human_action"])
                 probe = forge.probe_process_route(root, self.row)
-                self.assertFalse(probe["lane_clear"])
+                self.assertEqual(probe["ownership"], "UNDETERMINED")
                 self.assertEqual(probe["status"], "UNAVAILABLE_BLOCKING")
                 self.assertIn("human_action", probe)
                 self.assertFalse(self.contracts(root)["ue.python.commandlet"]["status"].startswith("AVAILABLE"))
@@ -2895,7 +2894,7 @@ class EditorClosedRouteTests(unittest.TestCase):
                     self.assertEqual(ownership["ownership"], "UNDETERMINED")
                     self.assertIn("contradict", ownership["detail"])
                     probe = forge.probe_process_route(root, self.row)
-                    self.assertFalse(probe["lane_clear"])
+                    self.assertEqual(probe["ownership"], "UNDETERMINED")
                     self.assertTrue(probe.get("human_action"))
 
     def test_an_mcp_answer_with_no_attributable_process_is_held(self):
@@ -2923,7 +2922,7 @@ class EditorClosedRouteTests(unittest.TestCase):
                     ownership = forge.live_editor_holds_project(root)
                     self.assertEqual(ownership["ownership"], "FREE")
                     self.assertIn("different project", ownership["detail"])
-                    self.assertTrue(forge.probe_process_route(root, self.row)["lane_clear"])
+                    self.assertEqual(forge.probe_process_route(root, self.row)["ownership"], "FREE")
 
                 both = {
                     "resolved": True,
@@ -3638,6 +3637,40 @@ class DispatchAdmissionTests(unittest.TestCase):
             self.assertEqual(
                 [item["capability"] for item in caught.exception.extra["unreachable"]], ["ue.python.commandlet"]
             )
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_a_degraded_capability_the_packet_never_declares_does_not_refuse_it(self):
+        decision = {
+            "canonical_work_order": "FI-UNREAL",
+            "tool_access_degraded": True,
+            "degraded_capabilities": [{"capability": "ue.python.commandlet"}],
+            "leases": [],
+            "isolation_mode": "read-only",
+        }
+        reader = {"work_order": "FI-UNREAL", "capabilities": [], "leases": [],
+                  "isolation": {"mode": "read-only"}}
+        self.assertEqual([], forge.route_conflicts(reader, decision))
+        declarer = dict(reader, capabilities=["ue.python.commandlet"])
+        self.assertIn("degraded", " ".join(forge.route_conflicts(declarer, decision)))
+
+    def test_a_lane_whose_state_is_unknown_refuses_differently_from_one_that_is_merely_busy(self):
+        with self.game(engine_present=True) as root:
+            self.record(root)
+            blind = {"resolved": False, "mechanism": None, "processes": [],
+                     "detail": "neither Win32_Process nor tasklist answered"}
+            original = forge.executor.process_table
+            forge.executor.process_table = lambda: blind
+            try:
+                with self.assertRaises(forge.ForgeExit) as caught:
+                    forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            finally:
+                forge.executor.process_table = original
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ROUTE_BLOCKED"])
+            self.assertNotEqual(forge.ERROR_REASON["ROUTE_BLOCKED"], forge.ERROR_REASON["ROUTE_UNREACHABLE"])
+            blocked = caught.exception.extra["blocked"]
+            self.assertEqual([item["capability"] for item in blocked], ["ue.python.commandlet"])
+            self.assertEqual(blocked[0]["ownership"], "UNDETERMINED")
+            self.assertIn("will not guess", blocked[0]["human_action"])
             self.assertEqual(forge.executor.status(root)["active"], [])
 
     def test_a_packet_holding_less_than_routing_required_is_refused(self):

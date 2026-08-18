@@ -2,6 +2,33 @@
 
 Every section below is dated from the tag that released it. One tag is not a release: `v0.1.0` pins the exact tree an external architecture review read, so that its assessment can be reproduced. The work it marks shipped in 0.2.0, and there is no 0.1.0 section for it — the `0.1.0` heading at the bottom is the original release of 2026-08-14.
 
+## 0.7.0 - 2026-08-18
+
+### A lane whose state is unknown refuses differently from one that is merely busy
+
+- `UNDETERMINED` reported `UNAVAILABLE_BLOCKING`, and then `resolve_tool_access` collapsed every status to `bound = startswith("AVAILABLE")`, so admission raised the same `route_unreachable` for an editor legitimately holding the lane and for a machine that could not say whether one did. The first is a normal condition to route around; the second is a fault, and the difference was carried only by a sentence in `forge-route-work`.
+- `dispatch` now refuses a blocked lane as `route_blocked`, carrying the `ownership` verdict and the `human_action` that names what to resolve. The guarantee the previous release described in prose is now a branch in the code.
+
+### The ownership verdict reaches the thing that was told to read it
+
+- `probe_process_route` has built `ownership`, its evidence and its `human_action` since 0.6.0, and both consumers dropped all three. `forge-route-work` told the agent to *read `ownership` on the route*, and `route-status` never emitted it — an instruction pointing at a field that did not exist.
+- Capability contracts and `route-status` rows carry `ownership`, `ownership_evidence` and `human_action`, and `capability-contract` declares the enum, which had never appeared in a schema.
+
+### One decision, one process table
+
+- Answering *does an editor hold this project* spawns a process-table query, and `route-status` asked twice per call: once through the capability contracts and once through its own route loop. `live_editor_holds_project` was the only function in the chain that did not accept the `table` its callees already took.
+- It takes one now, and `mcp_status` resolves the table once and passes it down. Measured against a project with the engine command on PATH: **2.34s to 1.88s.** The residual is a duplicated endpoint handshake, which costs a socket connect rather than a subprocess.
+
+### `lane_clear` said less than the field beside it
+
+- `lane_clear` was exactly `status.startswith("AVAILABLE")` in every branch it was set in, while `status` distinguished the three separate reasons a lane was shut: the command was not on PATH, an editor held the project, or inspection could not answer. It had no production reader and was kept alive by the assertions that checked it.
+- It is gone, along with `held`, which restated `ownership`. The four hand-written copies of the availability test are one `is_available` helper. Tests now assert the reason a lane is shut rather than that it is shut.
+
+### A degraded capability refuses the packets that use it, not every packet under the work order
+
+- A routing decision is recorded per work order, and `route_conflicts` read `tool_access_degraded` off the decision without asking whether the packet in hand had anything to do with it. A strictly read-only packet — no capabilities, no leases — was refused because an unrelated capability under the same work order was degraded.
+- The refusal now requires the packet to claim a degraded capability or to take a lease. A packet that takes nothing is no longer refused for what a sibling packet needed.
+
 ## 0.6.0 - 2026-08-17
 
 ### The handshake is decided by a parsed reply, not by a substring in one read

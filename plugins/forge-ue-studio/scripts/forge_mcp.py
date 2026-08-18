@@ -15,6 +15,7 @@ from typing import Any
 
 import forge_executor as executor
 from forge_core import (
+    is_available,
     ERROR_REASON,
     EXIT_USAGE,
     ForgeExit,
@@ -595,7 +596,7 @@ def editor_process_holding(root: Path, table: dict[str, Any] | None = None) -> d
     }
 
 
-def live_editor_holds_project(root: Path) -> dict[str, Any]:
+def live_editor_holds_project(root: Path, table: dict[str, Any] | None = None) -> dict[str, Any]:
     """Whether an editor owns this project: HELD, FREE, or honestly UNDETERMINED.
 
     Absence of evidence is not evidence of absence. The editor-closed lane may be
@@ -610,7 +611,7 @@ def live_editor_holds_project(root: Path) -> dict[str, Any]:
     ]
     evidence: list[dict[str, Any]] = []
     answering = next((url for url in endpoints if probe_mcp_endpoint(url, timeout=1.5)["speaks_mcp"]), None)
-    process = editor_process_holding(root)
+    process = editor_process_holding(root, table)
     if answering:
         evidence.append(
             {
@@ -625,7 +626,6 @@ def live_editor_holds_project(root: Path) -> dict[str, Any]:
             if process.get("editors_running"):
                 return {
                     "ownership": "FREE",
-                    "held": False,
                     "endpoint": answering,
                     "evidence": evidence,
                     "detail": f"an editor answered at {answering} and {process['editors_running']} editor "
@@ -634,7 +634,6 @@ def live_editor_holds_project(root: Path) -> dict[str, Any]:
                 }
             return {
                 "ownership": "UNDETERMINED",
-                "held": None,
                 "endpoint": answering,
                 "evidence": evidence,
                 "detail": f"something answered an MCP initialize at {answering} while no Unreal editor process "
@@ -648,7 +647,6 @@ def live_editor_holds_project(root: Path) -> dict[str, Any]:
             }
         return {
             "ownership": "HELD",
-            "held": True,
             "endpoint": answering,
             "holder": process["holder"],
             "evidence": evidence,
@@ -667,7 +665,6 @@ def live_editor_holds_project(root: Path) -> dict[str, Any]:
     if process["determined"] and process["holder"]:
         return {
             "ownership": "HELD",
-            "held": True,
             "endpoint": endpoints[0] if endpoints else None,
             "holder": process["holder"],
             "evidence": evidence,
@@ -676,7 +673,6 @@ def live_editor_holds_project(root: Path) -> dict[str, Any]:
     if not process["determined"]:
         return {
             "ownership": "UNDETERMINED",
-            "held": None,
             "endpoint": endpoints[0] if endpoints else None,
             "evidence": evidence,
             "detail": process["detail"],
@@ -690,14 +686,13 @@ def live_editor_holds_project(root: Path) -> dict[str, Any]:
         }
     return {
         "ownership": "FREE",
-        "held": False,
         "endpoint": endpoints[0] if endpoints else None,
         "evidence": evidence,
         "detail": "no editor answered and no Unreal editor process holds this project, so the editor-closed lane is enterable",
     }
 
 
-def probe_process_route(root: Path, provider: dict[str, Any]) -> dict[str, Any]:
+def probe_process_route(root: Path, provider: dict[str, Any], table: dict[str, Any] | None = None) -> dict[str, Any]:
     """Resolve the command, then require the live editor to be silent.
 
     Readiness here is the inverse of the MCP handshake: a commandlet must not run
@@ -712,10 +707,9 @@ def probe_process_route(root: Path, provider: dict[str, Any]) -> dict[str, Any]:
             "reason": f"{command!r} is not on PATH; the engine's editor-closed command could not be resolved",
             "command": command,
             "resolved": None,
-            "lane_clear": False,
             "searched": [command],
         }
-    editor = live_editor_holds_project(root)
+    editor = live_editor_holds_project(root, table)
     if editor["ownership"] == "HELD":
         return {
             "found": True,
@@ -724,7 +718,6 @@ def probe_process_route(root: Path, provider: dict[str, Any]) -> dict[str, Any]:
             "note": f"{editor['detail']}. Close the editor, or route this work to the live typed surface instead.",
             "command": command,
             "resolved": resolved,
-            "lane_clear": False,
             "ownership": editor["ownership"],
             "ownership_evidence": editor["evidence"],
             "endpoint": editor["endpoint"],
@@ -738,7 +731,6 @@ def probe_process_route(root: Path, provider: dict[str, Any]) -> dict[str, Any]:
             "note": editor["human_action"],
             "command": command,
             "resolved": resolved,
-            "lane_clear": False,
             "ownership": editor["ownership"],
             "ownership_evidence": editor["evidence"],
             "human_action": editor["human_action"],
@@ -752,7 +744,6 @@ def probe_process_route(root: Path, provider: dict[str, Any]) -> dict[str, Any]:
         "note": "Resolving the command is not a round trip. Only an acceptance suite that runs a commandlet and reads its result file earns more than UNVERIFIED.",
         "command": command,
         "resolved": resolved,
-        "lane_clear": True,
         "ownership": editor["ownership"],
         "ownership_evidence": editor["evidence"],
         "endpoint": editor["endpoint"],
@@ -760,10 +751,10 @@ def probe_process_route(root: Path, provider: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, Any]]:
+def mcp_capability_contracts(root: Path, profile: dict[str, Any], table: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Emit one forge.capability-contract/v2 per capability of every declared route."""
     contracts: list[dict[str, Any]] = []
-    contracts.extend(_process_contracts(root, profile))
+    contracts.extend(_process_contracts(root, profile, table))
     for provider in mcp_providers():
         server = str(provider.get("server", ""))
         probe = probe_mcp_server(root, profile, server, provider)
@@ -784,7 +775,7 @@ def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[s
                     "status": status,
                     "lease": provider.get("lease"),
                     "isolation_mode": provider.get("isolation_mode"),
-                    "health": "HEALTHY" if status.startswith("AVAILABLE") else "UNAVAILABLE",
+                    "health": "HEALTHY" if is_available(status) else "UNAVAILABLE",
                     "lane": provider.get("lane"),
                     "locality": provider.get("locality", "local"),
                     "executable_surfaces": [namespace] if namespace else [],
@@ -806,11 +797,11 @@ def mcp_capability_contracts(root: Path, profile: dict[str, Any]) -> list[dict[s
     return contracts
 
 
-def _process_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, Any]]:
+def _process_contracts(root: Path, profile: dict[str, Any], table: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """The same contract shape for a route the host runs rather than connects to."""
     contracts: list[dict[str, Any]] = []
     for provider in process_providers():
-        probe = probe_process_route(root, provider)
+        probe = probe_process_route(root, provider, table)
         missing = [item for item in provider.get("requires_host_provides", []) if item not in profile.get("provides", [])]
         status = "UNAVAILABLE_OPTIONAL" if missing else probe["status"]
         for capability in provider.get("capabilities", []):
@@ -822,7 +813,7 @@ def _process_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, An
                     "status": status,
                     "lease": provider.get("lease"),
                     "isolation_mode": provider.get("isolation_mode"),
-                    "health": "HEALTHY" if status.startswith("AVAILABLE") else "UNAVAILABLE",
+                    "health": "HEALTHY" if is_available(status) else "UNAVAILABLE",
                     "lane": provider.get("lane"),
                     "locality": provider.get("locality", "local"),
                     "executable_surfaces": [probe["resolved"]] if probe.get("resolved") else [],
@@ -837,7 +828,9 @@ def _process_contracts(root: Path, profile: dict[str, Any]) -> list[dict[str, An
                     "acceptance_suites": provider.get("acceptance_suites", []),
                     "invalidation_triggers": provider.get("invalidation_triggers", []),
                     "subagent_visible": "shell-execution" in profile.get("provides", []),
-                    "lane_clear": probe.get("lane_clear"),
+                    "ownership": probe.get("ownership"),
+                    "ownership_evidence": probe.get("ownership_evidence"),
+                    "human_action": probe.get("human_action"),
                     "tool_surface": provider.get("tool_surface"),
                     "detection_note": probe.get("note") or probe.get("reason"),
                 }
@@ -1149,7 +1142,8 @@ def mcp_amend(
 
 def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
     """Report every typed tool route: what it serves, its lane, and whether it is bound."""
-    contracts = mcp_capability_contracts(root, profile)
+    table = executor.process_table()
+    contracts = mcp_capability_contracts(root, profile, table)
     declared = resolve_project_servers(root)
     declared_ids = {item["id"] for item in declared}
     surface = profile.get("mcp", {}).get("project_surface")
@@ -1187,7 +1181,7 @@ def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
             }
         )
     for provider in process_providers():
-        probe = probe_process_route(root, provider)
+        probe = probe_process_route(root, provider, table)
         routes.append(
             {
                 "provider": provider["id"],
@@ -1201,10 +1195,12 @@ def mcp_status(root: Path, profile: dict[str, Any]) -> dict[str, Any]:
                 "lease": provider.get("lease"),
                 "isolation_mode": provider.get("isolation_mode"),
                 "declared_in_project": True,
-                "session_visible": probe["status"].startswith("AVAILABLE"),
+                "session_visible": is_available(probe["status"]),
                 "found": probe["found"],
                 "resolved": probe.get("resolved"),
-                "lane_clear": probe.get("lane_clear"),
+                "ownership": probe.get("ownership"),
+                "ownership_evidence": probe.get("ownership_evidence"),
+                "human_action": probe.get("human_action"),
                 "status": probe["status"],
                 "fallbacks": provider.get("fallbacks", []),
                 "note": probe.get("note") or probe.get("reason"),

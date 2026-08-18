@@ -25,6 +25,7 @@ from forge_core import (
     EXIT_USAGE,
     ForgeExit,
     RESIDENT_PROVIDER,
+    OCCUPANCY,
     SCHEMA_FILES,
     STATUSES,
     capability,
@@ -32,6 +33,7 @@ from forge_core import (
     executable,
     executor,
     expand_host_path,
+    is_available,
     fail,
     file_digest,
     find_uproject,
@@ -269,6 +271,25 @@ def dispatch_work(
     contracts = {str(item["capability"]): item for item in mcp_capability_contracts(root, profile)}
     required = {str(item) for item in packet.get("capabilities", []) if str(item).strip()}
     live = resolve_tool_access(contracts, required)
+    blocked = [item for item in live if item["routed"] and item.get("status") == "UNAVAILABLE_BLOCKING"]
+    if blocked:
+        raise fail(
+            f"{len(blocked)} capability the packet declares sits on a lane whose state could not be determined; "
+            "this is a fault to resolve, not a route to fall back from, because the cost of guessing wrong is a "
+            "commandlet writing into a project an editor still holds",
+            reason=ERROR_REASON["ROUTE_BLOCKED"],
+            code=EXIT_CONTRACT,
+            blocked=[
+                {
+                    "capability": item["capability"],
+                    "status": item.get("status"),
+                    "ownership": item.get("ownership"),
+                    "human_action": item.get("human_action"),
+                }
+                for item in blocked
+            ],
+            packet=str(packet_path),
+        )
     unreachable = [item for item in live if item["routed"] and not item["bound"]]
     if unreachable:
         raise fail(

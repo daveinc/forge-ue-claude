@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import forge_executor as executor
-from forge_core import ERROR_REASON, EXIT_CONTRACT, EXIT_USAGE, RESIDENT_PROVIDER, fail, load_json, plugin_root, project_root, utc_now
+from forge_core import ERROR_REASON, is_available, EXIT_CONTRACT, EXIT_USAGE, RESIDENT_PROVIDER, fail, load_json, plugin_root, project_root, utc_now
 from forge_hosts import active_profile
 from forge_mcp import catalog_tool_names, mcp_capability_contracts
 
@@ -235,7 +235,7 @@ def resolve_tool_access(contracts: dict[str, Any], required_capabilities: set[st
                 }
             )
             continue
-        bound = str(contract.get("status", "")).startswith("AVAILABLE")
+        bound = is_available(contract.get("status"))
         resolved.append(
             {
                 "capability": name,
@@ -244,6 +244,8 @@ def resolve_tool_access(contracts: dict[str, Any], required_capabilities: set[st
                 "provider": contract.get("provider"),
                 "kind": contract.get("kind"),
                 "status": contract.get("status"),
+                "ownership": contract.get("ownership"),
+                "human_action": contract.get("human_action"),
                 "lane": contract.get("lane"),
                 "lease": contract.get("lease"),
                 "isolation_mode": contract.get("isolation_mode"),
@@ -277,10 +279,15 @@ def route_conflicts(packet: dict[str, Any], decision: dict[str, Any], work_order
     if canonical and order and order != canonical:
         conflicts.append(f"packet is work order {order!r}; the decision authorises {canonical!r}")
     if decision.get("tool_access_degraded"):
-        degraded = ", ".join(str(item.get("capability")) for item in decision.get("degraded_capabilities", []))
-        conflicts.append(
-            f"routing marked tool access degraded for {degraded}; take the declared fallback rather than the lane"
-        )
+        degraded_capabilities = {str(item.get("capability")) for item in decision.get("degraded_capabilities", [])}
+        packet_capabilities = {str(item) for item in packet.get("capabilities", []) if item}
+        claimed = sorted(degraded_capabilities & packet_capabilities)
+        takes_a_lane = bool([item for item in packet.get("leases", []) if item])
+        if claimed or takes_a_lane:
+            named = ", ".join(claimed) or ", ".join(sorted(degraded_capabilities))
+            conflicts.append(
+                f"routing marked tool access degraded for {named}; take the declared fallback rather than the lane"
+            )
     routed = {str(item) for item in decision.get("leases", []) if item}
     declared = {str(item) for item in packet.get("leases", []) if item}
     for missing in sorted(routed - declared):

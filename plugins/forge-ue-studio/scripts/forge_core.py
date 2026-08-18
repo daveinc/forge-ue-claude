@@ -22,6 +22,13 @@ STATUSES = {
     "STALE",
 }
 
+OCCUPANCY = {"HELD", "FREE", "UNDETERMINED"}
+
+
+def is_available(status: Any) -> bool:
+    """Whether a capability status means the route can be taken right now."""
+    return str(status or "").startswith("AVAILABLE")
+
 
 def schema_files() -> dict[str, str]:
     """Kind -> schema filename, derived from the schemas that ship."""
@@ -63,6 +70,7 @@ ERROR_REASON = MappingProxyType(
         "ROUTE_DECISION_MISSING": "route_decision_missing",
         "ROUTE_DECISION_STALE": "route_decision_stale",
         "ROUTE_UNREACHABLE": "route_unreachable",
+        "ROUTE_BLOCKED": "route_blocked",
         "USAGE": "usage",
         "UNKNOWN": "unknown",
         **executor.ERROR_REASONS,
