@@ -1182,7 +1182,6 @@ class ProjectMcpTests(unittest.TestCase):
 
     def test_the_project_surface_is_tracked_like_every_other_rendered_surface(self):
         with self.game() as root:
-            surface_path = str((root / ".mcp.json").resolve())
             checks = {c["path"]: c for c in forge.verify_overlay(str(root), "claude")["checks"]}
             tracked = next(c for path, c in checks.items() if Path(path).name == ".mcp.json")
             self.assertEqual(tracked["status"], "MATCH")
@@ -1197,7 +1196,8 @@ class ProjectMcpTests(unittest.TestCase):
                 if item["provider"] == "unreal-native-mcp"
             )
             self.assertFalse(route["session_visible"])
-            self.assertTrue(surface_path)
+            self.assertTrue(route["declared_in_project"])
+            self.assertTrue(route["rendered_to_host"])
 
     def test_a_host_without_a_project_surface_renders_nothing(self):
         with self.game() as root:
@@ -2587,7 +2587,9 @@ class McpHandshakeTests(unittest.TestCase):
         McpHandler.behaviour = "held-open-sse"
         with local_server(McpHandler) as url:
             with self.game(url) as root:
+                started = time.monotonic()
                 self.assertEqual(self.route(root)["status"], "AVAILABLE_VERIFIED")
+                self.assertLess(time.monotonic() - started, 6)
 
     def test_a_json_rpc_server_that_is_not_mcp_is_not_verified(self):
         McpHandler.behaviour = "jsonrpc-not-mcp"
@@ -2840,17 +2842,29 @@ class EditorClosedRouteTests(unittest.TestCase):
     def test_an_editor_answering_for_another_project_does_not_hold_this_one(self):
         with self.game(engine_present=True) as root:
             (root / "MyGame.uproject").write_text("{}", encoding="utf-8")
-            elsewhere = self.editor_process(
-                root, command_line='"C:\\UE\\UnrealEditor.exe" "D:\\Other\\Other.uproject"'
-            )
+            elsewhere = {
+                **self.editor_process(
+                    root, command_line='"C:\\UE\\UnrealEditor.exe" "D:\\Other\\Other.uproject"'
+                ),
+                "pid": 9999,
+            }
             with self.answering_editor(root):
                 table = {"resolved": True, "mechanism": "Win32_Process", "processes": [elsewhere]}
-                self.assertEqual(elsewhere["name"], "UnrealEditor.exe")
                 with self.process_table(table):
                     ownership = forge.live_editor_holds_project(root)
                     self.assertEqual(ownership["ownership"], "FREE")
                     self.assertIn("different project", ownership["detail"])
                     self.assertTrue(forge.probe_process_route(root, self.row)["lane_clear"])
+
+                both = {
+                    "resolved": True,
+                    "mechanism": "Win32_Process",
+                    "processes": [elsewhere, self.editor_process(root)],
+                }
+                with self.process_table(both):
+                    ownership = forge.live_editor_holds_project(root)
+                    self.assertEqual(ownership["ownership"], "HELD")
+                    self.assertEqual(ownership["holder"]["pid"], 4242)
 
     def test_an_mcp_answer_backed_by_this_projects_process_is_held(self):
         with self.game(engine_present=True) as root:

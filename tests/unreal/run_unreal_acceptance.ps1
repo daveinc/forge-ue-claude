@@ -37,8 +37,12 @@ $results = @()
 $editor = $null
 
 function Add-Result {
-    param([string]$Stage, [string]$Status, [string]$Detail)
-    $script:results += [pscustomobject]@{ stage = $Stage; status = $Status; detail = $Detail }
+    param([string]$Stage, [string]$Status, [string]$Detail, [hashtable]$Fields)
+    $row = [pscustomobject]@{ stage = $Stage; status = $Status; detail = $Detail }
+    if ($Fields) {
+        foreach ($key in $Fields.Keys) { $row | Add-Member -NotePropertyName $key -NotePropertyValue $Fields[$key] }
+    }
+    $script:results += $row
     $colour = switch ($Status) { 'PASS' { 'Green' } 'FAIL' { 'Red' } default { 'Yellow' } }
     Write-Host ("  {0,-32} {1,-16} {2}" -f $Stage, $Status, $Detail) -ForegroundColor $colour
 }
@@ -160,9 +164,14 @@ try {
             if ($editor.HasExited) { break }
             $held = Get-Ownership $projectDir
         }
-        if ($mcpSignal) {
+        if ($mcpSignal -and -not $ownedAt) {
+            Add-Result "mcp-handshake" "FAIL" "MCP answered but the process was never detected as holding the project, so the two waits cannot be compared"
+        } elseif ($mcpSignal) {
             $waited = [int]((Get-Date) - $ownedAt).TotalSeconds
-            Add-Result "mcp-handshake" "PASS" "a real editor answered an MCP initialize ${waited}s after the process was detected"
+            Add-Result "mcp-handshake" "PASS" "a real editor answered an MCP initialize ${waited}s after the process was detected" @{
+                process_detected_at = $ownedAt.ToString("o")
+                mcp_answered_after_seconds = $waited
+            }
         } else {
             $why = Invoke-Forge @("route-status", "--project", ".")
             $row = Get-Route $why "unreal-native-mcp"
@@ -209,6 +218,24 @@ try {
             $why = "the MCP route never bound, so nothing could be driven through it"
             Add-Result "blueprint-create-compile" "NOT_PROVEN" $why
             Add-Result "pie-and-viewport-evidence" "NOT_PROVEN" $why
+        }
+
+        $mcpPath = Join-Path $projectDir ".forge\mcp.json"
+        $mcpBefore = Get-Content -Raw -Encoding utf8 $mcpPath
+        try {
+            $silenced = $mcpBefore -replace ':8000/mcp', ':8/mcp'
+            Set-Content -Encoding utf8 -Path $mcpPath -Value $silenced
+            $frozen = Get-Ownership $projectDir
+            $byProcess = $frozen.evidence | Where-Object { $_.signal -eq "process-inspection" -and $_.conclusive }
+            if ($frozen.ownership -eq "HELD" -and $byProcess) {
+                Add-Result "ownership-frozen-editor" "PASS" "a live editor that answers no MCP is still HELD, on process evidence"
+            } elseif ($frozen.ownership -eq "HELD") {
+                Add-Result "ownership-frozen-editor" "PASS" "HELD while MCP was silent, though no conclusive process evidence was carried"
+            } else {
+                Add-Result "ownership-frozen-editor" "FAIL" "an open editor answering no MCP read as $($frozen.ownership), which would open the editor-closed lane against a live project"
+            }
+        } finally {
+            Set-Content -Encoding utf8 -Path $mcpPath -Value $mcpBefore
         }
 
         Write-Host "`n  closing the editor..." -ForegroundColor DarkGray
