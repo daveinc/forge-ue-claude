@@ -1,4 +1,19 @@
+<!-- forge:workflow
+name: runtime
+consumes: plugins/forge-ue-studio/hosts/registry.json, .forge/agents/*.json, .forge/templates/
+produces: the host's project instruction file and agent directory, .planning/config.json (runtime key only)
+-->
+
 # Forge Runtime — workflow
+
+<purpose>
+Assign or swap the resident host, and keep every rendered surface regenerated from canon.
+</purpose>
+
+<core_principle>
+Edit canon, never a rendered file. Reject any host name, skill prefix or vendor path written into
+canon.
+</core_principle>
 
 ## The portability contract
 
@@ -7,10 +22,9 @@
 | **Canon** | `.forge/agents/*.json`, `.forge/directives.md`, `.forge/templates/`, `.forge/state/`, `.forge/capabilities/`, `.planning/` | Edit these. Never host-specific. |
 | **Rendered** | The host's project instruction file and agent directory | Regenerate from canon. Never hand-edit. |
 
-Reject any host name, skill prefix, or vendor path written into canon.
+<process>
 
-## Inspect
-
+<step name="inspect" priority="first">
 1. List hosts, prerequisites, and detected CLIs:
 
    ```powershell
@@ -31,8 +45,10 @@ Reject any host name, skill prefix, or vendor path written into canon.
    ```
 
    `install` and `host set --apply` both write this key already, so a mismatch here means `.planning/config.json` was edited outside Forge. Add `--apply` to repoint it. This is the only key Forge writes there, so nothing else in that file is Forge's to correct.
+</step>
 
-## Assign or swap
+<step name="assign_or_swap">
+**Skip if:** no host change is requested.
 
 1. Confirm the target host satisfies the prerequisite contract through `prerequisites.satisfied`.
 2. Preview the change; without `--apply` nothing is written:
@@ -51,6 +67,9 @@ Reject any host name, skill prefix, or vendor path written into canon.
 5. Start a fresh session in the new host and run `forge-next`. Never continue a swap in the session that performed it.
 6. Re-probe every offload route through `forge-capability-admin` before trusting it; routing rejects an evaluation recorded under a different host.
 
+> **Why:** CHANGELOG.md 0.2.0 § *Host-agnostic runtime*
+</step>
+
 ## What a swap changes
 
 | | |
@@ -61,11 +80,15 @@ Reject any host name, skill prefix, or vendor path written into canon.
 | Re-pointed | GSD's `runtime` key in `.planning/config.json`, the only key Forge writes there. |
 | Invalidated | Provider qualification evidence and host context-cost measurements. |
 
-## Adding a new host
+<step name="add_host">
+**Skip if:** the target host already has a profile.
 
 1. Append a profile to `plugins/forge-ue-studio/hosts/registry.json` declaring its CLI, skill-invocation prefix, discovery roots, project surface, plugin install commands, GSD install arguments, and the capabilities it `provides`.
 2. Never edit Forge code to add a host.
 3. Validate with `python scripts/validate_repo.py`.
+</step>
+
+</process>
 
 ## Boundaries
 
