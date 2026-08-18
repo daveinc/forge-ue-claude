@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""The acceptance stages that need a live editor: Blueprint authoring and PIE.
-
-Every name and argument shape here was read off a real handshake against UE 5.8
-on 2026-08-17, not inferred from documentation. The script still verifies each
-toolset is advertised before calling into it, because the server's surface is
-discovered at runtime and a toolset that has gone is a fact worth reporting
-rather than a traceback.
-
-One behaviour worth knowing, learned the hard way: this server applies no schema
-defaults. A parameter the schema marks optional must still be supplied, and
-omitting one fails with a message naming the next missing parameter rather than
-all of them. Every call below passes its full argument set deliberately.
-"""
 
 from __future__ import annotations
 
@@ -23,7 +10,7 @@ from typing import Any
 
 from mcp_client import McpError, McpSession, text_of
 
-
+HELP = "The acceptance stages that need a live editor: Blueprint authoring, PIE, and whether the shipped tool catalogue still matches the engine."
 BLUEPRINT_TOOLSET = "editor_toolset.toolsets.blueprint.BlueprintTools"
 ASSET_TOOLSET = "editor_toolset.toolsets.asset.AssetTools"
 APP_TOOLSET = "EditorToolset.EditorAppToolset"
@@ -180,7 +167,7 @@ def _image_bytes(result: dict[str, Any]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=HELP)
     parser.add_argument("--url", default="http://127.0.0.1:8000/mcp")
     parser.add_argument("--output")
     args = parser.parse_args(argv)

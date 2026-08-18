@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import sys
@@ -14,13 +15,18 @@ ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugins" / "forge-ue-studio"
 IGNORED_PARTS = {".git", ".tmp", "__pycache__"}
 
+TEST_SOURCES = tuple(
+    path for path in sorted((ROOT / "tests").rglob("*.py")) if "__pycache__" not in path.parts
+)
 COMMENT_FREE_SOURCES = (
     *sorted((PLUGIN / "scripts").glob("*.py")),
     ROOT / "scripts" / "validate_repo.py",
-    ROOT / "tests" / "test_forge.py",
+    *TEST_SOURCES,
     ROOT / "install.ps1",
+    ROOT / "tests" / "unreal" / "run_unreal_acceptance.ps1",
 )
-EXEMPT_COMMENT_PREFIXES = ("#!", "# noqa", "# type:", "# pragma:")
+EXEMPT_COMMENT_PREFIXES = ("#!", "#Requires", "# noqa", "# type:", "# pragma:")
+POWERSHELL_HELP_KEYWORD = re.compile(r"^\s*\.[A-Z]{3,}\s*$", re.MULTILINE)
 
 SKILL_SECTIONS = ("invocation", "objective", "execution_context", "context", "process")
 SKILL_DESCRIPTION_LIMIT = 110
@@ -54,11 +60,83 @@ def comment_lines(path: Path) -> list[int]:
             if token.type == tokenize.COMMENT
             and not token.string.startswith(EXEMPT_COMMENT_PREFIXES)
         ]
+    found: list[int] = []
+    block_start = 0
+    block: list[str] = []
+    for number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1):
+        stripped = line.strip()
+        if block_start:
+            block.append(line)
+            if "#>" in stripped:
+                if not POWERSHELL_HELP_KEYWORD.search("\n".join(block)):
+                    found.append(block_start)
+                block_start = 0
+                block = []
+            continue
+        if stripped.startswith("<#"):
+            block = [line]
+            if "#>" in stripped[2:]:
+                if not POWERSHELL_HELP_KEYWORD.search(line):
+                    found.append(number)
+            else:
+                block_start = number
+            continue
+        if stripped.startswith("#") and not stripped.startswith(EXEMPT_COMMENT_PREFIXES):
+            found.append(number)
+    if block_start:
+        found.append(block_start)
+    return found
+
+
+def docstring_lines(path: Path) -> list[int]:
+    """Line numbers of every docstring in a test module."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    carriers = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
     return [
-        number
-        for number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1)
-        if line.lstrip().startswith("#") and not line.lstrip().startswith(EXEMPT_COMMENT_PREFIXES)
+        node.body[0].lineno
+        for node in ast.walk(tree)
+        if isinstance(node, carriers) and ast.get_docstring(node)
     ]
+
+
+def never_falsey(node: ast.AST, bound: set[str]) -> bool:
+    """Whether an expression cannot be falsey, so asserting it proves nothing."""
+    if isinstance(node, ast.Name):
+        return node.id in bound
+    if isinstance(node, ast.JoinedStr):
+        return True
+    if isinstance(node, ast.Constant):
+        return bool(node.value)
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "str"
+
+
+def vacuous_assertions(path: Path) -> list[int]:
+    """Line numbers of assertTrue calls on an expression that cannot be falsey."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: list[int] = []
+    for scope in ast.walk(tree):
+        if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        bound = {
+            target.id
+            for node in ast.walk(scope)
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id == "str"
+        }
+        for node in ast.walk(scope):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "assertTrue"
+                and node.args
+                and never_falsey(node.args[0], bound)
+            ):
+                found.append(node.lineno)
+    return found
 
 
 def neutrality_banned_tokens(hosts: list) -> list[str]:
@@ -605,6 +683,20 @@ def main() -> int:
             fail(
                 f"{path.relative_to(ROOT)}:{number} carries a comment; state it as a rule in a "
                 f"skill or doc, or express it in the code (see CONTRIBUTING.md)",
+                failures,
+            )
+
+    for path in TEST_SOURCES:
+        for number in docstring_lines(path):
+            fail(
+                f"{path.relative_to(ROOT)}:{number} carries a docstring; a test says what it "
+                f"means in its name and proves it in its assertions (see CONTRIBUTING.md)",
+                failures,
+            )
+        for number in vacuous_assertions(path):
+            fail(
+                f"{path.relative_to(ROOT)}:{number} asserts an expression that cannot be falsey, "
+                f"so it proves nothing; assert the value the test is about",
                 failures,
             )
 

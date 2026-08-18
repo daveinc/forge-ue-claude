@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""A minimal streamable-HTTP MCP client, for talking to a live Unreal editor.
-
-Forge itself only performs `initialize`, because that is all a capability probe
-needs: a route either answers or it does not. Driving the editor needs a session,
-so this lives with the acceptance tests rather than in the plugin.
-
-The tool names are deliberately not hard-coded anywhere. Unreal's server runs in
-discovery mode by default, where `tools/list` returns only `list_toolsets`,
-`describe_toolset` and `call_tool`, and everything else is reached through
-`call_tool`. What a toolset offers is read at runtime, never assumed.
-"""
 
 from __future__ import annotations
 
@@ -20,7 +9,7 @@ import http.client
 import urllib.parse
 from typing import Any
 
-
+HELP = "A minimal streamable-HTTP MCP client, for talking to a live Unreal editor."
 PROTOCOL_VERSION = "2025-06-18"
 
 
@@ -165,7 +154,7 @@ def text_of(result: dict[str, Any]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=HELP)
     parser.add_argument("--url", default="http://127.0.0.1:8000/mcp")
     parser.add_argument("--describe", action="store_true", help="Also describe every toolset the server advertises")
     parser.add_argument("--output")
