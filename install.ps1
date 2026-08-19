@@ -1,6 +1,6 @@
-[CmdletBinding(SupportsShouldProcess = $true)]
+﻿[CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'RouteStatus', 'Dispatch', 'Exec', 'Lifecycle', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
+    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'RouteStatus', 'Dispatch', 'Exec', 'Lifecycle', 'Procedure', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
     [string]$Mode = 'Plugin',
     [ArgumentCompleter({
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -18,11 +18,12 @@ param(
     [string]$GsdVersion = '1.10.0',
     [string]$ProjectPath,
     [string]$RequestPath,
-    [ValidateSet('asset-interface', 'attempt-result', 'bootstrap-report', 'capability-contract', 'environment-snapshot', 'host-profile', 'install-jobs', 'lane-lease', 'learning-record', 'lifecycle-state', 'packet-registry', 'project-mcp', 'provider-evaluation', 'research-record', 'review-cycle', 'route-decisions', 'route-provider', 'route-request', 'runtime-state', 'smart-entry', 'work-orders', 'work-packet')]
+    [ValidateSet('asset-interface', 'attempt-result', 'bootstrap-report', 'capability-contract', 'environment-snapshot', 'host-profile', 'install-jobs', 'lane-lease', 'learning-record', 'lifecycle-state', 'packet-registry', 'procedure', 'project-mcp', 'provider-evaluation', 'research-record', 'review-cycle', 'route-decisions', 'route-provider', 'route-request', 'runtime-state', 'smart-entry', 'work-orders', 'work-packet')]
     [string]$ContractKind,
     [string]$InputPath,
     [ValidateSet('status')]
     [string]$LifecycleEvent = 'status',
+    [string]$TaskClass,
     [int]$Phase,
     [ValidateSet('add', 'remove', 'enable', 'disable', 'sync-user')]
     [string]$McpAction,
@@ -292,7 +293,7 @@ if ($Mode -eq 'Host') {
     exit $LASTEXITCODE
 }
 
-if ($Mode -ne 'Validate' -and -not $ProjectPath) {
+if ($Mode -notin @('Validate', 'Procedure') -and -not $ProjectPath) {
     throw '-ProjectPath is required for Survey, Install, Verify, Profile, Next, BootstrapCheck, Route, McpStatus, RouteStatus, GsdSync, and Lifecycle modes.'
 }
 
@@ -304,6 +305,11 @@ if ($Mode -eq 'Validate') {
         throw '-ContractKind and -InputPath are required for Validate mode.'
     }
     $arguments += @('--kind', $ContractKind, '--input', $InputPath)
+} elseif ($Mode -eq 'Procedure') {
+    if (-not $TaskClass) {
+        throw '-TaskClass is required for Procedure mode.'
+    }
+    $arguments += @('--task-class', $TaskClass)
 } else {
     $arguments += @('--project', $ProjectPath)
 }

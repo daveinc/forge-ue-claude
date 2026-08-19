@@ -151,6 +151,7 @@
     "prefer_live_editor_for": [
       "schema-discoverable-inspection",
       "bounded-scene-or-blueprint-mutation",
+      "world-blockout",
       "pie-verification",
       "viewport-evidence",
       "typed-readback"

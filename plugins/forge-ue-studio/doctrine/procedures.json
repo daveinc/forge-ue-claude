@@ -1,0 +1,239 @@
+{
+  "schema": "forge.procedure/v1",
+  "note": "What a phase of this kind consists of. Keyed on task_class, the field forge.work-packet/v2 already requires and route-policy.json already scopes qualification by. A step names the capability it needs; the lane follows from that capability through route-registry.json, so a procedure whose steps span the two mutually exclusive Unreal lanes is two packets and not one. `lane` is where the bulk of the work sits. Where a step needs a call the shipped tool catalogue does not carry, the step says so rather than naming a tool that may not exist.",
+  "procedures": {
+    "ik-retarget": {
+      "lane": "lane.ue-editor-closed",
+      "capabilities": ["ue.python.commandlet", "ue.batch", "ue.pie", "ue.viewport"],
+      "steps": [
+        {
+          "does": "Confirm the source and target skeletons are compatible before authoring anything: retarget root present on both, pelvis and root bone naming resolved, and every source chain with a target counterpart. The shipped tool catalogue carries no skeleton-inspection call, so read the skeleton through unreal.* in an editor-closed script rather than assuming a tool name.",
+          "produces": "A compatibility report naming every source bone and chain with no target counterpart, and the decision taken for each.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Author or verify an IK Rig for the source skeleton and one for the target, each with its retarget root set and its FK chains defined. A missing chain on either side silently drops that limb from the retarget rather than failing it.",
+          "produces": "Two IK Rig assets saved under the declared content path, each with its chain list recorded in the result file.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Author the IK Retargeter asset and its chain mapping, source chain to target chain, and record every chain left unmapped as a deliberate decision rather than an omission.",
+          "produces": "One IK Retargeter asset and the chain mapping table it carries.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Batch-retarget every source sequence named in the packet, in an editor-closed script under the project-exclusive lease, in batches small enough that one failure does not lose the pass. Never run this inside a live editor tick.",
+          "produces": "One retargeted target asset per source sequence, and a result file naming each source and the asset it produced or the error it raised.",
+          "capability": "ue.batch"
+        },
+        {
+          "does": "Re-point the Animation Blueprint at the target skeleton and rebind every sequence reference it still holds to the source skeleton.",
+          "produces": "A recompiled Animation Blueprint with no remaining source-skeleton reference, and the list of references rebound.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Play a locomotion loop in PIE and read root motion delta and pelvis translation back off the running world. This is the check whose absence fails no build, which is why it is a step and not a note.",
+          "produces": "Measured root motion delta and pelvis translation per loop cycle, against the source values.",
+          "capability": "ue.pie"
+        },
+        {
+          "does": "Capture the viewport on the running locomotion loop. Every field of captureTransform must be supplied and annotations passed as an empty array; a result with no image part is a failed capture even when no error was raised.",
+          "produces": "A viewport image of the retargeted locomotion loop.",
+          "capability": "ue.viewport"
+        }
+      ],
+      "non_goals": [
+        "Authoring new animation content; this retargets what exists.",
+        "Editing either skeleton's bone hierarchy to force compatibility.",
+        "Running the batch pass inside the live editor, which the lane exclusion forbids.",
+        "Gameplay-side changes to how the Animation Blueprint is driven."
+      ],
+      "acceptance": [
+        "Every source sequence named in the packet has a retargeted target asset saved under the target skeleton.",
+        "No retargeted asset fails to load or compile on a fresh open.",
+        "The Animation Blueprint references the target skeleton and retains no binding to a source-skeleton sequence.",
+        "Every source chain is either mapped in the retargeter or recorded as a deliberate omission."
+      ],
+      "verification": [
+        "The editor-closed result file is the authority on what the batch did, never the commandlet exit code, which can be zero on a pass that retargeted nothing.",
+        "An independent verifier reloads the retargeted assets from disk rather than reading the batch log.",
+        "Root motion delta and pelvis translation are read off a running PIE loop, not inferred from the asset.",
+        "The PIE readback is taken only after IsPIERunning reports true; PIE does not report running immediately."
+      ],
+      "evidence": [
+        "The result file listing every source sequence and the target asset it produced.",
+        "A PIE viewport capture of the retargeted locomotion loop, not a green exit code.",
+        "The step-one compatibility report, including every bone and chain with no counterpart."
+      ]
+    },
+    "world-blockout": {
+      "lane": "lane.ue-editor",
+      "capabilities": ["ue.live.typed", "ue.pie", "ue.viewport"],
+      "steps": [
+        {
+          "does": "Fix the level's content path, world bounds, grid cell size and the count and kind of building before any asset exists, and confirm with AssetTools.exists that no declared path is already occupied.",
+          "produces": "A blockout brief naming the level path, the world bounds, the cell size, and one row per building giving its archetype and its grid cell.",
+          "capability": "ue.live.typed"
+        },
+        {
+          "does": "Author each distinct building archetype as a Blueprint actor with BlueprintTools.create, passing asset_type as a full class object path rather than a bare class name, then compile it with compile_blueprint supplying warnings_as_errors even though the schema marks it optional. A null return is success, not failure.",
+          "produces": "One compiled Blueprint asset per archetype, at the paths the brief declared.",
+          "capability": "ue.live.typed"
+        },
+        {
+          "does": "Persist every authored asset with AssetTools.save_assets and re-check it with AssetTools.exists afterwards. An unsaved Blueprint reads as existing and does not survive an editor restart, so the check before the save proves nothing.",
+          "produces": "Every archetype asset on disk, and the save result per path.",
+          "capability": "ue.live.typed"
+        },
+        {
+          "does": "Create the level and place the ground plane and one instance per building on the declared grid. The shipped tool catalogue carries no level-creation or actor-placement call for this route: discover the toolset through list_toolsets and describe_toolset before calling, and if the live route exposes none, move the placement to an editor-closed script rather than improvising a tool name.",
+          "produces": "A saved level asset holding the placed instances, plus the call names actually used, recorded so the next run does not rediscover them.",
+          "capability": "ue.live.typed"
+        },
+        {
+          "does": "Run PIE and read the world back with GetVisibleActors, after IsPIERunning reports true. Outside a running session it returns an empty array rather than erroring, so an empty readback is a failure and never a pass.",
+          "produces": "One actor record per placed building plus the ground, with names and transforms.",
+          "capability": "ue.pie"
+        },
+        {
+          "does": "Capture the viewport from the overview transform the brief recorded, with every field of captureTransform supplied and annotations passed as an empty array.",
+          "produces": "A viewport image showing the whole map and every placed building.",
+          "capability": "ue.viewport"
+        }
+      ],
+      "non_goals": [
+        "Final art, materials, lighting or landscape sculpting; a blockout settles scale and layout and stops.",
+        "Gameplay logic inside the building Blueprints.",
+        "Nanite, LOD or collision optimisation, which is `lod-generation`.",
+        "World partition or level streaming configuration.",
+        "Importing external meshes, which is `batch-import`."
+      ],
+      "acceptance": [
+        "The level exists at the declared content path and is saved to disk.",
+        "Every archetype the brief names is a compiled Blueprint asset saved under the declared folder.",
+        "Every building instance sits inside the declared world bounds and on a declared grid cell.",
+        "No two placed buildings occupy the same cell, and none intersects the ground plane."
+      ],
+      "verification": [
+        "GetVisibleActors in a running PIE session returns one record per placed building, read after IsPIERunning reports true.",
+        "AssetTools.exists is re-run after save_assets, because an asset reads as existing before it is on disk.",
+        "An independent verifier re-opens the level in a fresh session rather than trusting the authoring session's own readback.",
+        "Placement is checked against the brief's grid rows, not against what the level happens to contain."
+      ],
+      "evidence": [
+        "A viewport capture of the whole map from the recorded overview transform, carrying an image part.",
+        "The PIE actor readback listing every placed building by name and transform.",
+        "The blockout brief from step one, so the result can be checked against what was asked for.",
+        "The call names used for level creation and placement, since the catalogue does not carry them."
+      ]
+    },
+    "batch-import": {
+      "lane": "lane.ue-editor-closed",
+      "capabilities": ["ue.python.commandlet", "ue.batch"],
+      "steps": [
+        {
+          "does": "Enumerate the source files and resolve each to one destination content path and one asset type before any import runs. Refuse a manifest in which two sources land on one path.",
+          "produces": "An import manifest: source file, destination content path, asset type, per row.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Declare the import settings each asset type needs rather than leaving them to the factory default, which differs between the Interchange pipeline and the legacy factories: the target skeleton for skeletal meshes, the material import mode, sRGB and compression for textures.",
+          "produces": "A settings block per asset type, recorded with the manifest so a re-import reproduces the same result.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Run the import as an editor-closed script under the project-exclusive lease, in batches small enough that one failing source does not lose the pass.",
+          "produces": "A result file naming every source and the asset it produced or the error it raised.",
+          "capability": "ue.batch"
+        },
+        {
+          "does": "Save and re-open every imported asset. An import that reported success and produced an asset that will not load is the failure this step exists to catch.",
+          "produces": "A load report with one pass or fail per imported asset.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Re-run the import over the same manifest and confirm it is idempotent: the second pass must reuse the existing assets rather than minting numerically suffixed duplicates.",
+          "produces": "A duplicate report naming any asset the second pass created.",
+          "capability": "ue.batch"
+        }
+      ],
+      "non_goals": [
+        "Authoring or fixing materials beyond the declared import mode.",
+        "Generating LODs or enabling Nanite, which is `lod-generation`.",
+        "Retargeting imported animation, which is `ik-retarget`.",
+        "Editing the source files on disk to make them import."
+      ],
+      "acceptance": [
+        "Every source in the manifest has exactly one asset at the destination path the manifest declared.",
+        "No imported asset name carries an auto-generated numeric suffix.",
+        "The content tree gained no asset the manifest did not name.",
+        "Every imported asset loads in a process that did not import it."
+      ],
+      "verification": [
+        "The result file is the authority on what imported, never the commandlet exit code, which can be zero on a pass that imported nothing.",
+        "Every imported asset is re-loaded from disk in a second process rather than read back from the importing one.",
+        "The idempotence pass runs over the same manifest and is confirmed to change nothing."
+      ],
+      "evidence": [
+        "The result file with a per-source outcome.",
+        "The manifest and the per-type settings block it was run with.",
+        "The load report from the second process.",
+        "The duplicate report from the idempotence pass."
+      ]
+    },
+    "lod-generation": {
+      "lane": "lane.ue-editor-closed",
+      "capabilities": ["ue.python.commandlet", "ue.batch"],
+      "steps": [
+        {
+          "does": "Measure the current triangle count, LOD count and screen sizes of every mesh in scope, so a reduction can be shown rather than claimed.",
+          "produces": "A baseline table, one row per mesh.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Decide per mesh whether it takes Nanite or a discrete LOD chain, and record the reason. The two are not interchangeable: a mesh with Nanite enabled ignores the LOD chain built for it, so building both wastes the pass and hides the mistake.",
+          "produces": "A per-mesh decision list, each row naming Nanite or a LOD chain and why.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Apply the reduction settings and build the LODs in an editor-closed script under the project-exclusive lease, in batches small enough that one failing mesh does not lose the pass.",
+          "produces": "The rebuilt meshes and a result file naming each mesh and what was built for it.",
+          "capability": "ue.batch"
+        },
+        {
+          "does": "Re-measure triangle counts and screen sizes off the rebuilt assets. A build that ran and reduced nothing is the failure this step catches, and it exits zero.",
+          "produces": "An after table matched row for row against the baseline.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Check that collision primitives and named sockets survived the rebuild. A reduced mesh whose collision no longer matches its silhouette is worse in play than the mesh it replaced.",
+          "produces": "A collision and socket diff against the baseline.",
+          "capability": "ue.python.commandlet"
+        }
+      ],
+      "non_goals": [
+        "Re-authoring mesh topology to make reduction produce a better result.",
+        "Material or texture optimisation.",
+        "Importing new mesh variants, which is `batch-import`.",
+        "Changing the meshes' placement in any level."
+      ],
+      "acceptance": [
+        "Every mesh in scope carries the LOD count its decision row named, or Nanite and no LOD chain.",
+        "No mesh lost a collision primitive or a named socket in the rebuild.",
+        "Triangle count at the lowest LOD is at or under the budget the packet declared.",
+        "No mesh has both Nanite enabled and a hand-built LOD chain."
+      ],
+      "verification": [
+        "The after table is measured off the rebuilt assets, not read from the build log.",
+        "The result file is the authority on what was built, never the commandlet exit code.",
+        "An independent verifier re-measures on a fresh load rather than trusting the building session's numbers."
+      ],
+      "evidence": [
+        "The baseline and after triangle tables, matched row for row.",
+        "The per-mesh Nanite-or-LOD decision list with its reasons.",
+        "The result file from the build pass.",
+        "The collision and socket diff."
+      ]
+    }
+  }
+}

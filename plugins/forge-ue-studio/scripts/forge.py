@@ -151,15 +151,21 @@ from forge_routing import (
     BLOCKED_LANE_DEFAULTS,
     DEFAULT_FRESHNESS_MINUTES,
     ISOLATION_STRENGTH,
+    PROCEDURE_SCHEMA,
     ROUTE_DECISIONS_SCHEMA,
     WORK_ORDERS_SCHEMA,
     blocked_lane_policy,
     canonical_order,
+    capability_lanes,
     clear_lane_failures,
     confirm_autonomous_entry,
     decide_blocked_lane,
     decision_freshness_minutes,
     lane_failure_counts,
+    procedure_for,
+    procedure_gaps,
+    procedures,
+    procedures_path,
     record_blocked_lane,
     read_route_decisions,
     record_dispatch,
@@ -230,6 +236,17 @@ def execute_acquire(
         "route": admission["source"],
         "route_recorded_at": admission["recorded_at"],
         "host": profile["id"],
+    }
+
+
+def procedure_brief(task_class: str) -> dict[str, Any]:
+    found = procedure_for(task_class)
+    return {
+        "schema": PROCEDURE_SCHEMA,
+        "task_class": task_class,
+        "source": str(procedures_path()),
+        "procedure": found,
+        "declared": sorted(procedures()),
     }
 
 
@@ -456,6 +473,9 @@ def build_parser() -> argparse.ArgumentParser:
     sync_user.add_argument("--host")
     sync_user.add_argument("--apply", action="store_true")
     sync_user.add_argument("--output")
+    procedure = sub.add_parser("procedure", help="Report the build procedure a task class carries: steps, lanes, acceptance, verification, evidence")
+    procedure.add_argument("--task-class", dest="task_class", required=True)
+    procedure.add_argument("--output")
     validate = sub.add_parser("validate")
     validate.add_argument("--kind", required=True, choices=sorted(SCHEMA_FILES))
     validate.add_argument("--input", required=True)
@@ -578,6 +598,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.project, args.packet, args.owner, apply=bool(args.apply),
                 host_override=args.host, route_value=getattr(args, "route", None),
             )
+        elif args.command == "procedure":
+            result = procedure_brief(args.task_class)
         elif args.command == "lifecycle":
             result = lifecycle_state(args.project, args.event)
         else:

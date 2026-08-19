@@ -13,7 +13,7 @@ from typing import Any
 import forge_executor as executor
 from forge_core import ERROR_REASON, is_available, EXIT_CONTRACT, EXIT_USAGE, RESIDENT_PROVIDER, fail, load_json, plugin_root, project_root, utc_now
 from forge_hosts import active_profile
-from forge_mcp import catalog_tool_names, mcp_capability_contracts
+from forge_mcp import catalog_tool_names, mcp_capability_contracts, mcp_capability_index
 
 
 ISOLATION_STRENGTH = ("read-only", "git-worktree", "lfs-lock", "project-exclusive")
@@ -28,8 +28,82 @@ WORK_ORDERS_SCHEMA = "forge.work-orders/v1"
 DEFAULT_FRESHNESS_MINUTES = 30
 
 
+PROCEDURE_SCHEMA = "forge.procedure/v1"
+
+
 def route_policy() -> dict[str, Any]:
     return load_json(plugin_root() / "dependencies" / "route-policy.json")
+
+
+def procedures_path() -> Path:
+    return plugin_root() / "doctrine" / "procedures.json"
+
+
+def procedures() -> dict[str, Any]:
+    document = load_json(procedures_path())
+    body = document.get("procedures")
+    return body if isinstance(body, dict) else {}
+
+
+def capability_lanes(capabilities: list[str]) -> dict[str, str]:
+    index = mcp_capability_index()
+    return {
+        str(item): str(index[str(item)].get("lane"))
+        for item in capabilities
+        if str(item) in index
+    }
+
+
+def procedure_for(task_class: str) -> dict[str, Any] | None:
+    body = procedures().get(str(task_class))
+    if not isinstance(body, dict):
+        return None
+    steps = body.get("steps", [])
+    lanes = capability_lanes(list(body.get("capabilities", [])))
+    spanned = sorted({lane for lane in lanes.values() if lane})
+    return {
+        **body,
+        "schema": PROCEDURE_SCHEMA,
+        "task_class": str(task_class),
+        "capability_lanes": lanes,
+        "lanes": spanned,
+        "packets": len(spanned),
+        "packet_split": [
+            {
+                "lane": lane,
+                "capabilities": sorted(name for name, value in lanes.items() if value == lane),
+                "steps": [
+                    number
+                    for number, step in enumerate(steps, start=1)
+                    if lanes.get(str(step.get("capability"))) == lane
+                ],
+            }
+            for lane in spanned
+        ],
+    }
+
+
+def procedure_gaps(packet: dict[str, Any], procedure: dict[str, Any]) -> list[str]:
+    lanes = procedure["capability_lanes"]
+    declared = {str(item) for item in packet.get("capabilities", []) if str(item).strip()}
+    shared = declared & set(lanes)
+    task_class = procedure["task_class"]
+    if not shared:
+        return [
+            f"the packet declares none of the {len(lanes)} capabilities the procedure for task class "
+            f"{task_class!r} names, so it executes no step of it"
+        ]
+    held = {lanes[item] for item in shared}
+    steps_by_capability: dict[str, list[int]] = {}
+    for number, step in enumerate(procedure.get("steps", []), start=1):
+        steps_by_capability.setdefault(str(step.get("capability")), []).append(number)
+    return [
+        f"the procedure for task class {task_class!r} needs {name!r} for step(s) "
+        f"{', '.join(str(item) for item in steps_by_capability.get(name, []))} on lane {lanes[name]!r}, which this "
+        f"packet already takes, and the packet does not declare it"
+        for name in sorted(set(lanes) - declared)
+        if lanes[name] in held
+    ]
 
 
 def route_decisions_path(root: Path) -> Path:

@@ -641,6 +641,56 @@ def main() -> int:
             if "ERROR_REASON" in text and "from forge_core import" not in text:
                 fail(f"{name} uses ERROR_REASON without importing the one vocabulary", failures)
 
+    procedures_path = PLUGIN / "doctrine" / "procedures.json"
+    procedure_document = parsed.get(procedures_path, {})
+    if procedure_document.get("schema") != "forge.procedure/v1":
+        fail("Procedure doctrine must declare schema forge.procedure/v1", failures)
+    declared_procedures = procedure_document.get("procedures", {})
+    if not declared_procedures:
+        fail("Procedure doctrine declares no procedures, so nothing a packet compiler reads exists", failures)
+    provider_by_id = {str(item.get("id")): item for item in mcp_providers}
+    capability_lane = {name: provider_by_id.get(owner, {}).get("lane") for name, owner in seen_capabilities.items()}
+    for task_class, procedure in sorted(declared_procedures.items()):
+        named = list(procedure.get("capabilities", []))
+        for step in procedure.get("steps", []):
+            if step.get("capability") not in named:
+                fail(
+                    f"Procedure {task_class!r} has a step needing capability {step.get('capability')!r}, which the "
+                    "procedure does not name in its own capabilities; a packet compiled from it would not request it",
+                    failures,
+                )
+            named.append(step.get("capability"))
+        for capability in sorted(set(named)):
+            if capability not in seen_capabilities:
+                fail(
+                    f"Procedure {task_class!r} names capability {capability!r}, which no route in route-registry.json "
+                    "serves; a packet compiled from it could never be dispatched",
+                    failures,
+                )
+        implied = {capability_lane.get(item) for item in procedure.get("capabilities", [])}
+        for lane in sorted({procedure.get("lane")} | {item for item in implied if item}):
+            if lane not in mcp_lanes:
+                fail(f"Procedure {task_class!r} names lane {lane!r}, which route-registry.json does not declare", failures)
+        if procedure.get("lane") not in implied:
+            fail(
+                f"Procedure {task_class!r} sits on lane {procedure.get('lane')!r}, which none of its own capabilities "
+                "reaches; the lane and the steps would disagree",
+                failures,
+            )
+        for field in ("acceptance", "verification", "evidence", "non_goals", "steps"):
+            if not procedure.get(field):
+                fail(f"Procedure {task_class!r} declares no {field}, so a packet cannot be checked against it", failures)
+
+    procedure_readers = sorted(
+        name for name, text in module_sources.items() if procedures_path.name in text
+    )
+    if not procedure_readers:
+        fail(
+            f"{procedures_path.relative_to(ROOT)} is read by no module under plugins/forge-ue-studio/scripts/; "
+            "doctrine nothing loads is prose, and this repository has shipped that twice already",
+            failures,
+        )
+
     verdict_block = re.search(r"VERDICT_COMMANDS = frozenset\(\s*\{(.*?)\}\s*\)", forge_source, re.DOTALL)
     if not verdict_block:
         fail("forge.py declares no VERDICT_COMMANDS set", failures)

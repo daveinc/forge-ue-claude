@@ -3427,6 +3427,7 @@ class CommandSurfaceTests(unittest.TestCase):
             "mcp-status": ["mcp-status", *project],
             "route-status": ["route-status", *project],
             "lifecycle": ["lifecycle", *project],
+            "procedure": ["procedure", "--task-class", "ik-retarget"],
             "route": ["route", *project, "--request", str(root / "request.json")],
             "dispatch": ["dispatch", *project, "--packet", str(root / "dispatch-packet.json")],
             "validate": ["validate", "--kind", "lane-lease", "--input", str(root / ".forge" / "state" / "leases.json")],
@@ -4016,6 +4017,108 @@ class ModuleBoundaryTests(unittest.TestCase):
 
     def test_the_executor_stays_independent_of_the_rest(self):
         self.assertEqual(self.imported_modules(EXECUTOR_PATH), set())
+
+
+class ProcedureDoctrineTests(unittest.TestCase):
+
+    def test_every_step_names_a_capability_the_procedure_declares_and_a_route_serves(self):
+        served = set(forge.mcp_capability_index())
+        self.assertIn("ue.python.commandlet", served)
+        for task_class in sorted(forge.procedures()):
+            procedure = forge.procedure_for(task_class)
+            for number, step in enumerate(procedure["steps"], start=1):
+                with self.subTest(task_class=task_class, step=number):
+                    self.assertIn(step["capability"], procedure["capabilities"])
+                    self.assertIn(step["capability"], served)
+                    self.assertIn(step["capability"], procedure["capability_lanes"])
+
+    def test_every_procedure_agrees_with_route_policy_about_its_lane(self):
+        policy = forge.route_policy()
+        checked = 0
+        for task_class in sorted(forge.procedures()):
+            shape_lane = forge.unreal_shape_lane(task_class, policy)
+            if shape_lane is None:
+                continue
+            checked += 1
+            self.assertEqual(
+                shape_lane, forge.procedure_for(task_class)["lane"],
+                f"route-policy and the procedure disagree about where {task_class!r} belongs",
+            )
+        self.assertGreaterEqual(checked, 4, "route-policy names no task class the doctrine covers")
+
+    def test_a_procedure_spanning_both_unreal_lanes_becomes_one_packet_per_lane(self):
+        procedure = forge.procedure_for("ik-retarget")
+        self.assertEqual(procedure["packets"], 2)
+        self.assertEqual(procedure["lanes"], ["lane.ue-editor", "lane.ue-editor-closed"])
+        owned = [number for entry in procedure["packet_split"] for number in entry["steps"]]
+        self.assertEqual(sorted(owned), list(range(1, len(procedure["steps"]) + 1)))
+        self.assertEqual(len(owned), len(set(owned)), "a step is owned by two packets at once")
+        live = next(entry for entry in procedure["packet_split"] if entry["lane"] == "lane.ue-editor")
+        self.assertEqual(live["capabilities"], ["ue.pie", "ue.viewport"])
+
+    def test_the_two_lanes_a_split_procedure_names_are_mutually_exclusive(self):
+        groups = json.loads(
+            (ROOT / "plugins" / "forge-ue-studio" / "assets" / "project-template" / ".forge" / "state" / "leases.json")
+            .read_text(encoding="utf-8")
+        )["exclusive_groups"]
+        index = forge.mcp_capability_index()
+        leases = {
+            index[capability].get("lease")
+            for capability in forge.procedure_for("ik-retarget")["capabilities"]
+        }
+        self.assertEqual(len(leases), 2)
+        shared = [name for name, members in groups.items() if leases <= set(members)]
+        self.assertNotEqual(shared, [], f"leases {sorted(leases)} share no exclusive group, so the split is unenforced")
+
+    def test_the_world_blockout_procedure_ends_in_engine_produced_evidence(self):
+        procedure = forge.procedure_for("world-blockout")
+        self.assertEqual(procedure["lane"], "lane.ue-editor")
+        self.assertEqual(procedure["packets"], 1)
+        self.assertEqual(
+            [step["capability"] for step in procedure["steps"][-2:]], ["ue.pie", "ue.viewport"]
+        )
+        self.assertTrue(
+            any("no level-creation or actor-placement call" in step["does"] for step in procedure["steps"]),
+            "the procedure claims a placement tool the shipped catalogue does not carry",
+        )
+
+    def test_a_task_class_no_procedure_covers_resolves_to_nothing(self):
+        self.assertIsNone(forge.procedure_for("engine-operation"))
+        self.assertIsNone(forge.procedure_brief("engine-operation")["procedure"])
+
+    def test_a_packet_missing_a_capability_its_own_lane_needs_is_a_gap(self):
+        procedure = forge.procedure_for("ik-retarget")
+        packet = {"capabilities": ["ue.python.commandlet"], "task_class": "ik-retarget"}
+        gaps = forge.procedure_gaps(packet, procedure)
+        self.assertEqual(len(gaps), 1)
+        self.assertIn("ue.batch", gaps[0])
+        self.assertIn("lane.ue-editor-closed", gaps[0])
+
+    def test_a_packet_holding_only_the_other_lane_is_not_asked_for_this_one(self):
+        procedure = forge.procedure_for("ik-retarget")
+        packet = {"capabilities": ["ue.pie", "ue.viewport"], "task_class": "ik-retarget"}
+        self.assertEqual(forge.procedure_gaps(packet, procedure), [])
+
+    def test_a_packet_executing_no_step_of_its_procedure_is_a_gap(self):
+        procedure = forge.procedure_for("ik-retarget")
+        packet = {"capabilities": ["dcc.mesh"], "task_class": "ik-retarget"}
+        gaps = forge.procedure_gaps(packet, procedure)
+        self.assertEqual(len(gaps), 1)
+        self.assertIn("executes no step", gaps[0])
+
+    def test_the_doctrine_file_is_read_by_a_shipped_module(self):
+        readers = sorted(
+            path.name for path in SCRIPTS_DIR.glob("*.py")
+            if "procedures.json" in path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(readers, ["forge_routing.py"])
+
+    def test_the_planner_hands_the_procedure_steps_to_gsd(self):
+        text = (ROOT / "plugins" / "forge-ue-studio" / "workflows" / "forge-plan-phase.md").read_text(encoding="utf-8")
+        pre = text.split("## PRE — Forge")[1].split("## CORE — GSD")[0]
+        self.assertIn("forge.py procedure --task-class", pre)
+        self.assertIn("`steps`", pre)
+        self.assertIn("`non_goals`", pre)
 
 
 if __name__ == "__main__":
