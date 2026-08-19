@@ -10,7 +10,9 @@ Forge runs your game project as a studio. One assigned AI runtime holds the resi
 
 The runtime is an **assignment, not an assumption**. A project records its host in `.forge/runtime.json` and can swap it — Claude Code, Codex CLI, or any runtime meeting the prerequisite contract — at any stage, including mid-phase, without losing planning state, packets, or evidence.
 
-Forge uses [GSD](https://github.com/open-gsd/gsd-core) as its only phase engine, invoked in place and never forked. Forge adds game-development departments, capability discovery, immutable work packets, review gates, visual production, and Unreal lane control on top of GSD's discuss → plan → execute → verify boundaries.
+Forge uses [GSD](https://github.com/open-gsd/gsd-core) as its only phase engine, invoked in place and never forked. The two split planning between them: **GSD owns planning artifacts** — `.planning/`, phases, plans, summaries, and the schedule, which Forge reads and never writes — while **Forge owns build doctrine**, the domain procedure for making a game in Unreal: what needs building, in what order, with which capabilities and tools, and what evidence closes a step. See [build doctrine](docs/explanation/build-doctrine.md).
+
+On top of GSD's discuss → plan → execute → verify boundaries, Forge adds game-development departments, capability discovery, immutable work packets, review gates, visual production, and Unreal lane control.
 
 ## How it works
 
@@ -90,6 +92,7 @@ Full index: **[docs/README.md](docs/README.md)**
 
 **Explanation**
 - [How Forge works](docs/explanation/how-forge-works.md) — the studio model and the capability ladder.
+- [Build doctrine](docs/explanation/build-doctrine.md) — what Forge owns, what GSD owns, and what crosses between them.
 - [Dependency and route policy](docs/dependency-policy.md) · [GSD independence map](docs/gsd-independence-map.md) · [The counterplan](docs/COUNTERPLAN.md)
 
 ## Forge verbs, GSD verbs

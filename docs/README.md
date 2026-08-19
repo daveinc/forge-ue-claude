@@ -24,6 +24,7 @@ Start with a tutorial if you have not run Forge before. Reach for a how-to when 
 ## Explanation
 
 - [How Forge works](explanation/how-forge-works.md) — the studio model, the capability ladder, and the Unreal routes.
+- [Build doctrine](explanation/build-doctrine.md) — the split between planning artifacts and build doctrine, what crosses the boundary, and the procedure layer.
 - [Dependency and route policy](dependency-policy.md) — what Forge requires versus what it routes to, and how a route is selected.
 - [Installation agent jobs](installation-agent-jobs.md) — the bounded investigations `forge-bootstrap` dispatches.
 - [GSD independence map](gsd-independence-map.md) — what GSD does, what Forge fronts, and what replacing it would cost.

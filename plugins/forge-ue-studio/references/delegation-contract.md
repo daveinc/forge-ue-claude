@@ -4,11 +4,19 @@ How every Forge verb that fronts a GSD workflow behaves. Read this once; the ind
 
 ## The rule
 
-**Forge owns what Forge emits. GSD owns `.planning`. GSD is invoked in place, never edited and never copied.**
+**Forge owns build doctrine. GSD owns planning artifacts. GSD is invoked in place, never edited and never copied.**
 
-That last clause is the point. Copying GSD's workflow prose into Forge would freeze it at the version copied, and GSD ships roughly a minor release a week. Forge reads the workflow that is on disk right now, so upstream fixes arrive without a merge.
+Two different things get called planning, and only the second is GSD's.
 
-The first clause is narrower than it looks. A verb Forge routes is spelled as a Forge verb because it is the GSD workflow plus the game-specific PRE and POST below; the user remains free to call GSD directly, and Forge neither hides nor disables it.
+**Planning artifacts** are `.planning/` — ROADMAP.md, PLAN.md, SUMMARY.md, phase IDs, status transitions, the schedule. GSD writes every one of them, always through `gsd_run`. Forge reads that state through `smart-entry` and never writes it; two writers is the failure this architecture exists to prevent.
+
+**Build doctrine** is what a game of this kind needs built, in what order, with which capabilities and tools, and what evidence closes a step. That is Unreal domain procedure, GSD has no reason to hold it, and Forge supplies it as content: GSD schedules and records the phase, Forge says what a phase of this kind consists of. It lives as data in the plugin — see [build doctrine](../../../docs/explanation/build-doctrine.md) for the boundary and the procedure layer's shape.
+
+Read as "Forge does no planning", the old wording left doctrine homeless, and a verb with nothing of its own to contribute could only wrap a GSD call. `forge-onboard`'s CORE is one line reading *Run GSD's onboarding* for exactly that reason.
+
+The last clause is separate and stands unchanged. Copying GSD's workflow prose into Forge would freeze it at the version copied, and GSD ships roughly a minor release a week. Forge reads the workflow that is on disk right now, so upstream fixes arrive without a merge.
+
+None of this narrows what you may run. A verb Forge routes is spelled as a Forge verb because it is the GSD workflow plus the game-specific PRE and POST below; the user remains free to call GSD directly, and Forge neither hides nor disables it.
 
 ## Three delegation modes
 
@@ -35,8 +43,9 @@ Forge owns the behaviour outright; no GSD workflow is involved. Used where Forge
 ## The shape of every delegating verb
 
 ```
-PRE    Forge   capability qualification, Unreal write-lock / lane lease,
-               canonical packet ID, game-dev framing of the request
+PRE    Forge   build doctrine for the task class, capability qualification,
+               Unreal write-lock / lane lease, canonical packet ID,
+               game-dev framing of the request
 CORE   GSD     the stock workflow, unmodified, via run or relay
 POST   Forge   acceptance registry, evidence contract, in-engine verification,
                then present the outcome in Forge vocabulary
