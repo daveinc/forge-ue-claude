@@ -4,6 +4,24 @@ Every section below is dated from the tag that released it. One tag is not a rel
 
 ## 0.7.0 - 2026-08-18
 
+### A lane a worker died in is not a lane Forge reports as free
+
+- Recovering a lease and recovering a lane were treated as the same act. When an owner exited without releasing, `expire_stale_leases` marked the lease `EXPIRED` and handed the lane to the next writer — **without ever calling the teardown**. An LFS lock the dead owner took was still held on the server, and a git worktree it created was still on disk with its uncommitted work, while `exec status` reported `quarantined: []`. Forge said the lane was clean and it was not.
+- What the dead owner still holds now decides which state the lease reaches. Locks it never released make the lease `ORPHANED_EXTERNAL_LOCK`, because the lock genuinely is still held and the lane is not enterable; `exec reconcile` is its exit, exactly as for a release that could not finish. A worktree blocks no other writer, so the lane goes free and the workspace is **named** under `abandoned_workspaces` rather than deleted — it holds work nobody else has, and silently discarding it would be the one recovery that loses data.
+- The recovery sweep is written before the conflicts are weighed. Holding it to the end discarded it on precisely the runs that most needed it recorded: the ones refused because a lane was still held.
+
+### Lane supervision is reachable from any workflow, not only from the one that dispatches
+
+- Of the thirty-one workflows, one invoked the lease lifecycle, four mentioned a lane and one dispatched a packet. The machinery was not missing; it was unreachable. Everything else did work without acquiring anything, and a workflow that legitimately took no lane was indistinguishable from one that never asked.
+- `exec supervise --holder <workflow> [--lane <lane>...]` is the one call that stands in front of `acquire`, `release`, `renew` and `reconcile` rather than four verbs a workflow had to sequence correctly by hand. It sweeps what an exited owner left, reports every lane that cannot be entered and why, and files the result in the `supervision` log of `.forge/state/work-orders.json`.
+- **Naming no lane is an answer.** `holds_no_lane` is recorded, so a doctor run, an onboard or a resume declares that it holds nothing instead of being silent about it. That is the difference between a workflow that considered the question and one that forgot.
+- A lane abandoned by a dead holder refuses as `lane_abandoned`, not as `lease_conflict`. The distinction is the whole point: a lease conflict means someone is working and you should route elsewhere, while abandonment means someone died holding it and the lane will not free itself. The refusal is filed before it is raised, for the same reason a blocked lane is — a refusal nobody can resume from is one the next session repeats.
+
+### A failure inside a lane is a fact Forge holds
+
+- A release recorded the outcome and the lease status and nothing about the lane: not which lane it was, not what had been held, not what survived, not what to do next. When work failed inside a lane, the only account of it lived in the local runtime that ran it.
+- The order entry now carries `lanes`, `leases`, whatever `unreleased` survived the teardown, and a `lane_exit` naming what a next session must do — retake it, or clear the quarantine first. Another department can plan around a known-blocked lane instead of discovering it by collision.
+
 ### An order that finished says so
 
 - `.forge/state/work-orders.json` declared four states an order may stop at — `ACCEPTED`, `REJECTED`, `CANCELLED`, `SUPERSEDED` — and **no code wrote any of them**. `dispatch` wrote `DISPATCHED` and nothing ever moved it, so by the schema's own rule that an order resting outside a terminal state is still in flight, every order Forge had ever written was permanently in flight. Resume reads this file rather than conversation memory, which made finished work indistinguishable from work still running.

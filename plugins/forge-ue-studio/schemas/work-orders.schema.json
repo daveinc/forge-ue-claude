@@ -37,6 +37,25 @@
       "items": {"type": "string"},
       "minItems": 1
     },
+    "supervision": {
+      "type": "array",
+      "description": "One entry per `forge.py exec supervise` run: which workflow entered the lane system, what it declared it needed, and what the sweep recovered or found quarantined. `holds_no_lane: true` is the explicit record that a workflow considered the question and takes nothing, which is what separates it from a workflow that never asked. Bounded to the most recent runs.",
+      "items": {
+        "type": "object",
+        "required": ["holder", "at"],
+        "properties": {
+          "holder": {"type": "string", "minLength": 1},
+          "at": {"type": "string"},
+          "declared_lanes": {"type": "array", "items": {"type": "string"}},
+          "holds_no_lane": {"type": "boolean"},
+          "recovered": {"type": "array", "items": {"type": "string"}},
+          "quarantined": {"type": "array", "items": {"type": "string"}},
+          "abandoned_workspaces": {"type": "array", "items": {"type": "string"}},
+          "refusal": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    },
     "updated_at": {"type": ["string", "null"]}
   },
   "additionalProperties": true

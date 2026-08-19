@@ -25,6 +25,31 @@ From the repository root:
 ```
 </step>
 
+<step name="declare_no_lane">
+A doctor run reads and never writes, so it holds no lane. Say so rather than staying silent — a
+workflow that takes no lane and one that never considered the question are indistinguishable in the
+ledger, and thirty of the thirty-one workflows currently read as the second:
+
+```powershell
+python <forge-plugin-root>\scripts\forge.py exec supervise --project "<project>" --holder forge-doctor --apply
+```
+
+Naming no `--lane` records `holds_no_lane` against this run. The same call sweeps the lane system on
+the way past: a lease whose owner exited is recovered, and anything that owner left standing is
+reported rather than left for the next writer to trip over.
+
+Report what comes back before continuing, because it makes the rest of this run's answers suspect:
+
+| In the report | What it means |
+|---|---|
+| `quarantined` | A holder exited without freeing an LFS lock. No writer may take that lane until `exec reconcile` frees it |
+| `abandoned_workspaces` | A dead worker's worktree is still on disk with its uncommitted work. The lane is free; the workspace is yours to salvage and remove |
+| `interrupted_release` | A session died mid-release. The lane is held by nothing and freed by nothing until `exec reconcile` runs |
+| `renewal_overdue` | The owner is still alive and past its TTL. Not a fault — do not disturb it |
+
+Never take a lane from this workflow, and never clear a quarantine by deleting the lease by hand.
+</step>
+
 <step name="report_hosts">
 Read `runtime.detected_hosts`. Report every known host, its CLI presence, its GSD runtime, and
 whether it satisfies the prerequisite contract. The assigned host is marked `active`.

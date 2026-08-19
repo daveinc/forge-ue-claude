@@ -2465,6 +2465,104 @@ class ExecutorTests(unittest.TestCase):
             self.assertEqual(self.active_lanes(root), ["ue-live-native-mcp"])
 
 
+class LaneSupervisionTests(unittest.TestCase):
+
+    game = ExecutorTests.game
+    packet = ExecutorTests.packet
+    authorise = ExecutorTests.authorise
+    orphan_the_owner = ExecutorTests.orphan_the_owner
+
+    def dead_lock_holder(self, root, lane="project-files", target="Content/A.uasset"):
+        path = forge.executor.lease_state_path(root)
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["leases"].append({
+            "lease_id": "lease-dead", "lane": lane, "owner": "worker-a", "work_order": "WO-DEAD",
+            "write_scope": ["project-files"], "acquired_at": "2020-01-01T00:00:00+00:00",
+            "expires_at": "2020-01-01T00:00:00+00:00", "status": "ACTIVE",
+            "owner_pid": 999999, "owner_machine": forge.executor.this_machine(), "owner_process_start": "",
+            "isolation": {"mode": "lfs-lock", "base_revision": "HEAD", "lock_targets": [target]},
+        })
+        forge.executor.write_state_atomically(path, document)
+
+    def worktree_packet(self, work_order, lane):
+        return self.packet(
+            work_order, lane, mode="git-worktree",
+            workspace=f".forge/workspaces/{work_order}", branch=f"forge/{work_order}",
+        )
+
+    def test_a_lock_a_dead_owner_never_released_keeps_the_lane_instead_of_freeing_it(self):
+        with self.game() as root:
+            self.dead_lock_holder(root)
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.executor.acquire(root, self.packet("WO-NEXT", "project-files"), owner="worker-b", apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
+            held = json.loads(forge.executor.lease_state_path(root).read_text(encoding="utf-8"))["leases"]
+            dead = next(item for item in held if item["lease_id"] == "lease-dead")
+            self.assertEqual(dead["status"], forge.executor.ORPHANED)
+            self.assertEqual([item["target"] for item in dead["unreleased"]], ["Content/A.uasset"])
+
+    def test_a_dead_owners_worktree_is_named_rather_than_silently_left_behind(self):
+        with self.game() as root:
+            forge.executor.acquire(
+                root, self.worktree_packet("WO-1", "ue-live-python"), owner="worker-a", apply=True, ttl_minutes=-1
+            )
+            self.orphan_the_owner(root)
+            report = forge.executor.supervise(root, "forge-route-work", ["ue-live-python"], apply=True)
+            self.assertEqual(
+                [item["workspace"] for item in report["abandoned_workspaces"]], [".forge/workspaces/WO-1"]
+            )
+            self.assertEqual(report["enterable"], ["ue-live-python"])
+
+    def test_a_workflow_that_needs_no_lane_records_that_it_needs_none(self):
+        with self.game() as root:
+            report = forge.execute_supervise(str(root), "forge-doctor", None, apply=True)
+            self.assertEqual(report["holds_no_lane"], True)
+            filed = json.loads(forge.work_orders_path(root).read_text(encoding="utf-8"))["supervision"]
+            self.assertEqual([item["holder"] for item in filed], ["forge-doctor"])
+            self.assertEqual(filed[0]["declared_lanes"], [])
+
+    def test_a_lane_its_holder_died_in_refuses_a_workflow_that_declares_it_needs_it(self):
+        with self.game() as root:
+            self.dead_lock_holder(root)
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.execute_supervise(str(root), "forge-route-work", ["project-files"], apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LANE_ABANDONED"])
+            self.assertEqual(caught.exception.extra["abandoned"][0]["needed_lane"], "project-files")
+
+    def test_a_supervision_refusal_is_filed_before_it_is_raised(self):
+        with self.game() as root:
+            self.dead_lock_holder(root)
+            with self.assertRaises(forge.executor.ExecutorError):
+                forge.execute_supervise(str(root), "forge-route-work", ["project-files"], apply=True)
+            filed = json.loads(forge.work_orders_path(root).read_text(encoding="utf-8"))["supervision"]
+            self.assertEqual(filed[-1]["holder"], "forge-route-work")
+            self.assertIn("without freeing what it took", str(filed[-1]["refusal"]))
+
+    def test_a_lane_a_live_owner_holds_blocks_without_being_called_abandoned(self):
+        with self.game() as root:
+            forge.executor.acquire(root, self.packet("WO-1", "ue-live-python"), owner="worker-a", apply=True)
+            report = forge.executor.supervise(root, "forge-route-work", ["ue-live-python"], apply=True)
+            self.assertEqual(list(report["blocked"]), ["ue-live-python"])
+            self.assertEqual(report["enterable"], [])
+            self.assertEqual(report["quarantined"], [])
+
+    def test_a_release_says_what_became_of_the_lane_not_only_of_the_order(self):
+        with self.game() as root:
+            self.authorise(root, "WO-1")
+            packet = root / "packet.json"
+            packet.write_text(json.dumps(self.packet("WO-1", "ue-live-python")), encoding="utf-8")
+            forge.execute_acquire(str(root), str(packet), owner="worker-a", apply=True)
+            forge.execute_release(str(root), "WO-1", "failed", apply=True)
+            order = next(
+                item
+                for item in json.loads(forge.work_orders_path(root).read_text(encoding="utf-8"))["orders"]
+                if item["work_order"] == "WO-1"
+            )
+            self.assertEqual(order["lanes"], ["ue-live-python"])
+            self.assertEqual(order["unreleased"], [])
+            self.assertIn("free to retake", order["lane_exit"])
+
+
 @unittest.skipUnless(GIT_LFS_PRESENT, "git-lfs is not installed on this machine")
 class LfsLockTests(unittest.TestCase):
 
@@ -3514,6 +3612,7 @@ class CommandSurfaceTests(unittest.TestCase):
             "mcp sync-user": ["mcp", "sync-user", *project],
             "exec acquire": ["exec", "acquire", *project, "--packet", str(root / "packet.json")],
             "exec status": ["exec", "status", *project],
+            "exec supervise": ["exec", "supervise", *project, "--holder", "surface-test"],
             "exec renew": ["exec", "renew", *project, "--work-order", "WO-SURFACE"],
             "exec reconcile": ["exec", "reconcile", *project, "--work-order", "WO-ORPHAN"],
             "exec release": ["exec", "release", *project, "--work-order", "WO-SURFACE", "--outcome", "passed"],

@@ -32,8 +32,10 @@ param(
     [string[]]$McpArg = @(),
     [ValidateSet('project', 'user', 'both')]
     [string]$McpScope,
-    [ValidateSet('acquire', 'release', 'renew', 'reconcile', 'status')]
+    [ValidateSet('acquire', 'release', 'renew', 'reconcile', 'supervise', 'status')]
     [string]$ExecAction,
+    [string]$Holder,
+    [string[]]$Lane = @(),
     [string]$PacketPath,
     [string]$RoutePath,
     [string]$WorkOrder,
@@ -240,7 +242,7 @@ if ($Mode -eq 'Dispatch') {
 
 if ($Mode -eq 'Exec') {
     if (-not $ProjectPath) { throw '-ProjectPath is required for Exec mode.' }
-    if (-not $ExecAction) { throw '-ExecAction is required for Exec mode. One of: acquire, release, renew, reconcile, status.' }
+    if (-not $ExecAction) { throw '-ExecAction is required for Exec mode. One of: acquire, release, renew, reconcile, supervise, status.' }
     $arguments = @($forgeScript, 'exec', $ExecAction, '--project', $ProjectPath)
     if ($ExecAction -eq 'acquire') {
         if (-not $PacketPath) { throw '-PacketPath is required to acquire; the packet declares the leases and isolation.' }
@@ -254,6 +256,11 @@ if ($Mode -eq 'Exec') {
         if (-not $Outcome) { throw '-Outcome is required to release. One of: passed, failed.' }
         $arguments += @('--work-order', $WorkOrder, '--outcome', $Outcome)
     }
+    if ($ExecAction -eq 'supervise') {
+        if (-not $Holder) { throw '-Holder is required to supervise; the record names the workflow it was taken for.' }
+        $arguments += @('--holder', $Holder)
+        foreach ($named in $Lane) { $arguments += @('--lane', $named) }
+    }
     if ($ExecAction -in @('renew', 'reconcile')) {
         if (-not $WorkOrder) { throw "-WorkOrder is required to $ExecAction." }
         $arguments += @('--work-order', $WorkOrder)
@@ -263,6 +270,7 @@ if ($Mode -eq 'Exec') {
             'acquire'   { 'Take lane leases and establish worktree or LFS isolation' }
             'renew'     { 'Extend the lease held by work that is still running' }
             'reconcile' { 'Retry the external teardown a release could not finish' }
+            'supervise' { 'Recover what an exited lane holder left, and record what this run declares it holds' }
             default     { 'Release lane leases and tear down isolation' }
         }
         if ($PSCmdlet.ShouldProcess($ProjectPath, $operation)) { $arguments += '--apply' }

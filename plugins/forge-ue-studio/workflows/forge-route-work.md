@@ -34,6 +34,37 @@ Ignore `.forge/state/lifecycle.json`.
 
 <step name="drain_in_flight">
 Finish or unblock in-flight work before opening avoidable new work.
+
+Enter the lane system before deciding anything, and name the lanes this run expects to need:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec supervise --project <project-root> --holder forge-route-work --lane <lane> --apply
+```
+
+This is the one call that stands in front of `acquire`, `release`, `renew` and `reconcile` rather
+than four verbs to sequence by hand. It recovers every lease whose owner exited, reports what that
+owner left standing, and records what this run declared it holds. `--lane` is repeatable; omitting
+it declares that this run holds no lane, which is a decision rather than silence.
+
+| Answer | What it means | Action |
+|---|---|---|
+| `enterable` | Nothing holds the lane | Route work to it |
+| `blocked` | A live holder has it | Route elsewhere or wait — never take it anyway |
+| `quarantined` | A holder exited without freeing an LFS lock | `exec reconcile` before anything is planned onto that lane |
+| `abandoned_workspaces` | A dead worker's worktree survives with uncommitted work | The lane is free; salvage and remove the workspace by hand |
+| `interrupted_release` | A session died mid-release | `exec reconcile` — nothing else frees it |
+| `renewal_overdue` | The owner is alive and past its TTL | Leave it alone |
+
+A lane the supervisor refuses as `lane_abandoned` is not the same refusal as `lease_conflict`: a
+lease conflict means someone is working, and abandonment means someone died holding it and Forge
+could not return the lane to a clean state from here. Both are binding; only the second is yours to
+clear.
+
+Every outcome, including a run that declared it holds nothing, is written to the `supervision` log in
+`.forge/state/work-orders.json`, so the next session resumes from state rather than re-deriving which
+lanes are safe.
+
+> **Why:** CHANGELOG.md 0.7.0 § *A lane a worker died in is not a lane Forge reports as free*
 </step>
 
 <step name="select_ready_work">
@@ -355,6 +386,16 @@ quarantined lane are reconciling it or freeing the resource by hand.
 
 Record every order transition in `.forge/state/work-orders.json` and stop at one of its declared
 terminal states. Resume from that file and from `forge.py exec status`, never from chat memory.
+
+A release now writes what became of the lane, not only what became of the order: the entry carries
+`lanes`, `leases`, whatever `unreleased` survived, and a `lane_exit` naming what a next session must
+do. A failure inside a lane is therefore a fact Forge holds — another department can plan around a
+known-blocked lane instead of discovering it by collision — rather than one the local runtime kept to
+itself.
+
+When the worker dies instead of returning, nothing here runs. That is what `exec supervise` at
+`drain_in_flight` is for: the next run recovers the lease, and what the dead worker left holding is
+reported instead of being handed on as clean.
 
 > **Why:** CHANGELOG.md 0.6.0 § *A resource Forge could not free is not a resource it reports as free*
 </step>

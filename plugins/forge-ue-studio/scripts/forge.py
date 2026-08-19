@@ -177,6 +177,7 @@ from forge_routing import (
     job_dir,
     jobs_retention,
     jobs_root,
+    lane_exit_note,
     lane_failure_counts,
     procedure_for,
     procedure_gaps,
@@ -188,6 +189,8 @@ from forge_routing import (
     record_dispatch,
     record_release,
     record_route_decision,
+    record_supervision,
+    SUPERVISION_RETAINED,
     release_attempt_result,
     render_brief,
     resolve_decision_for,
@@ -462,7 +465,7 @@ def execute_release(
         supplied = load_json(result_path)
     result = executor.release(root, work_order, outcome, apply=apply)
     if apply:
-        result["order"] = record_release(root, work_order, outcome, str(result["lease_status"]))
+        result["order"] = record_release(root, work_order, outcome, str(result["lease_status"]), result)
         result["job_result"] = str(
             write_job_result(
                 root, work_order, supplied or release_attempt_result(root, work_order, outcome, result)
@@ -479,6 +482,23 @@ def execute_renew(project_value: str, work_order: str, apply: bool) -> dict[str,
 def execute_reconcile(project_value: str, work_order: str, apply: bool) -> dict[str, Any]:
     root, _ = project_root(project_value)
     return executor.reconcile(root, work_order, apply=apply)
+
+
+def execute_supervise(project_value: str, holder: str, lanes: list[str] | None, apply: bool) -> dict[str, Any]:
+    """Supervise the lane system on one workflow's behalf, and record what it declared.
+
+    The refusal is recorded before it is raised, for the same reason a blocked
+    lane is: a refusal nobody can resume from is a refusal the next session
+    repeats.
+    """
+    root, _ = project_root(project_value)
+    try:
+        report = executor.supervise(root, holder, lanes or [], apply=apply)
+    except executor.ExecutorError as exc:
+        if apply and isinstance(exc.extra.get("report"), dict):
+            record_supervision(root, exc.extra["report"], str(exc))
+        raise
+    return {**report, "recorded": record_supervision(root, report, None) if apply else None}
 
 
 def execute_status(project_value: str) -> dict[str, Any]:
@@ -595,6 +615,19 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile_parser.add_argument("--work-order", dest="work_order", required=True)
     reconcile_parser.add_argument("--apply", action="store_true")
     reconcile_parser.add_argument("--output")
+    supervise_parser = execution_sub.add_parser(
+        "supervise",
+        help="Enter the lane system from any workflow: sweep what an exited owner left, and declare what this "
+             "run holds, including nothing",
+    )
+    supervise_parser.add_argument("--project", required=True)
+    supervise_parser.add_argument("--holder", required=True, help="The workflow or seat this supervision is on behalf of")
+    supervise_parser.add_argument(
+        "--lane", action="append", dest="lanes",
+        help="Repeatable. A lane this run needs; omitting every one declares that it holds no lane",
+    )
+    supervise_parser.add_argument("--apply", action="store_true")
+    supervise_parser.add_argument("--output")
     exec_status_parser = execution_sub.add_parser("status", help="Report held leases and stale ones awaiting recovery")
     exec_status_parser.add_argument("--project", required=True)
     exec_status_parser.add_argument("--output")
@@ -683,6 +716,10 @@ def main(argv: list[str] | None = None) -> int:
                 result = execute_renew(args.project, args.work_order, apply=bool(args.apply))
             elif args.exec_command == "reconcile":
                 result = execute_reconcile(args.project, args.work_order, apply=bool(args.apply))
+            elif args.exec_command == "supervise":
+                result = execute_supervise(
+                    args.project, args.holder, getattr(args, "lanes", None), apply=bool(args.apply)
+                )
             else:
                 result = execute_status(args.project)
         elif args.command == "dispatch":

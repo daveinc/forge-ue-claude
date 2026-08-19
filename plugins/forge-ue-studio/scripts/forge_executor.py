@@ -26,6 +26,7 @@ ERROR_REASONS = MappingProxyType(
         "VCS_UNAVAILABLE": "vcs_unavailable",
         "STATE_MUTEX_HELD": "state_mutex_held",
         "RECONCILE_INCOMPLETE": "reconcile_incomplete",
+        "LANE_ABANDONED": "lane_abandoned",
     }
 )
 
@@ -314,6 +315,34 @@ class StateMutex:
         self.path.unlink(missing_ok=True)
 
 
+def abandoned_by(lease: dict[str, Any]) -> tuple[list[dict[str, str]], dict[str, str] | None]:
+    """What an owner that exited without releasing left standing behind it.
+
+    An LFS lock outlives the process that took it, so a lane recovered from a
+    dead owner is not a lane anyone can write: the lock is still held on the
+    server and only an unlock frees it. A worktree outlives the process too, but
+    it blocks no other writer — it occupies a path of its own and holds the dead
+    worker's uncommitted work, which is why it is named rather than removed.
+    """
+    isolation = lease.get("isolation") or {}
+    mode = str(isolation.get("mode", "read-only"))
+    if mode == "lfs-lock":
+        return (
+            [
+                {
+                    "kind": "lfs-lock",
+                    "target": str(target),
+                    "detail": "the owner exited without releasing it, so the lock is still held on the server",
+                }
+                for target in isolation.get("lock_targets", [])
+            ],
+            None,
+        )
+    if mode == "git-worktree":
+        return [], {"workspace": str(isolation.get("workspace")), "branch": str(isolation.get("branch"))}
+    return [], None
+
+
 def expire_stale_leases(document: dict[str, Any], now: str | None = None) -> dict[str, Any]:
     """Recover leases whose owner is gone; keep the lane for an owner still working.
 
@@ -323,12 +352,19 @@ def expire_stale_leases(document: dict[str, Any], now: str | None = None) -> dic
     prevent. A lease is recovered only on evidence its owner is gone: the process
     is absent on the machine that took it, or its pid was reused, or it was taken
     on another machine and is past the cross-machine grace as well.
+
+    Recovering the ledger entry is not the same as recovering the lane. What the
+    dead owner still holds outside the ledger decides which: locks it never
+    released quarantine the lane, because handing it on as clean would send the
+    next writer at a file it cannot write.
     """
     moment = _parse_time(now or utc_now())
     stamp = now or utc_now()
     table: dict[str, Any] | None = None
     recovered: list[str] = []
     overdue: list[dict[str, Any]] = []
+    quarantined: list[dict[str, Any]] = []
+    abandoned: list[dict[str, Any]] = []
     for lease in document.get("leases", []):
         if lease.get("status") != ACTIVE:
             continue
@@ -369,11 +405,45 @@ def expire_stale_leases(document: dict[str, Any], now: str | None = None) -> dic
                     }
                 )
                 continue
+        still_held, workspace = abandoned_by(lease)
+        entry = {
+            "lease_id": lease.get("lease_id"),
+            "lane": lease.get("lane"),
+            "owner": lease.get("owner"),
+            "work_order": lease.get("work_order"),
+            "detail": liveness["detail"],
+        }
+        if still_held:
+            lease["status"] = ORPHANED
+            lease["unreleased"] = still_held
+            lease["release_note"] = (
+                f"the owner is gone and {len(still_held)} external resource(s) it took were never released, so "
+                "the lane stays quarantined rather than being handed on as clean"
+            )
+            lease.pop("released_at", None)
+            quarantined.append(
+                {
+                    **entry,
+                    "unreleased": still_held,
+                    "remedy": "free them with `forge.py exec reconcile`; until then no writer may take the lane",
+                }
+            )
+            continue
         lease["status"] = "EXPIRED"
         lease["released_at"] = stamp
         lease["release_note"] = f"expired without release; recovered because {liveness['detail']}"
+        if workspace:
+            lease["abandoned"] = workspace
+            abandoned.append(
+                {
+                    **entry,
+                    **workspace,
+                    "remedy": "the lane is free, but this workspace holds the dead worker's uncommitted work. "
+                              "Take what you need from it, then `git worktree remove` it by hand",
+                }
+            )
         recovered.append(str(lease.get("lease_id")))
-    return {"recovered": recovered, "overdue": overdue}
+    return {"recovered": recovered, "overdue": overdue, "quarantined": quarantined, "abandoned": abandoned}
 
 
 def exclusive_group_of(document: dict[str, Any], name: str) -> str | None:
@@ -540,7 +610,13 @@ def acquire(
     apply: bool,
     ttl_minutes: int = LEASE_TTL_MINUTES,
 ) -> dict[str, Any]:
-    """Take every lease and set up isolation, or leave the project exactly as it was."""
+    """Take every lease and set up isolation, or leave the project exactly as it was.
+
+    What the recovery sweep found is written before the conflicts are weighed,
+    because it is true whether or not this acquisition succeeds. Holding it until
+    the end discarded it on exactly the runs that most needed it recorded: the
+    ones refused because the lane was still held.
+    """
     intent = validate_packet(packet)
     now = utc_now()
     expires_at = _in_minutes(ttl_minutes)
@@ -550,6 +626,8 @@ def acquire(
         document = read_lease_state(root)
         expiry = expire_stale_leases(document, now)
         recovered = expiry["recovered"]
+        if recovered or expiry["quarantined"]:
+            write_lease_state(root, document)
         blocked: list[dict[str, Any]] = []
         for lane in intent["lanes"]:
             blocked.extend(lease_conflicts(document, lane, intent["write_scope"], intent["mode"]))
@@ -591,8 +669,6 @@ def acquire(
         ]
         if apply:
             document["leases"] = list(document.get("leases", [])) + granted
-            write_lease_state(root, document)
-        elif recovered:
             write_lease_state(root, document)
 
     ungrouped = sorted({item["lane"] for item in granted if not item["exclusive_group"]})
@@ -964,6 +1040,83 @@ def renew(root: Path, work_order: str, apply: bool, ttl_minutes: int = LEASE_TTL
         "expires_at": expires_at if apply else None,
         "renewals": [int(lease.get("renewals", 0)) for lease in held],
     }
+
+
+def supervise(root: Path, holder: str, lanes: list[str], apply: bool) -> dict[str, Any]:
+    """Enter the lane system from any workflow: sweep what is dead, say what is takeable.
+
+    Acquiring, releasing, renewing and reconciling are four verbs a workflow had
+    to sequence correctly by hand, and thirty of the thirty-one never sequenced
+    them at all. This is the one call that stands in front of them. It recovers
+    what an exited owner left, reports every lane that cannot be entered and why,
+    and refuses when a lane the caller says it needs was abandoned rather than
+    released — a fact `lease_conflict` alone does not distinguish, because a lane
+    someone is working in and a lane someone died in need different answers.
+
+    A caller naming no lane is not a caller that forgot: holds_no_lane is written
+    down, so a workflow that legitimately takes nothing is distinguishable from
+    one that never considered the question.
+    """
+    with StateMutex(root) as _mutex:
+        document = read_lease_state(root)
+        expiry = expire_stale_leases(document)
+        if apply and (expiry["recovered"] or expiry["quarantined"]):
+            write_lease_state(root, document)
+
+    wanted = [str(lane) for lane in lanes if str(lane).strip()]
+    blocking = {lane: lease_conflicts(document, lane, [], "project-exclusive") for lane in wanted}
+    abandoned = [
+        {**item, "declared_by": holder, "needed_lane": lane}
+        for lane in wanted
+        for item in blocking[lane]
+        if str(item.get("status")) == ORPHANED
+    ]
+    report = {
+        "schema": "forge.lane-supervision/v1",
+        "mode": "apply" if apply else "dry-run",
+        "project": str(root),
+        "holder": holder,
+        "declared_lanes": wanted,
+        "holds_no_lane": not wanted,
+        "recovered": expiry["recovered"],
+        "quarantined": expiry["quarantined"]
+        + [
+            {
+                "lease_id": lease.get("lease_id"),
+                "lane": lease.get("lane"),
+                "work_order": lease.get("work_order"),
+                "unreleased": lease.get("unreleased", []),
+                "remedy": f"`forge.py exec reconcile --project {root} --work-order {lease.get('work_order')} --apply`",
+            }
+            for lease in document.get("leases", [])
+            if str(lease.get("status")) == ORPHANED and lease.get("lease_id") not in {
+                item["lease_id"] for item in expiry["quarantined"]
+            }
+        ],
+        "abandoned_workspaces": expiry["abandoned"],
+        "renewal_overdue": expiry["overdue"],
+        "interrupted_release": [
+            {
+                "lease_id": lease.get("lease_id"),
+                "lane": lease.get("lane"),
+                "work_order": lease.get("work_order"),
+                "remedy": f"`forge.py exec reconcile --project {root} --work-order {lease.get('work_order')} --apply`",
+            }
+            for lease in document.get("leases", [])
+            if str(lease.get("status")) == RELEASING
+        ],
+        "blocked": {lane: rows for lane, rows in blocking.items() if rows},
+        "enterable": [lane for lane in wanted if not blocking[lane]],
+    }
+    if abandoned:
+        raise _fail(
+            f"{len(abandoned)} lane {holder!r} declared it needs was left behind by a holder that exited "
+            "without freeing what it took, so supervision cannot hand it over as clean",
+            reason=ERROR_REASONS["LANE_ABANDONED"],
+            abandoned=abandoned,
+            report=report,
+        )
+    return report
 
 
 def status(root: Path) -> dict[str, Any]:

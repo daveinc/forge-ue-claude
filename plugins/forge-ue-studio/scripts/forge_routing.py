@@ -580,15 +580,44 @@ def _write_orders(root: Path, mutate) -> dict[str, Any]:
     return document
 
 
-def record_release(root: Path, work_order: str, outcome: str, lease_status: str) -> dict[str, Any]:
-    """Move the order to the state its outcome earned.
+def lane_exit_note(outcome: str, lease_status: str, work_order: str, unreleased: list[dict[str, Any]]) -> str:
+    """What a next session must do about the lane this order was working in."""
+    if lease_status == executor.ORPHANED:
+        return (
+            f"{len(unreleased)} external resource(s) survived the release, so the lane is quarantined and no "
+            f"writer may take it. Run `forge.py exec reconcile --work-order {work_order} --apply`"
+        )
+    if outcome == "failed":
+        return (
+            "the lane was released and is free to retake; the failure is in this order's result.json, so "
+            "diagnose from there rather than by retrying into the lane"
+        )
+    return "the lane was released and is free to retake"
+
+
+def record_release(
+    root: Path,
+    work_order: str,
+    outcome: str,
+    lease_status: str,
+    release: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Move the order to the state its outcome earned, and say what became of its lane.
 
     Until this ran, every order Forge wrote rested at DISPATCHED forever, so a
-    resume could not tell finished work from work still in flight.
+    resume could not tell finished work from work still in flight. It still could
+    not tell which lane the work had failed in, what it had been holding or what
+    to do about it, so a failure inside a lane was a fact only the local runtime
+    held. The lane, the leases, what would not free and the next action are
+    written here so another department can plan around a known-blocked lane
+    rather than discover it by collision.
     """
     status = "REJECTED" if outcome == "failed" else "ACCEPTED"
     closed_at = utc_now()
     work_order = canonical_order_for(root, work_order)
+    released = list((release or {}).get("released") or [])
+    unreleased = list((release or {}).get("unreleased") or [])
+    lanes = [str(item.get("lane")) for item in released if item.get("lane")]
 
     def mutate(document: dict[str, Any]) -> None:
         orders = document.get("orders", [])
@@ -599,10 +628,43 @@ def record_release(root: Path, work_order: str, outcome: str, lease_status: str)
             "outcome": outcome,
             "lease_status": lease_status,
             "closed_at": closed_at,
+            "unreleased": unreleased,
+            "lane_exit": lane_exit_note(outcome, lease_status, work_order, unreleased),
         })
+        if lanes:
+            entry["lanes"] = lanes
+            entry["leases"] = [str(item.get("lease_id")) for item in released]
         document["orders"] = [item for item in orders if str(item.get("work_order")) != work_order] + [entry]
 
     return [item for item in _write_orders(root, mutate)["orders"] if str(item.get("work_order")) == work_order][0]
+
+
+SUPERVISION_RETAINED = 20
+
+
+def record_supervision(root: Path, report: dict[str, Any], refusal: str | None) -> dict[str, Any]:
+    """File what a workflow declared it needed of the lane system, including nothing.
+
+    A workflow that takes no lane and one that never considered the question look
+    identical in the ledger, which is why thirty of thirty-one workflows reading
+    as lane-free proves nothing. Declaring it makes the silence a decision.
+    """
+    entry = {
+        "holder": str(report.get("holder")),
+        "at": utc_now(),
+        "declared_lanes": [str(lane) for lane in report.get("declared_lanes") or []],
+        "holds_no_lane": bool(report.get("holds_no_lane")),
+        "recovered": [str(item) for item in report.get("recovered") or []],
+        "quarantined": [str(item.get("lane")) for item in report.get("quarantined") or []],
+        "abandoned_workspaces": [str(item.get("workspace")) for item in report.get("abandoned_workspaces") or []],
+        "refusal": refusal,
+    }
+
+    def mutate(document: dict[str, Any]) -> None:
+        document["supervision"] = (list(document.get("supervision") or []) + [entry])[-SUPERVISION_RETAINED:]
+
+    _write_orders(root, mutate)
+    return entry
 
 
 def record_blocked_lane(root: Path, packet: dict[str, Any], blocked: list[dict[str, Any]], decision: str) -> dict[str, Any]:
