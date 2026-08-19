@@ -161,6 +161,7 @@ from forge_routing import (
     BLOCKED_LANE_DEFAULTS,
     DEFAULT_FRESHNESS_MINUTES,
     ISOLATION_STRENGTH,
+    JOBS_RETENTION_DEFAULT,
     PROCEDURE_SCHEMA,
     ROUTE_DECISIONS_SCHEMA,
     WORK_ORDERS_SCHEMA,
@@ -173,6 +174,9 @@ from forge_routing import (
     decide_blocked_lane,
     decision_freshness_minutes,
     engine_prerequisite_gaps,
+    job_dir,
+    jobs_retention,
+    jobs_root,
     lane_failure_counts,
     procedure_for,
     procedure_gaps,
@@ -184,6 +188,8 @@ from forge_routing import (
     record_dispatch,
     record_release,
     record_route_decision,
+    release_attempt_result,
+    render_brief,
     resolve_decision_for,
     resolve_route_decision,
     resolve_tool_access,
@@ -195,6 +201,8 @@ from forge_routing import (
     route_work,
     strictest_isolation,
     work_orders_path,
+    write_job,
+    write_job_result,
     WORK_ORDER_TERMINAL_STATES,
 )
 from forge_runtime import host_list, host_set, host_status
@@ -395,6 +403,7 @@ def dispatch_work(
             route_recorded_at=admission["recorded_at"],
         )
 
+    job = write_job(root, packet, procedure, live, "dispatch") if apply else None
     result = executor.acquire(root, packet, owner or str(profile["id"]), apply=apply)
     if apply and not blocked:
         clear_lane_failures(root, [str(item.get("lane")) for item in live if item.get("lane")])
@@ -409,6 +418,7 @@ def dispatch_work(
         "route": admission["source"],
         "route_recorded_at": admission["recorded_at"],
         "contract": {"kind": "work-packet", "ok": True},
+        "job": job,
         "procedure": {**resolution, "covered": bool(procedure)},
         "autonomy": autonomy,
         "tool_access": live,
@@ -421,11 +431,43 @@ def dispatch_work(
     }
 
 
-def execute_release(project_value: str, work_order: str, outcome: str, apply: bool) -> dict[str, Any]:
+def execute_release(
+    project_value: str,
+    work_order: str,
+    outcome: str,
+    apply: bool,
+    result_value: str | None = None,
+) -> dict[str, Any]:
+    """Release what the order holds, and file the attempt result beside the brief that asked for it.
+
+    The worker's own result is checked before anything is torn down, because a
+    release that has already freed the lane cannot be re-run to file a corrected
+    one. Where no result was handed in, the release writes what it observed in the
+    same contract, so the job folder always answers what came back.
+    """
     root, _ = project_root(project_value)
+    supplied: dict[str, Any] | None = None
+    if result_value:
+        result_path = Path(result_value).expanduser().resolve()
+        contract = validate_payload("attempt-result", str(result_path))
+        if not contract["ok"]:
+            raise fail(
+                f"Attempt result {result_path.name} does not satisfy forge.attempt-result/v1; releasing would "
+                "file a result the job folder cannot be read back from",
+                reason=ERROR_REASON["CONTRACT_INVALID"],
+                code=EXIT_CONTRACT,
+                errors=contract["errors"],
+                result=str(result_path),
+            )
+        supplied = load_json(result_path)
     result = executor.release(root, work_order, outcome, apply=apply)
     if apply:
         result["order"] = record_release(root, work_order, outcome, str(result["lease_status"]))
+        result["job_result"] = str(
+            write_job_result(
+                root, work_order, supplied or release_attempt_result(root, work_order, outcome, result)
+            )
+        )
     return result
 
 
@@ -540,6 +582,7 @@ def build_parser() -> argparse.ArgumentParser:
     release_parser.add_argument("--project", required=True)
     release_parser.add_argument("--work-order", dest="work_order", required=True)
     release_parser.add_argument("--outcome", required=True, choices=["passed", "failed"])
+    release_parser.add_argument("--result", dest="result", help="The worker's forge.attempt-result/v1, filed as the job's result.json; without it the release files what it observed")
     release_parser.add_argument("--apply", action="store_true")
     release_parser.add_argument("--output")
     renew_parser = execution_sub.add_parser("renew", help="Extend a lease whose work legitimately outruns the TTL")
@@ -632,7 +675,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.exec_command == "acquire":
                 result = execute_acquire(args.project, args.packet, args.owner, apply=bool(args.apply), host_override=args.host, route_value=getattr(args, "route", None))
             elif args.exec_command == "release":
-                result = execute_release(args.project, args.work_order, args.outcome, apply=bool(args.apply))
+                result = execute_release(
+                    args.project, args.work_order, args.outcome, apply=bool(args.apply),
+                    result_value=getattr(args, "result", None),
+                )
             elif args.exec_command == "renew":
                 result = execute_renew(args.project, args.work_order, apply=bool(args.apply))
             elif args.exec_command == "reconcile":

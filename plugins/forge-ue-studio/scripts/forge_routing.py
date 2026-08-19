@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import datetime as dt
 import difflib
+import json
 import os
 import platform
+import re
 import sys
 import time
 from pathlib import Path
@@ -217,6 +219,220 @@ def canonical_order_for(root: Path, work_order: str) -> str:
     """
     path = root / ".forge" / "state" / "packet-registry.json"
     return canonical_order(load_json(path) if path.is_file() else {}, str(work_order))
+
+
+JOBS_RETENTION_DEFAULT = "keep"
+
+
+def jobs_root(root: Path) -> Path:
+    return root / ".forge" / "jobs"
+
+
+def job_dir(root: Path, work_order: str) -> Path:
+    """The one folder a work order's job lives in, keyed on its canonical id.
+
+    There is no verb segment above it. A work order is dispatched once and touched
+    afterwards by verbs that never knew which workflow opened it, so a path
+    composed from the caller's own verb would open a second folder for one order —
+    the defect this repository has already fixed twice under other names. The verb
+    is recorded inside the brief, where it is a field rather than a path segment.
+    """
+    return jobs_root(root) / canonical_order_for(root, str(work_order))
+
+
+def jobs_retention(root: Path) -> str:
+    """How long a finished job folder is kept, read at the moment one is written."""
+    path = root / ".forge" / "config.json"
+    settings = (load_json(path).get("jobs") or {}) if path.is_file() else {}
+    return str(settings.get("retention", JOBS_RETENTION_DEFAULT))
+
+
+def _referral_slug(referral: Any) -> str:
+    for key in ("id", "ref", "name", "path", "source"):
+        value = str(referral.get(key, "")).strip() if isinstance(referral, dict) else ""
+        if value:
+            return re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-") or "referral"
+    return "referral"
+
+
+def _brief_section(title: str, items: list[str]) -> list[str]:
+    return [f"## {title}", "", *(f"- {item}" for item in items), ""] if items else []
+
+
+def render_brief(
+    packet: dict[str, Any],
+    procedure: dict[str, Any] | None,
+    tool_access: list[dict[str, Any]],
+    retention: str,
+    verb: str,
+) -> str:
+    """Compose the brief from the registries, at the only moment their answer is true.
+
+    Nothing here is authored: the ordered steps, non-goals, acceptance, verification
+    and evidence come from the procedure the packet's task class resolves to, and
+    the tool and call names come from the catalogue and the API index as they
+    resolve right now. Restating any of it in a file of its own would make this a
+    third source of truth, and route availability in particular is only knowable
+    while the editor is in the state it is in.
+    """
+    isolation = packet.get("isolation") or {}
+    source = "the build procedure for this task class" if procedure else "the packet itself"
+    body = procedure if procedure else packet
+    lines = [
+        f"# {packet.get('work_order')}",
+        "",
+        str(packet.get("objective", "")),
+        "",
+        f"- Opened by: `{verb}`",
+        f"- Task class: `{packet.get('task_class')}`"
+        + ("" if procedure else " — no build procedure covers it, so the sections below are improvised"),
+        f"- Role: `{packet.get('role')}`",
+        f"- Revision: `{packet.get('revision')}`",
+        f"- Isolation: `{isolation.get('mode')}` from `{isolation.get('base_revision')}`",
+        f"- Leases: {', '.join(f'`{item}`' for item in packet.get('leases', [])) or 'none'}",
+        f"- Write scope: {', '.join(f'`{item}`' for item in packet.get('write_scope', [])) or 'none'}",
+        f"- Retention: `{retention}` — finished jobs are not swept",
+        f"- Rendered from {source} at {utc_now()}",
+        "",
+    ]
+    steps = list(procedure.get("steps", [])) if procedure else []
+    if steps:
+        lines += ["## Steps", ""]
+        for number, step in enumerate(steps, start=1):
+            lines += [
+                f"{number}. {step.get('does', '')}",
+                f"   - Produces: {step.get('produces', '')}",
+                f"   - Capability: `{step.get('capability')}`",
+                "",
+            ]
+    lines += [
+        "## Tools and routes",
+        "",
+        "| Capability | Lane | Lease | Route | Reachable now | MCP tools |",
+        "|---|---|---|---|---|---|",
+    ]
+    for row in tool_access:
+        lines.append(
+            "| `{capability}` | {lane} | {lease} | {provider} | {bound} | {tools} |".format(
+                capability=row.get("capability"),
+                lane=row.get("lane") or "—",
+                lease=row.get("lease") or "—",
+                provider=row.get("provider"),
+                bound=str(row.get("status") or ("bound" if row.get("bound") else "unbound")),
+                tools=", ".join(f"`{name}`" for name in row.get("tools", [])) or "—",
+            )
+        )
+    lines.append("")
+    for row in tool_access:
+        if row.get("api_calls"):
+            lines += [
+                f"Python API calls for `{row['capability']}` on `{row.get('provider')}`:",
+                "",
+                ", ".join(f"`{name}`" for name in row["api_calls"]),
+                "",
+            ]
+    for title, field in (
+        ("Non-goals", "non_goals"),
+        ("Acceptance", "acceptance"),
+        ("Verification", "verification"),
+        ("Evidence", "evidence"),
+    ):
+        lines += _brief_section(title, [str(item) for item in body.get(field, [])])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def write_job(
+    root: Path,
+    packet: dict[str, Any],
+    procedure: dict[str, Any] | None,
+    tool_access: list[dict[str, Any]],
+    verb: str,
+) -> dict[str, Any]:
+    """Put on disk what this job was given, before anything is acquired for it.
+
+    Before, because a folder that fails to appear after the leases are taken leaves
+    a worker holding the project super-lock with nothing to read. A folder written
+    for an acquisition that then fails is kept rather than removed: it holds no
+    lease and grants nothing, the lease ledger remains the only authority on what
+    is held, and it is the record of what was attempted and refused — which is the
+    claim this tree exists to make checkable. The next dispatch of the same order
+    renders over it from the registries as they read then.
+    """
+    directory = job_dir(root, str(packet.get("work_order", "")))
+    context = directory / "context"
+    context.mkdir(parents=True, exist_ok=True)
+    for stale in sorted(context.glob("*.json")):
+        stale.unlink()
+    written: list[str] = []
+    for number, referral in enumerate(packet.get("referrals", []), start=1):
+        name = f"{number:02d}-{_referral_slug(referral)}.json"
+        (context / name).write_text(json.dumps(referral, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        written.append(name)
+    (directory / "packet.json").write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    retention = jobs_retention(root)
+    (directory / "brief.md").write_text(
+        render_brief(packet, procedure, tool_access, retention, verb), encoding="utf-8"
+    )
+    return {
+        "job": str(directory),
+        "brief": str(directory / "brief.md"),
+        "packet": str(directory / "packet.json"),
+        "context": written,
+        "opened_by": verb,
+        "retention": retention,
+    }
+
+
+def write_job_result(root: Path, work_order: str, result: dict[str, Any]) -> Path:
+    """File the attempt result where the brief that asked for it lives."""
+    directory = job_dir(root, work_order)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "result.json"
+    path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def release_attempt_result(root: Path, work_order: str, outcome: str, release: dict[str, Any]) -> dict[str, Any]:
+    """The attempt result a release can honestly write when the worker returned none.
+
+    It is the `forge.attempt-result/v1` every other result is; a second shape for
+    one artifact is how a reader ends up with two answers to one question. What it
+    claims is only what the release observed — the outcome the caller passed, what
+    the teardown freed and what it could not — and it says so, so a job folder that
+    holds one of these is visibly a job whose worker filed nothing.
+    """
+    released = release.get("released") or []
+    unreleased = release.get("unreleased") or []
+    return {
+        "schema": "forge.attempt-result/v1",
+        "work_order": canonical_order_for(root, work_order),
+        "attempt": 1,
+        "provider": str(next((item.get("owner") for item in released if item.get("owner")), RESIDENT_PROVIDER)),
+        "verdict": "PASS" if outcome == "passed" else "FAIL",
+        "result_source": "release-observation",
+        "observed_facts": [
+            f"the release recorded outcome {outcome!r} with lease status {release.get('lease_status')!r}",
+            f"isolation mode {release.get('isolation_mode')!r} was torn down, freeing "
+            f"{len(release.get('unlocked') or [])} external resource(s) and leaving {len(unreleased)} held",
+        ],
+        "inferences": [],
+        "findings": [],
+        "touched": sorted({str(item) for lease in released for item in lease.get("write_scope", [])}),
+        "evidence": [
+            {"kind": "lease-ledger", "path": str(executor.lease_state_path(root)),
+             "detail": "what the release freed and what stayed quarantined"},
+            {"kind": "work-order-ledger", "path": str(work_orders_path(root)),
+             "detail": "the terminal state this outcome moved the order to"},
+        ],
+        "verification": [],
+        "residual_risk": [str(release["note"])] if release.get("note") else [],
+        "next_action": (
+            f"run `forge.py exec reconcile --work-order {work_order}` to free what the release could not"
+            if unreleased
+            else "pass the worker's own result to `exec release --result <path>` so this folder holds what the "
+                 "worker reported rather than only what the release observed"
+        ),
+    }
 
 
 def record_route_decision(root: Path, decision: dict[str, Any], owner: str | None = None) -> dict[str, Any]:

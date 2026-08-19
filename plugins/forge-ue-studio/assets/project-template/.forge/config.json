@@ -13,6 +13,7 @@
     "require_task_and_complexity_eval": true,
     "fallback": "resident"
   },
+  "jobs": {"retention": "keep"},
   "human_gates": ["game-mandate", "primary-visual-direction", "subjective-art", "game-feel", "release"],
   "parallel_departments": ["design", "engineering", "visual", "audio", "research", "qa"],
   "capability_activation": {

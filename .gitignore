@@ -6,6 +6,7 @@ dist/
 build/
 *.egg-info/
 .forge/evidence/
+.forge/jobs/
 .forge/install-state.local.json
 Saved/
 Intermediate/

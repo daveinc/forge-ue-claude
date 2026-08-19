@@ -4074,6 +4074,170 @@ class DispatchAdmissionTests(unittest.TestCase):
             self.assertIsNone(result["recorded"])
             self.assertEqual(forge.executor.lease_state_path(root).read_bytes(), before)
             self.assertEqual(json.loads(forge.work_orders_path(root).read_text(encoding="utf-8"))["orders"], [])
+            self.assertFalse(forge.jobs_root(root).exists())
+
+
+class JobFolderTests(unittest.TestCase):
+
+    game = DispatchAdmissionTests.game
+    record = DispatchAdmissionTests.record
+    packet = DispatchAdmissionTests.packet
+
+    def setUp(self):
+        self.profile = forge.host_profile("claude")
+
+    def alias(self, root):
+        path = root / ".forge" / "state" / "packet-registry.json"
+        registry = forge.load_json(path)
+        registry["aliases"] = [{"alias": "FI-UNREAL-DISPLAY", "canonical": "FI-UNREAL"}]
+        path.write_text(json.dumps(registry), encoding="utf-8")
+
+    def retarget(self, root):
+        request = json.loads((root / "request.json").read_text(encoding="utf-8"))
+        request["task_class"] = "ik-retarget"
+        request["required_capabilities"] = ["ue.python.commandlet", "ue.batch"]
+        (root / "request.json").write_text(json.dumps(request), encoding="utf-8")
+        self.record(root)
+        return self.packet(
+            root, task_class="ik-retarget", capabilities=["ue.python.commandlet", "ue.batch"]
+        )
+
+    def test_dispatch_writes_the_four_members_of_the_job_folder(self):
+        with self.game() as root:
+            self.record(root)
+            referrals = [{"id": "GDD-014", "excerpt": "the audit covers Content/Characters only"},
+                         {"ref": "acceptance/FORGE-CAP-01"}]
+            result = forge.dispatch_work(
+                str(root), str(self.packet(root, referrals=referrals)), None, apply=True)
+            folder = forge.job_dir(root, "FI-UNREAL")
+            self.assertEqual(result["job"]["job"], str(folder))
+            self.assertEqual("dispatch", result["job"]["opened_by"])
+            self.assertEqual(["01-gdd-014.json", "02-acceptance-forge-cap-01.json"],
+                             sorted(path.name for path in (folder / "context").glob("*.json")))
+            self.assertEqual(referrals[0], forge.load_json(folder / "context" / "01-gdd-014.json"))
+            self.assertEqual("FI-UNREAL", forge.load_json(folder / "packet.json")["work_order"])
+            self.assertIn("Audit the asset registry", (folder / "brief.md").read_text(encoding="utf-8"))
+            forge.execute_release(str(root), "FI-UNREAL", "passed", apply=True)
+            self.assertEqual(
+                ["brief.md", "context", "packet.json", "result.json"],
+                sorted(path.name for path in folder.iterdir()))
+
+    def test_an_aliased_packet_and_its_canonical_id_share_one_job_folder(self):
+        with self.game() as root:
+            self.alias(root)
+            self.assertEqual(forge.job_dir(root, "FI-UNREAL"), forge.job_dir(root, "FI-UNREAL-DISPLAY"))
+            self.record(root)
+            forge.dispatch_work(
+                str(root), str(self.packet(root, work_order="FI-UNREAL-DISPLAY")), None, apply=True)
+            forge.execute_release(str(root), "FI-UNREAL-DISPLAY", "passed", apply=True)
+            self.assertEqual(["FI-UNREAL"], sorted(path.name for path in forge.jobs_root(root).iterdir()))
+            folder = forge.jobs_root(root) / "FI-UNREAL"
+            self.assertEqual("FI-UNREAL-DISPLAY", forge.load_json(folder / "packet.json")["work_order"])
+            self.assertEqual("FI-UNREAL", forge.load_json(folder / "result.json")["work_order"])
+
+    def test_the_brief_is_rendered_from_the_registries_and_not_restated_from_the_packet(self):
+        with self.game() as root:
+            path = self.retarget(root)
+            forge.dispatch_work(str(root), str(path), None, apply=True)
+            folder = forge.job_dir(root, "FI-UNREAL")
+            brief = (folder / "brief.md").read_text(encoding="utf-8")
+            packet_text = (folder / "packet.json").read_text(encoding="utf-8")
+            doctrine = forge.procedure_for("ik-retarget")
+            self.assertIn(doctrine["steps"][3]["does"][:60], brief)
+            self.assertNotIn(doctrine["steps"][3]["does"][:60], packet_text)
+            self.assertIn(doctrine["acceptance"][0], brief)
+            self.assertNotIn(doctrine["acceptance"][0], packet_text)
+            calls = forge.api_call_names("unreal-python", "ik-retarget", ["ue.batch"])
+            self.assertIn("IKRetargetBatchOperation.run_batch_retarget", calls)
+            for name in calls:
+                self.assertIn(f"`{name}`", brief)
+
+    def test_a_task_class_no_procedure_covers_says_so_and_falls_back_to_the_packet(self):
+        with self.game() as root:
+            self.record(root)
+            forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            brief = (forge.job_dir(root, "FI-UNREAL") / "brief.md").read_text(encoding="utf-8")
+            self.assertIn("no build procedure covers it", brief)
+            self.assertIn("the result file reports the audit ran", brief)
+            self.assertNotIn("## Steps", brief)
+
+    def test_the_folder_written_before_acquisition_survives_an_acquisition_that_fails(self):
+        with self.game() as root:
+            self.record(root)
+            blocker = {"work_order": "WO-OTHER", "leases": ["human-editor"], "write_scope": ["Content"],
+                       "isolation": {"mode": "project-exclusive", "base_revision": "HEAD"}}
+            forge.executor.acquire(root, blocker, owner="someone-else", apply=True)
+            with self.assertRaises(forge.executor.ExecutorError) as caught:
+                forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["LEASE_CONFLICT"])
+            folder = forge.job_dir(root, "FI-UNREAL")
+            self.assertIn("Audit the asset registry", (folder / "brief.md").read_text(encoding="utf-8"))
+            self.assertFalse((folder / "result.json").exists())
+            self.assertEqual(["WO-OTHER"],
+                             [item["work_order"] for item in forge.executor.status(root)["active"]])
+
+    def test_release_files_the_workers_own_result_when_it_is_given_one(self):
+        with self.game() as root:
+            self.record(root)
+            forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            worker = root / "attempt.json"
+            worker.write_text(json.dumps({
+                "work_order": "FI-UNREAL", "attempt": 2, "provider": "unreal-operator", "verdict": "PARTIAL",
+                "observed_facts": ["the commandlet reported 412 assets"], "inferences": [], "findings": [],
+                "touched": ["Content/Characters"], "evidence": [{"kind": "result-file", "path": "audit.json"}],
+                "verification": [{"by": "independent-verifier"}], "residual_risk": [],
+                "next_action": "review the audit",
+            }), encoding="utf-8")
+            forge.execute_release(str(root), "FI-UNREAL", "passed", apply=True, result_value=str(worker))
+            filed = forge.load_json(forge.job_dir(root, "FI-UNREAL") / "result.json")
+            self.assertEqual(("PARTIAL", 2, "unreal-operator"),
+                             (filed["verdict"], filed["attempt"], filed["provider"]))
+            self.assertNotIn("result_source", filed)
+
+    def test_release_files_what_it_observed_when_the_worker_returned_nothing(self):
+        with self.game() as root:
+            self.record(root)
+            forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            outcome = forge.execute_release(str(root), "FI-UNREAL", "failed", apply=True)
+            path = forge.job_dir(root, "FI-UNREAL") / "result.json"
+            self.assertEqual(str(path), outcome["job_result"])
+            filed = forge.load_json(path)
+            self.assertEqual("release-observation", filed["result_source"])
+            self.assertEqual("FAIL", filed["verdict"])
+            self.assertEqual(["Content"], filed["touched"])
+            self.assertIn("exec release --result", filed["next_action"])
+            self.assertEqual(
+                {"ok": True, "errors": []},
+                {key: forge.validate_payload("attempt-result", str(path))[key] for key in ("ok", "errors")})
+
+    def test_a_malformed_attempt_result_is_refused_before_the_lane_is_freed(self):
+        with self.game() as root:
+            self.record(root)
+            forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            broken = root / "attempt.json"
+            broken.write_text(json.dumps({"work_order": "FI-UNREAL", "verdict": "MAYBE"}), encoding="utf-8")
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.execute_release(str(root), "FI-UNREAL", "passed", apply=True, result_value=str(broken))
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["CONTRACT_INVALID"])
+            self.assertIn("invalid verdict: 'MAYBE'", caught.exception.extra["errors"])
+            self.assertEqual(["ue-editor-closed-api"],
+                             [item["lane"] for item in forge.executor.status(root)["active"]])
+            self.assertFalse((forge.job_dir(root, "FI-UNREAL") / "result.json").exists())
+
+    def test_the_retention_default_is_keep_and_the_brief_states_the_one_in_force(self):
+        with self.game() as root:
+            self.assertEqual("keep", forge.jobs_retention(root))
+            self.assertEqual("keep", forge.JOBS_RETENTION_DEFAULT)
+            config_path = root / ".forge" / "config.json"
+            config = forge.load_json(config_path)
+            self.assertEqual({"retention": "keep"}, config["jobs"])
+            config["jobs"] = {"retention": "sweep-after-30-days"}
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            self.assertEqual("sweep-after-30-days", forge.jobs_retention(root))
+            self.record(root)
+            forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertIn("Retention: `sweep-after-30-days`",
+                          (forge.job_dir(root, "FI-UNREAL") / "brief.md").read_text(encoding="utf-8"))
 
 
 class WorkflowReachabilityTests(unittest.TestCase):
