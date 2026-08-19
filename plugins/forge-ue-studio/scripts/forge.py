@@ -343,7 +343,7 @@ def dispatch_work(
 
     contracts = {str(item["capability"]): item for item in mcp_capability_contracts(root, profile)}
     required = {str(item) for item in packet.get("capabilities", []) if str(item).strip()}
-    live = resolve_tool_access(contracts, required)
+    live = resolve_tool_access(contracts, required, str(packet.get("task_class", "")))
     blocked = [item for item in live if item["routed"] and item.get("status") == "UNAVAILABLE_BLOCKING"]
     autonomy: dict[str, Any] | None = None
     if blocked:

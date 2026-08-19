@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import forge_executor as executor
+from forge_api_index import ApiIndexError, api_call_names
 from forge_core import ERROR_REASON, find_uproject, is_available, EXIT_CONTRACT, EXIT_USAGE, RESIDENT_PROVIDER, fail, load_json, plugin_names, plugin_root, project_root, utc_now
 from forge_hosts import active_profile
 from forge_mcp import catalog_tool_names, mcp_capability_contracts, mcp_capability_index, project_engine_version
@@ -583,13 +584,22 @@ def _parse_moment(value: str) -> dt.datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
 
 
-def resolve_tool_access(contracts: dict[str, Any], required_capabilities: set[str]) -> list[dict[str, Any]]:
+def resolve_tool_access(
+    contracts: dict[str, Any],
+    required_capabilities: set[str],
+    task_class: str | None = None,
+) -> list[dict[str, Any]]:
     """What each required capability resolves to right now, and what holding it would take.
 
     A capability no route serves is not an error: the resident host or an engine
     prerequisite answers it. A capability a route serves but cannot reach today is
     the case the declared fallback exists for, and it must be reported rather than
     dispatched into.
+
+    `tools` are the catalogued MCP call names a live route exposes; `api_calls` are
+    the Unreal Python call names the index assorts to this task class, which is the
+    only surface an editor-closed route has. Both carry names rather than detail,
+    and the agent pulls one class's methods on demand.
     """
     resolved: list[dict[str, Any]] = []
     for name in sorted(required_capabilities):
@@ -608,11 +618,16 @@ def resolve_tool_access(contracts: dict[str, Any], required_capabilities: set[st
                     "fallbacks": [],
                     "tool_surface": None,
                     "tools": [],
+                    "api_calls": [],
                     "detail": "no typed route serves this capability; the resident host or an engine prerequisite answers it",
                 }
             )
             continue
         bound = is_available(contract.get("status"))
+        try:
+            api_calls = api_call_names(contract.get("provider"), str(task_class), [name]) if task_class else []
+        except ApiIndexError:
+            api_calls = []
         resolved.append(
             {
                 "capability": name,
@@ -629,6 +644,7 @@ def resolve_tool_access(contracts: dict[str, Any], required_capabilities: set[st
                 "fallbacks": contract.get("fallbacks", []),
                 "tool_surface": contract.get("tool_surface"),
                 "tools": catalog_tool_names(contract.get("provider"), [name]),
+                "api_calls": api_calls,
                 "detail": contract.get("detection_note"),
             }
         )
@@ -731,7 +747,7 @@ def route_work(project_value: str, request_value: str, host_override: str | None
 
     required_capabilities = set(request.get("required_capabilities", []))
     required_lanes = set(request.get("required_lanes", []))
-    tool_access = resolve_tool_access(contracts, required_capabilities)
+    tool_access = resolve_tool_access(contracts, required_capabilities, str(request["task_class"]))
     unbound = [item for item in tool_access if item["routed"] and not item["bound"]]
     holding = [item for item in tool_access if item["routed"] and item["bound"]]
     lanes = sorted({item["lane"] for item in holding if item["lane"]})

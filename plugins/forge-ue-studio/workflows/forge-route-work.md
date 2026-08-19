@@ -78,6 +78,10 @@ python <forge-plugin-root>/scripts/forge.py route-status --project <project-root
   its contract reports the route bound.
 - Dispatch on the declared fallback when a route is unbound, and record which route was taken.
 - Never dispatch a packet whose capability resolves to nothing.
+- `tools` on a row is the catalogued MCP call names, and an editor-closed route has none. That row
+  carries `api_calls` instead: the Unreal Python call names the shipped API index assorts to this
+  capability and task class. Both are names and not signatures, so the packet stays small; a call in
+  neither list is one to confirm in a live interpreter before a step names it.
 </step>
 
 <step name="choose_unreal_lane">

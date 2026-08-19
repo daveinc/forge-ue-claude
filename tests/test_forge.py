@@ -1006,6 +1006,41 @@ class McpRouteTests(unittest.TestCase):
         self.assertEqual([], rows[0]["tools"])
         self.assertIn("result file", rows[0]["tool_surface"])
 
+    def test_a_commandlet_packet_carries_the_call_names_no_catalogue_holds(self):
+        contracts = {
+            "ue.python.commandlet": {
+                "provider": "unreal-python",
+                "kind": "process",
+                "status": "AVAILABLE_UNVERIFIED",
+                "lane": "lane.ue-editor-closed",
+                "tool_surface": "result file is the authority",
+            }
+        }
+        row = forge.resolve_tool_access(contracts, {"ue.python.commandlet"}, "world-blockout")[0]
+        self.assertEqual([], row["tools"])
+        self.assertIn("LevelEditorSubsystem.new_level", row["api_calls"])
+        self.assertIn("EditorActorSubsystem.spawn_actor_from_class", row["api_calls"])
+        self.assertNotIn("IKRetargeterController.auto_map_chains", row["api_calls"])
+        self.assertEqual(
+            [], forge.resolve_tool_access(contracts, {"ue.python.commandlet"}, "landscape-sculpt")[0]["api_calls"]
+        )
+
+    def test_the_packet_carries_call_names_and_not_the_method_detail_behind_them(self):
+        contracts = {
+            "ue.python.commandlet": {
+                "provider": "unreal-python",
+                "kind": "process",
+                "status": "AVAILABLE_UNVERIFIED",
+                "lane": "lane.ue-editor-closed",
+                "tool_surface": "result file is the authority",
+            }
+        }
+        row = forge.resolve_tool_access(contracts, {"ue.python.commandlet"}, "ik-retarget")[0]
+        detail = forge.api_classes_for("ik-retarget", ["ue.python.commandlet"])
+        self.assertEqual(sorted(row["api_calls"]), row["api_calls"])
+        self.assertLess(len(json.dumps(row["api_calls"])) * 4, len(json.dumps(detail)))
+        self.assertEqual([], [item for item in row["api_calls"] if not isinstance(item, str)])
+
     def test_a_catalogue_written_for_another_engine_reports_itself_stale(self):
         self.assertIsNone(forge.catalog_staleness("unreal-mcp", "5.8"))
         stale = forge.catalog_staleness("unreal-mcp", "5.9")
@@ -4209,14 +4244,39 @@ class ProcedureDoctrineTests(unittest.TestCase):
     def test_the_world_blockout_procedure_ends_in_engine_produced_evidence(self):
         procedure = forge.procedure_for("world-blockout")
         self.assertEqual(procedure["lane"], "lane.ue-editor")
-        self.assertEqual(procedure["packets"], 1)
+        self.assertEqual(procedure["packets"], 2)
         self.assertEqual(
             [step["capability"] for step in procedure["steps"][-2:]], ["ue.pie", "ue.viewport"]
         )
-        self.assertTrue(
-            any("no level-creation or actor-placement call" in step["does"] for step in procedure["steps"]),
-            "the procedure claims a placement tool the shipped catalogue does not carry",
+        placement = next(
+            step for step in procedure["steps"] if "no level-creation or actor-placement call" in step["does"]
         )
+        self.assertEqual(placement["capability"], "ue.python.commandlet")
+        self.assertEqual(procedure["capability_lanes"]["ue.python.commandlet"], "lane.ue-editor-closed")
+        self.assertNotIn("ue.live.python", procedure["capabilities"])
+
+    def test_world_blockout_declares_the_partition_flag_level_creation_forces(self):
+        procedure = forge.procedure_for("world-blockout")
+        self.assertIn("partitioned", procedure["steps"][0]["does"])
+        self.assertIn("partitioned", procedure["steps"][0]["produces"])
+        self.assertEqual(
+            [], [line for line in procedure["non_goals"] if line.startswith("World partition or level streaming")]
+        )
+        self.assertIn(
+            "is_partitioned_world",
+            next(step["does"] for step in procedure["steps"] if step["capability"] == "ue.python.commandlet"),
+        )
+
+    def test_every_editor_closed_procedure_verifies_it_is_not_inside_a_live_editor(self):
+        for task_class in sorted(forge.procedures()):
+            procedure = forge.procedure_for(task_class)
+            if "lane.ue-editor-closed" not in procedure["lanes"]:
+                continue
+            self.assertEqual(
+                1,
+                len([line for line in procedure["verification"] if "unreal.is_editor()" in line]),
+                f"{task_class} runs editor-closed and never checks it is",
+            )
 
     def test_a_task_class_no_procedure_covers_resolves_to_nothing(self):
         self.assertIsNone(forge.procedure_for("engine-operation"))
