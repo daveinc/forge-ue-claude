@@ -237,6 +237,242 @@
         "The result file from the build pass.",
         "The collision and socket diff."
       ]
+    },
+    "asset-audit": {
+      "lane": "lane.ue-editor-closed",
+      "capabilities": ["ue.python.commandlet", "ue.batch"],
+      "steps": [
+        {
+          "does": "Fix the content roots in scope and the rules that score them before anything is read: which rules run (unreferenced, redirector, naming, cooked-path length, duplicate), the threshold each carries, and what the audit is allowed to do about a finding. A project with plugin or UEFN content does not keep everything under one root, and EditorAssetLibrary.get_project_root_asset_directory is what answers where the roots are rather than a hard-coded literal in the script.",
+          "produces": "An audit brief naming every content root in scope, every rule with its threshold, and the disposition of each finding kind: report, or report and hand to a fix packet.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Populate the asset registry before querying it. An editor-closed process starts with a registry that does not yet know every asset, and a query issued straight away returns a subset that reads as a clean tree. AssetRegistryHelpers.get_asset_registry hands back the registry, AssetRegistry.is_search_all_assets says whether a full scan was ever started, AssetRegistry.scan_paths_synchronous scans the declared roots recursively right now, and AssetRegistry.wait_for_completion waits for it. The wait is not the check: its own documentation says it returns silently with assets still ungathered when it is called before OnPostEngineInit and a class lives in a not-yet-loaded plugin module, so AssetRegistry.is_loading_assets is what proves the registry is complete.",
+          "produces": "A scan record naming each root scanned, whether a full search had already run, and the registry loading state read back after the wait.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Enumerate every asset under the roots, in batches small enough that one failing row does not lose the pass. AssetRegistry.get_assets takes an ARFilter and is the call for a scoped pass; AssetRegistry.get_all_assets is documented as slow across a whole project and is the call to avoid. The two path enumerations disagree on their defaults and disagree silently: AssetRegistry.get_assets_by_path defaults recursive to false and returns only the top folder, while EditorAssetLibrary.list_assets defaults it to true. State the flag rather than taking either default. An empty array of asset rows is a failed pass and never an empty project.",
+          "produces": "One row per asset giving its path, class and package, and the enumeration call and recursion flag that produced it.",
+          "capability": "ue.batch"
+        },
+        {
+          "does": "Separate redirectors and secondary objects from content before any count is reported. A redirector is an asset in every enumeration and is not content, so an audit that counts it inflates the tree and an audit that reports it unreferenced is right for the wrong reason. AssetRegistryHelpers.is_redirector tests a row the registry handed over, AssetData.is_redirector is the same test off the row itself, and AssetRegistryHelpers.is_u_asset separates the primary asset in a package from secondary objects that are never audited on their own.",
+          "produces": "The enumeration split three ways, content against redirector against secondary object, with the count and the rows for each.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Resolve references with the dependency flags stated rather than defaulted. AssetRegistry.get_referencers and AssetRegistry.get_dependencies both take an AssetRegistryDependencyOptions whose include flags are all off until they are set, so a pass that hands over a freshly constructed struct finds every asset unreferenced and reports a spectacular false result that reads as a large win. Set the hard and soft package reference flags at minimum, and name in the report which were on. Both calls read on-disk references only, so an asset referenced solely from an unsaved level reads as unreferenced; EditorAssetLibrary.find_package_referencers_for_asset is the slower pass that can load assets to confirm, and every unreferenced row must say which of the two produced it.",
+          "produces": "A reference table: one row per asset with its referencer count, the dependency flags the query ran with, and whether the row was confirmed by loading or taken from the registry alone.",
+          "capability": "ue.batch"
+        },
+        {
+          "does": "Write the findings and change nothing. This procedure has no fix authority, and the reason is specific rather than procedural: EditorAssetLibrary.delete_asset is a force delete that does not check whether the asset is referenced from another level or by an actor, so acting on an unreferenced finding inside the audit destroys the only evidence that the finding was wrong. A fix runs as its own packet against this report.",
+          "produces": "The audit report, one row per finding, naming the rule it violates, the evidence for it, and the enumeration rows it was derived from.",
+          "capability": "ue.python.commandlet"
+        }
+      ],
+      "non_goals": [
+        "Deleting, renaming, moving or re-pointing anything the audit found; a fix is a separate packet run against this report.",
+        "Fixing up redirectors, which is `cook-and-build-preparation`.",
+        "Changing a property across the assets the audit selected, which is `bulk-property-edit`.",
+        "Judging art quality, memory cost or render performance; this audits the shape of the content tree, not what is inside the assets."
+      ],
+      "acceptance": [
+        "Every content root the brief named was scanned, and the scan record says so per root.",
+        "Every rule the brief named produced a count, including the rules that found nothing.",
+        "Every unreferenced finding names the dependency flags its query ran with and whether it was confirmed by loading.",
+        "The content tree is unchanged by the pass: no asset added, removed, renamed or saved."
+      ],
+      "verification": [
+        "The enumeration is re-run in a second process and returns the same asset count; a registry that was incompletely scanned in the first pass disagrees with itself here.",
+        "The result file is the authority on what was audited, never the commandlet exit code, which can be zero on a pass that enumerated nothing.",
+        "A sample of the unreferenced findings is re-checked by loading, because the registry answer covers on-disk references only.",
+        "Every editor-closed step asserts unreal.is_editor() before it does anything else and refuses the pass when the answer disagrees with the lane it was dispatched on. A script that believes it is on lane.ue-editor-closed while running inside a live editor is a lease violation the lease ledger cannot detect after the fact."
+      ],
+      "evidence": [
+        "The audit brief, so the findings can be read against the rules that were actually asked for.",
+        "The scan record, which is what shows the registry was populated before it was queried.",
+        "The audit report with one row per finding and the evidence for it.",
+        "The second-process enumeration count, matched against the first."
+      ]
+    },
+    "bulk-property-edit": {
+      "lane": "lane.ue-editor-closed",
+      "capabilities": ["ue.python.commandlet", "ue.batch"],
+      "steps": [
+        {
+          "does": "Name the property, the exact target value and the exact asset set, and resolve the property on one asset by hand before the set is touched. A value shown in the editor details panel often lives on a component or on a settings struct rather than on the asset object, so the path that works in the panel is not the path a script sets. StructBase.set_editor_property writes a struct-valued setting and StructBase.get_editor_property reads one back; the object-level accessors of the same name are native slots this engine introspection dump does not enumerate, so the shipped index cannot check them and one hand-run against a live interpreter is what confirms the name before a batch commits to it.",
+          "produces": "A change manifest: one row per asset giving its path, the resolved property path, its current value and its target value.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Read the current value off every asset in scope and record it, so the change can be shown rather than claimed and so the manifest is its own revert. EditorAssetLibrary.find_asset_data resolves a path to a registry row, AssetRegistryHelpers.get_asset loads the object behind one, and AssetData.get_asset does the same off a row already in hand. EditorAssetLibrary.get_tag_values is the cheap pre-pass that narrows the set without loading anything, but it returns registry tag values as strings, so it cannot separate a stored default from an authored value and is a filter and never the baseline.",
+          "produces": "A baseline table, one row per asset, every value read off the loaded object rather than off a registry tag.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Record, before the edit, whether each asset already overrides the property or inherits it from its archetype. Object.is_editor_property_overridden answers that, and Object.reset_editor_property is the only call that puts an inherited value back once a script has written over it. The two cases are different changes: a revert that writes the recorded value back leaves an already-overridden asset correct and leaves an inheriting asset permanently overridden at a value that merely happens to match today.",
+          "produces": "An override state per asset, taken before anything is written, naming every asset that inherited the property.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Apply the change in an editor-closed script under the project-exclusive lease, in batches small enough that one failing asset does not lose the pass. There is no undo on this lane: ScopedEditorTransaction bounds a transaction while it is open and ScopedEditorTransaction.cancel abandons one, but the transaction buffer they write into belongs to an editor session and dies with the process, so the baseline recorded in step two is the revert and nothing else is.",
+          "produces": "A result file naming every asset and the value it took or the error it raised.",
+          "capability": "ue.batch"
+        },
+        {
+          "does": "Mark each changed package dirty, then save it. EditorAssetLibrary.save_loaded_asset and EditorAssetLibrary.save_asset both default only_if_is_dirty to true, so an edit that did not dirty its package is silently not written and the pass exits zero having saved nothing. EditorAssetSubsystem.set_dirty_flag sets that flag explicitly and the EditorAssetLibrary surface carries no equivalent at all, so this step reaches the subsystem through unreal.get_editor_subsystem, which means a headless editor process rather than a bare commandlet, because an editor subsystem does not exist without one.",
+          "produces": "A save report, one row per asset, giving its dirty state before the save and the result of the save.",
+          "capability": "ue.batch"
+        },
+        {
+          "does": "Re-load every changed asset with EditorAssetLibrary.load_asset in a process that did not change it, and compare against the target value in the manifest. An asset that reports the target value in the process that wrote it and the old value on a fresh load is exactly the failure this step exists to catch, and it raises nothing at the time it happens.",
+          "produces": "An after table matched row for row against the baseline and against the target values in the manifest.",
+          "capability": "ue.python.commandlet"
+        }
+      ],
+      "non_goals": [
+        "Deciding which assets should carry the value; the manifest is an input to this pass, not something it discovers.",
+        "Scanning the tree to build the set, which is `asset-audit`.",
+        "Re-importing assets so they pick the value up from source, which is `batch-import`.",
+        "Editing a property on an actor already placed in a level; this edits assets, and a level instance keeps its own overridden value."
+      ],
+      "acceptance": [
+        "Every asset in the manifest carries the target value on a fresh load in a process that did not write it.",
+        "No asset outside the manifest changed.",
+        "Every asset that inherited the property before the pass is recorded as having inherited it, so the change can be reverted to inherited rather than to a literal.",
+        "Every changed package is saved to disk, and the save report says which were dirty when the save ran."
+      ],
+      "verification": [
+        "The after table is read off a second process, never from the return values of the session that wrote the change.",
+        "The result file is the authority on what was written, never the commandlet exit code, which can be zero on a pass that dirtied nothing and therefore saved nothing.",
+        "The dirty state is recorded before each save, because a save that skipped a clean package returns without raising.",
+        "Every editor-closed step asserts unreal.is_editor() before it does anything else and refuses the pass when the answer disagrees with the lane it was dispatched on. A script that believes it is on lane.ue-editor-closed while running inside a live editor is a lease violation the lease ledger cannot detect after the fact."
+      ],
+      "evidence": [
+        "The change manifest with the property path as it was actually resolved, not as it reads in the details panel.",
+        "The baseline table and the after table, matched row for row.",
+        "The override state recorded before the edit.",
+        "The save report showing each package dirty state at the moment it was saved."
+      ]
+    },
+    "cook-and-build-preparation": {
+      "lane": "lane.ue-editor-closed",
+      "capabilities": ["ue.python.commandlet", "ue.batch"],
+      "steps": [
+        {
+          "does": "Fix the target platforms, the maps to cook and the enabled plugin set by reading the project settings rather than by recalling them, and record all three. Every later step is scored against this list, and a preparation pass run against the wrong platform list validates content the build will not ship and clears content it will.",
+          "produces": "A cook brief naming each target platform, each map to be cooked, and the plugin set the project has enabled.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Resolve redirectors under the maps and roots in scope. AssetRegistryHelpers.is_redirector identifies them and EditorAssetLibrary.consolidate_assets re-points referencers from the old asset onto its replacement, which is the closest scripted equivalent to a fixup pass. Neither surface carries the resave-and-fix-redirectors commandlet itself, which is a separate engine process this catalogue does not name, so the result must say which redirectors were re-pointed and which were left rather than reporting a fixup that never ran.",
+          "produces": "A redirector table: one row per redirector with its target, its referencer count, and whether those referencers were re-pointed or deliberately left.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Run data validation over the assets in scope. EditorValidatorSubsystem is an editor subsystem reached through unreal.get_editor_subsystem, so this step needs a headless editor process rather than a bare commandlet, and needs the DataValidation plugin enabled. EditorValidatorSubsystem.validate_assets_with_settings takes the asset rows and a ValidateAssetsSettings and returns the number of assets carrying failures or warnings alongside a ValidateAssetsResults; zero is the pass and the number is a count, not an error code. Two settings decide whether the answer means anything. A run that hits max_assets_to_validate stops early and sets asset_limit_reached on the results, and it reports no failure for everything it never reached; and assets_details is populated only when collect_per_asset_details is on, so an empty detail map is a settings mistake rather than a clean tree.",
+          "produces": "The validation results in full: requested, checked, valid, invalid, warned, skipped and unable-to-validate counts, the asset-limit flag, and the per-asset detail.",
+          "capability": "ue.batch"
+        },
+        {
+          "does": "Measure the cooked path length of every asset in scope. EditorAssetSubsystem.get_asset_filename_length_for_cooking returns the length of the computed cooked package name and path for an unloaded asset and EditorAssetSubsystem.get_loaded_asset_filename_length_for_cooking does the same for one already loaded; EditorAssetLibrary carries neither, so this step reaches the subsystem. PackageTools.package_name_to_filename is what turns a package name into the on-disk path the platform limit applies to. A path over that limit fails the cook late, after the expensive part of it has already run.",
+          "produces": "A path-length table, one row per asset, naming every asset over the declared limit for any target platform in the brief.",
+          "capability": "ue.python.commandlet"
+        },
+        {
+          "does": "Cook a representative sample and stop there. Neither surface runs the build: CookFunctionLibrary.cook_asset writes one object cooked package into the project Saved folder and its own documentation says it is experimental and may not exactly match the cook commandlet, and the shipped tool catalogue carries no cook tool at all. The cook is a separate engine process this catalogue does not name and this procedure does not launch. The sample is worth running because it catches an asset that will not cook at all while the pass is still cheap; it is not a build and must never be reported as one.",
+          "produces": "A per-asset cook result over the sample, and an explicit statement in the result file that the full cook was not run here.",
+          "capability": "ue.batch"
+        }
+      ],
+      "non_goals": [
+        "Running the cook or the package build; this produces the evidence that starting one is worthwhile and stops.",
+        "Editing packaging settings, the target platform list or the plugin set; step one reads them and writes none of them.",
+        "Reducing content cost to make the build smaller, which is `lod-generation`.",
+        "Finding unreferenced or misnamed content, which is `asset-audit`."
+      ],
+      "acceptance": [
+        "Every map and content root the cook brief named was validated, and the results carry both how many assets were requested and how many were checked.",
+        "The asset-limit flag on the validation results is false, or the pass is declared incomplete and the limit that truncated it is named.",
+        "No asset in scope exceeds the cooked path length declared for any target platform in the brief.",
+        "Every redirector found is either re-pointed or named in the report as deliberately left."
+      ],
+      "verification": [
+        "The requested and checked counts on the validation results are compared, because a pass that skipped assets reports no failure for them and still returns.",
+        "The result file is the authority on what was validated, never the commandlet exit code, which can be zero on a pass that validated nothing.",
+        "The cook itself is not verified here, and this procedure says so in its result rather than letting a green preparation pass read as a green build.",
+        "Every editor-closed step asserts unreal.is_editor() before it does anything else and refuses the pass when the answer disagrees with the lane it was dispatched on. A script that believes it is on lane.ue-editor-closed while running inside a live editor is a lease violation the lease ledger cannot detect after the fact."
+      ],
+      "evidence": [
+        "The cook brief naming platforms, maps and the enabled plugin set.",
+        "The validation results with the full count block, including skipped and unable-to-validate.",
+        "The redirector table.",
+        "The path-length table with every over-limit asset named.",
+        "The sample cook result, labelled as a sample."
+      ]
+    },
+    "pie-verification": {
+      "lane": "lane.ue-editor",
+      "capabilities": ["ue.pie", "ue.viewport"],
+      "steps": [
+        {
+          "does": "Declare what the session must show before it is started: which map, which actors by name, which transforms, and which values the readback has to contain. Without that list the readback is scored against whatever the world happens to hold, and any non-empty result reads as a pass.",
+          "produces": "A verification brief naming the map, one row per expected actor, and the values each row must carry.",
+          "capability": "ue.pie"
+        },
+        {
+          "does": "Confirm with IsPIERunning that no session is already running, then start one with StartPIE. Its options argument must be supplied even though the schema marks it optional, and starting while a session already runs is an error rather than a no-op, so the check before it is not optional either.",
+          "produces": "The start result, and the pre-start IsPIERunning answer that authorised it.",
+          "capability": "ue.pie"
+        },
+        {
+          "does": "Poll IsPIERunning until it reports true before reading anything at all. PIE does not report running immediately, so a readback taken straight after StartPIE reads a world that has not begun play, and it comes back as an empty array rather than as an error.",
+          "produces": "A poll record: how many checks were made, and at which one the session first reported running.",
+          "capability": "ue.pie"
+        },
+        {
+          "does": "Read the running world with GetVisibleActors and match it against the brief row by row. Outside a running session GetVisibleActors returns an empty array rather than erroring, so an empty readback is a failed verification and never an empty world; and a non-empty readback that is not matched against the brief is not a verification at all, only a listing.",
+          "produces": "One actor record per expected row, matched by name and transform, plus one row per expectation the world did not satisfy.",
+          "capability": "ue.pie"
+        },
+        {
+          "does": "Capture the viewport from the transform the brief recorded. Every field of captureTransform must be supplied and annotations passed as an empty array; the tool refuses once per missing argument, and a result carrying no image part is a failed capture even when no error was raised.",
+          "produces": "A viewport image of the running session, taken from the transform the brief recorded.",
+          "capability": "ue.viewport"
+        },
+        {
+          "does": "Stop the session with StopPIE before the lane is released, and read IsPIERunning back to confirm it ended. A left-running PIE session holds the live editor, and because the two Unreal lanes are mutually exclusive it holds the editor-closed lane with it, so a verification that reports a pass and leaves PIE running has blocked the work it just verified.",
+          "produces": "The stop result, and a final IsPIERunning answer showing the session ended.",
+          "capability": "ue.pie"
+        }
+      ],
+      "non_goals": [
+        "Fixing anything the verification finds; this reads the running world and reports what it read.",
+        "Authoring or placing content to make the expectation pass, which is `world-blockout`.",
+        "Standing in for the editor-closed asset checks; a PIE pass says what the world does at runtime, never what is on disk.",
+        "Open-ended play testing or performance capture; this checks a declared expectation and stops."
+      ],
+      "acceptance": [
+        "Every actor the brief named appears in the readback, by name.",
+        "Every value the brief declared is matched against the readback rather than merely found present somewhere in it.",
+        "The viewport capture carries an image part.",
+        "No PIE session is running when the lane is released."
+      ],
+      "verification": [
+        "The readback is taken only after IsPIERunning reports true, and the poll record is what proves it was.",
+        "An empty GetVisibleActors result is recorded as a failure, because outside a running session that is what the call returns anyway and the two are indistinguishable from the result alone.",
+        "The match is made against the rows in the brief, not against whatever the world contains.",
+        "An independent verifier re-runs the session rather than reading this one log, because a PIE readback is not reproducible from a transcript."
+      ],
+      "evidence": [
+        "The verification brief from step one.",
+        "The actor readback matched row for row against it, including the rows that did not match.",
+        "The viewport capture carrying an image part.",
+        "The final IsPIERunning answer showing the session was stopped."
+      ]
     }
   }
 }

@@ -4332,6 +4332,53 @@ class ProcedureDoctrineTests(unittest.TestCase):
         self.assertEqual(len(gaps), 1)
         self.assertIn("executes no step", gaps[0])
 
+    def test_asset_audit_states_the_dependency_flags_that_default_to_off(self):
+        procedure = forge.procedure_for("asset-audit")
+        step = next(
+            step for step in procedure["steps"] if "AssetRegistry.get_referencers" in step["does"]
+        )
+        self.assertIn("AssetRegistryDependencyOptions", step["does"])
+        self.assertIn("all off until they are set", step["does"])
+        self.assertIn("dependency flags", step["produces"])
+
+    def test_asset_audit_refuses_to_act_on_what_it_finds(self):
+        procedure = forge.procedure_for("asset-audit")
+        step = next(
+            step for step in procedure["steps"] if "EditorAssetLibrary.delete_asset" in step["does"]
+        )
+        self.assertIn("force delete", step["does"])
+        self.assertEqual(
+            1, len([line for line in procedure["non_goals"] if line.startswith("Deleting, renaming")])
+        )
+
+    def test_bulk_property_edit_dirties_the_package_before_it_saves(self):
+        procedure = forge.procedure_for("bulk-property-edit")
+        step = next(
+            step for step in procedure["steps"] if "EditorAssetSubsystem.set_dirty_flag" in step["does"]
+        )
+        self.assertIn("only_if_is_dirty", step["does"])
+        self.assertIn("no equivalent", step["does"])
+        self.assertIn("dirty state", step["produces"])
+
+    def test_cook_preparation_does_not_claim_to_run_the_cook(self):
+        procedure = forge.procedure_for("cook-and-build-preparation")
+        step = next(
+            step for step in procedure["steps"] if "CookFunctionLibrary.cook_asset" in step["does"]
+        )
+        self.assertIn("Neither surface runs the build", step["does"])
+        self.assertIn("full cook was not run", step["produces"])
+        self.assertEqual(
+            1, len([line for line in procedure["non_goals"] if line.startswith("Running the cook")])
+        )
+
+    def test_pie_verification_stops_the_session_it_started(self):
+        procedure = forge.procedure_for("pie-verification")
+        self.assertIn("StopPIE", procedure["steps"][-1]["does"])
+        self.assertIn("holds the editor-closed lane", procedure["steps"][-1]["does"])
+        self.assertEqual(
+            1, len([line for line in procedure["acceptance"] if "No PIE session is running" in line])
+        )
+
     def test_the_doctrine_file_is_read_by_a_shipped_module(self):
         readers = sorted(
             path.name for path in SCRIPTS_DIR.glob("*.py")
