@@ -3837,6 +3837,46 @@ class DispatchAdmissionTests(unittest.TestCase):
             self.assertTrue(any("is bound now" in item for item in caught.exception.extra["drift"]))
             self.assertEqual(forge.executor.status(root)["active"], [])
 
+    def test_a_released_order_reaches_a_terminal_state(self):
+        with self.game() as root:
+            self.record(root)
+            forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            document = forge.load_json(forge.work_orders_path(root))
+            self.assertNotIn(document["orders"][0]["status"], document["terminal_states"])
+            result = forge.execute_release(str(root), "FI-UNREAL", "passed", apply=True)
+            document = forge.load_json(forge.work_orders_path(root))
+            order = document["orders"][0]
+            self.assertEqual("ACCEPTED", order["status"])
+            self.assertIn(order["status"], document["terminal_states"])
+            self.assertEqual("ACCEPTED", result["order"]["status"])
+            self.assertEqual("passed", order["outcome"])
+            self.assertEqual(str(result["lease_status"]), order["lease_status"])
+
+    def test_a_released_order_keeps_what_dispatch_recorded_about_it(self):
+        with self.game() as root:
+            self.record(root)
+            forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            dispatched = forge.load_json(forge.work_orders_path(root))["orders"][0]
+            forge.execute_release(str(root), "FI-UNREAL", "failed", apply=True)
+            orders = forge.load_json(forge.work_orders_path(root))["orders"]
+            self.assertEqual(1, len(orders))
+            self.assertEqual("REJECTED", orders[0]["status"])
+            self.assertEqual(dispatched["revision"], orders[0]["revision"])
+            self.assertEqual(dispatched["route_source"], orders[0]["route_source"])
+            self.assertEqual(dispatched["lanes"], orders[0]["lanes"])
+
+    def test_the_states_an_order_may_stop_at_are_the_ones_the_code_writes(self):
+        template = forge.load_json(
+            forge.template_root() / ".forge" / "state" / "work-orders.json"
+        )["terminal_states"]
+        self.assertEqual(list(forge.WORK_ORDER_TERMINAL_STATES), template)
+        with self.game() as root:
+            self.record(root)
+            forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertEqual(
+                template, forge.load_json(forge.work_orders_path(root))["terminal_states"]
+            )
+
     def test_a_preview_admits_nothing_and_records_nothing(self):
         with self.game() as root:
             self.record(root)

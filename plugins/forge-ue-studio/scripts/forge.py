@@ -163,6 +163,7 @@ from forge_routing import (
     record_blocked_lane,
     read_route_decisions,
     record_dispatch,
+    record_release,
     record_route_decision,
     resolve_decision_for,
     resolve_route_decision,
@@ -175,6 +176,7 @@ from forge_routing import (
     route_work,
     strictest_isolation,
     work_orders_path,
+    WORK_ORDER_TERMINAL_STATES,
 )
 from forge_runtime import host_list, host_set, host_status
 
@@ -358,7 +360,10 @@ def dispatch_work(
 
 def execute_release(project_value: str, work_order: str, outcome: str, apply: bool) -> dict[str, Any]:
     root, _ = project_root(project_value)
-    return executor.release(root, work_order, outcome, apply=apply)
+    result = executor.release(root, work_order, outcome, apply=apply)
+    if apply:
+        result["order"] = record_release(root, work_order, outcome, str(result["lease_status"]))
+    return result
 
 
 def execute_renew(project_value: str, work_order: str, apply: bool) -> dict[str, Any]:

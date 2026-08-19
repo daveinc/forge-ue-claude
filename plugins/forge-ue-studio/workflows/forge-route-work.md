@@ -281,6 +281,10 @@ python <forge-plugin-root>/scripts/forge.py exec release --project <project-root
 
 A failed outcome discards the worktree; a passed one keeps it for merge.
 
+This is what moves the order out of flight. `passed` records it `ACCEPTED`, `failed` records it
+`REJECTED`, and both keep what dispatch recorded about it. An order left unreleased rests at
+`DISPATCHED` forever, and the next session cannot tell it from work still running.
+
 Read `lease_status` in the result:
 
 | `lease_status` | Meaning | Action |

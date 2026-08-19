@@ -194,15 +194,43 @@ def lane_failure_counts(root: Path) -> dict[str, int]:
     return {str(lane): int(row.get("consecutive", 0)) for lane, row in (document.get("blocked_lanes") or {}).items()}
 
 
+WORK_ORDER_TERMINAL_STATES = ("ACCEPTED", "REJECTED")
+
+
 def _write_orders(root: Path, mutate) -> dict[str, Any]:
     path = work_orders_path(root)
     with executor.StateMutex(root, state_path=path) as _mutex:
         document = load_json(path) if path.is_file() else {"schema": WORK_ORDERS_SCHEMA, "orders": []}
         document.setdefault("schema", WORK_ORDERS_SCHEMA)
+        document.setdefault("terminal_states", list(WORK_ORDER_TERMINAL_STATES))
         mutate(document)
         document["updated_at"] = utc_now()
         executor.write_state_atomically(path, document)
     return document
+
+
+def record_release(root: Path, work_order: str, outcome: str, lease_status: str) -> dict[str, Any]:
+    """Move the order to the state its outcome earned.
+
+    Until this ran, every order Forge wrote rested at DISPATCHED forever, so a
+    resume could not tell finished work from work still in flight.
+    """
+    status = "REJECTED" if outcome == "failed" else "ACCEPTED"
+    closed_at = utc_now()
+
+    def mutate(document: dict[str, Any]) -> None:
+        orders = document.get("orders", [])
+        entry = dict(next((item for item in orders if str(item.get("work_order")) == work_order), {}))
+        entry.update({
+            "work_order": work_order,
+            "status": status,
+            "outcome": outcome,
+            "lease_status": lease_status,
+            "closed_at": closed_at,
+        })
+        document["orders"] = [item for item in orders if str(item.get("work_order")) != work_order] + [entry]
+
+    return [item for item in _write_orders(root, mutate)["orders"] if str(item.get("work_order")) == work_order][0]
 
 
 def record_blocked_lane(root: Path, packet: dict[str, Any], blocked: list[dict[str, Any]], decision: str) -> dict[str, Any]:
@@ -367,7 +395,6 @@ def decide_blocked_lane(root: Path, packet: dict[str, Any], blocked: list[dict[s
 
 def record_dispatch(root: Path, packet: dict[str, Any], admission: dict[str, Any], leases: list[dict[str, Any]], autonomy: dict[str, Any] | None = None) -> dict[str, Any]:
     """Write the order transition in the same breath as the acquisition that earned it."""
-    path = work_orders_path(root)
     order = str(packet.get("work_order", ""))
     entry = {
         "work_order": order,
@@ -382,14 +409,12 @@ def record_dispatch(root: Path, packet: dict[str, Any], admission: dict[str, Any
         "route_recorded_at": admission["recorded_at"],
         "entered_undetermined_lane": autonomy if autonomy and autonomy.get("proceed") else None,
     }
-    with executor.StateMutex(root, state_path=path) as _mutex:
-        document = load_json(path) if path.is_file() else {"schema": WORK_ORDERS_SCHEMA, "orders": []}
-        document.setdefault("schema", WORK_ORDERS_SCHEMA)
+    def mutate(document: dict[str, Any]) -> None:
         document["orders"] = [
             item for item in document.get("orders", []) if str(item.get("work_order")) != order
         ] + [entry]
-        document["updated_at"] = entry["dispatched_at"]
-        executor.write_state_atomically(path, document)
+
+    _write_orders(root, mutate)
     return entry
 
 

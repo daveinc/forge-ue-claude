@@ -4,6 +4,15 @@ Every section below is dated from the tag that released it. One tag is not a rel
 
 ## 0.7.0 - 2026-08-18
 
+### An order that finished says so
+
+- `.forge/state/work-orders.json` declared four states an order may stop at — `ACCEPTED`, `REJECTED`, `CANCELLED`, `SUPERSEDED` — and **no code wrote any of them**. `dispatch` wrote `DISPATCHED` and nothing ever moved it, so by the schema's own rule that an order resting outside a terminal state is still in flight, every order Forge had ever written was permanently in flight. Resume reads this file rather than conversation memory, which made finished work indistinguishable from work still running.
+- `exec release --outcome passed|failed` is where work ends, so that is where the order ends: `passed` records `ACCEPTED`, `failed` records `REJECTED`. The row is updated rather than replaced, so the revision, route source and lanes dispatch recorded survive alongside the outcome and the lease status it closed with.
+- `CANCELLED` and `SUPERSEDED` are **deleted**. Neither had an honest trigger, and inventing a verb to justify a declared state is the same defect as declaring one nothing writes. `derived_from` in the packet registry is provenance for packet identity, not a signal that an order in flight was replaced.
+- The terminal states are now named once, in code, and the shipped template is checked against that list — the split between a value declared in JSON and a value the code knows is what let four of them go unwritten in the first place.
+- `BLOCKED` stays deliberately non-terminal. A blocked lane is resumable, and the record exists so the next session can resume it.
+- `record_dispatch` kept its own copy of the ledger write and seeded no `terminal_states`, so a dispatch into a fresh project wrote a document that failed its own required schema. Both writers go through one path now.
+
 ### An undetermined lane is diagnosed, then decided under a posture
 
 - Ownership answered `UNDETERMINED` and stopped there, and the two functions that could have explained it were wired only into the MCP route's own handshake. Forge held a reader for the project's `ModelContextProtocolSettings` and never consulted it when deciding whether an editor was live.
