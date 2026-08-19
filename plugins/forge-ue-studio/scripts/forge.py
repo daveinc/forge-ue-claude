@@ -162,6 +162,7 @@ from forge_routing import (
     confirm_autonomous_entry,
     decide_blocked_lane,
     decision_freshness_minutes,
+    engine_prerequisite_gaps,
     lane_failure_counts,
     procedure_for,
     procedure_gaps,
@@ -303,6 +304,17 @@ def dispatch_work(
                 "packets": procedure["packets"],
                 "packet_split": procedure["packet_split"],
             },
+            packet=str(packet_path),
+        )
+
+    shortfalls = engine_prerequisite_gaps(root, [str(item) for item in packet.get("capabilities", [])])
+    if shortfalls:
+        raise fail(
+            f"{len(shortfalls)} route prerequisite the packet's capabilities need is not met by this project's "
+            "engine or .uproject; the step that needed it would fail part-way rather than here",
+            reason=ERROR_REASON["ENGINE_PREREQUISITE_MISSING"],
+            code=EXIT_CONTRACT,
+            shortfalls=shortfalls,
             packet=str(packet_path),
         )
 

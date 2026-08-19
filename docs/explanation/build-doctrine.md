@@ -117,7 +117,7 @@ Four things this settles:
 
 ## What consumes it, and what proves it
 
-This repository's recurring defect is data declared and read by nothing: `tool_surface` went a release unread, and `requires_engine` in `route-registry.json` is read by nothing today. A doctrine document with no consumer is the next instance of it.
+This repository's recurring defect is data declared and read by nothing: `tool_surface` went a release unread, and `requires_engine` in `route-registry.json` went two. A doctrine document with no consumer is the next instance of it.
 
 Four consumers, in the order Phase 1 should land them:
 
@@ -148,9 +148,16 @@ So it is an aspiration, and the gap it aspires to close is named here rather tha
 
 Every one of them is legitimate Unreal work that a request can resolve to, and every one of them is a packet whose steps, acceptance and evidence an agent currently improvises — which `procedure_resolution` says out loud on dispatch, under `procedured: false`, so the gap is already observable per packet rather than only countable here. The guard becomes shippable on the day this table is empty, and the honest measure of progress on the catalogue is how many rows it has lost. Nothing may be deleted from `route-policy.json` to shorten it; a shape without a procedure is a procedure not yet written, never a shape that does not exist.
 
+### `requires_engine` has a reader
+
+`requires_engine` sat on three routes for two releases with nothing reading it, which is the defect this section opens by naming. It is read now, and by the reader this document proposed for it.
+
+`engine_prerequisite_gaps` resolves each capability a packet declares to the route that serves it, and compares that route's `min_version` and `uproject_plugins` against the project's `EngineAssociation` and enabled plugin list — both of which Forge already knew how to read. `dispatch` calls it after the procedure gate and before it resolves the routing decision, so a project whose `.uproject` has no `PythonScriptPlugin` is refused as `engine_prerequisite_missing` with the route, the requirement and what was found, rather than taking a project-exclusive lease and failing in the step that needed the plugin.
+
+Two things it deliberately does not claim. A project with no `.uproject` is an unknown, not a shortfall — Forge's own pre-project stage is exactly that. So is an `EngineAssociation` that is a source-build GUID rather than a version number: the version comparison is skipped and the plugin check still runs, because the plugin list is knowable when the engine version is not. A guard that refuses on what it cannot see is a guard that gets disabled.
+
 ## Recommended, not done here
 
-- `requires_engine` is declared on three routes in `route-registry.json` and read by nothing. The procedure resolver is its natural reader: a procedure whose lane requires an engine version or `.uproject` plugin the project does not have should refuse before a lease is taken. Read it there, or delete it.
 - `forge-onboard` and `forge-resume-work` carry one-line CORE sections because they have nothing of their own to add. Once the procedure layer exists their PRE should carry doctrine — onboarding an existing project means recognising which task classes its `Content/` and modules already imply, and resuming means reopening the job folder the interrupted packet was working from, which is a stronger restore than the handoff record alone.
 - Sweeping completed job folders is deliberately deferred. Everything stays on disk until the tree's shape is proven in use; a retention window and the sweep that honours it are a later phase, and the `jobs.retention` key exists so that phase changes a default rather than a design.
 

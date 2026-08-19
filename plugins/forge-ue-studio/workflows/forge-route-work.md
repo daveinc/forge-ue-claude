@@ -217,6 +217,7 @@ python <forge-plugin-root>/scripts/forge.py dispatch --project <project-root> --
 `dispatch` does all of this as one decision — nothing is acquired unless every check passed:
 - checks the packet against `forge.work-packet/v1`
 - proves every declared capability is reachable *right now*
+- refuses as `engine_prerequisite_missing` when this project's engine or `.uproject` does not meet the `requires_engine` a declared capability's route states
 - refuses when available routes have drifted from the ones the decision was scored against
 - takes the leases and isolation
 - records the order transition in `.forge/state/work-orders.json`

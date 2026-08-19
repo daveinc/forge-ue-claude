@@ -3717,6 +3717,56 @@ class DispatchAdmissionTests(unittest.TestCase):
             self.assertEqual(orders[0]["status"], "DISPATCHED")
             self.assertEqual(orders[0]["leases"], [result["leases"][0]["lease_id"]])
 
+    def describe_engine(self, root, association, plugins):
+        (root / "MyGame.uproject").write_text(
+            json.dumps({
+                "EngineAssociation": association,
+                "Plugins": [{"Name": name, "Enabled": True} for name in plugins],
+            }),
+            encoding="utf-8",
+        )
+
+    def test_a_project_without_the_uproject_plugins_a_route_needs_is_refused_before_acquiring(self):
+        with self.game() as root:
+            self.record(root)
+            self.describe_engine(root, "5.8", [])
+            before = forge.executor.lease_state_path(root).read_bytes()
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ENGINE_PREREQUISITE_MISSING"])
+            shortfalls = caught.exception.extra["shortfalls"]
+            self.assertEqual(["uproject_plugins"], [item["requirement"] for item in shortfalls])
+            self.assertEqual(["EditorScriptingUtilities", "PythonScriptPlugin"], shortfalls[0]["required"])
+            self.assertEqual("unreal-python", shortfalls[0]["route"])
+            self.assertEqual(forge.executor.lease_state_path(root).read_bytes(), before)
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_an_engine_older_than_a_route_requires_is_refused_before_acquiring(self):
+        with self.game() as root:
+            self.record(root)
+            self.describe_engine(root, "4.27", ["PythonScriptPlugin", "EditorScriptingUtilities"])
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["ENGINE_PREREQUISITE_MISSING"])
+            shortfall = caught.exception.extra["shortfalls"][0]
+            self.assertEqual(("min_version", "5.0", "4.27"),
+                             (shortfall["requirement"], shortfall["required"], shortfall["found"]))
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_an_engine_that_meets_every_route_prerequisite_is_admitted(self):
+        with self.game() as root:
+            self.record(root)
+            self.describe_engine(root, "5.8", ["PythonScriptPlugin", "EditorScriptingUtilities"])
+            self.assertEqual([], forge.engine_prerequisite_gaps(root, ["ue.python.commandlet", "ue.batch"]))
+            result = forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertEqual([lease["lane"] for lease in result["leases"]], ["ue-editor-closed-api"])
+
+    def test_a_source_built_engine_association_is_an_unknown_and_never_a_shortfall(self):
+        with self.game() as root:
+            self.describe_engine(root, "{5B4C1B0E-0000-0000-0000-000000000000}",
+                                 ["PythonScriptPlugin", "EditorScriptingUtilities"])
+            self.assertEqual([], forge.engine_prerequisite_gaps(root, ["ue.python.commandlet"]))
+
     def test_an_alias_and_its_canonical_id_never_open_two_ledger_entries(self):
         with self.game() as root:
             registry_path = root / ".forge" / "state" / "packet-registry.json"

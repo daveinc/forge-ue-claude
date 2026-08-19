@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 import forge_executor as executor
-from forge_core import ERROR_REASON, is_available, EXIT_CONTRACT, EXIT_USAGE, RESIDENT_PROVIDER, fail, load_json, plugin_root, project_root, utc_now
+from forge_core import ERROR_REASON, find_uproject, is_available, EXIT_CONTRACT, EXIT_USAGE, RESIDENT_PROVIDER, fail, load_json, plugin_names, plugin_root, project_root, utc_now
 from forge_hosts import active_profile
-from forge_mcp import catalog_tool_names, mcp_capability_contracts, mcp_capability_index
+from forge_mcp import catalog_tool_names, mcp_capability_contracts, mcp_capability_index, project_engine_version
 
 
 ISOLATION_STRENGTH = ("read-only", "git-worktree", "lfs-lock", "project-exclusive")
@@ -53,6 +53,53 @@ def capability_lanes(capabilities: list[str]) -> dict[str, str]:
         for item in capabilities
         if str(item) in index
     }
+
+
+def _engine_version(value: str) -> tuple[int, ...] | None:
+    parts = value.strip().split(".")
+    return tuple(int(part) for part in parts) if parts and all(part.isdigit() for part in parts) else None
+
+
+def engine_prerequisite_gaps(root: Path, capabilities: list[str]) -> list[dict[str, Any]]:
+    """Every route prerequisite this project does not meet for the capabilities named.
+
+    `requires_engine` states what a route needs before it can serve anything: a
+    minimum engine and the `.uproject` plugins that expose its surface. Read
+    here, a step that cannot run is refused before a lease is taken rather than
+    part-way through the procedure that needed it. A project with no `.uproject`
+    and an engine association that is not a version number are both unknowns,
+    not shortfalls, and nothing is claimed about them.
+    """
+    uproject = find_uproject(root)
+    if uproject is None:
+        return []
+    enabled = set(plugin_names(uproject))
+    association = str(project_engine_version(uproject) or "")
+    version = _engine_version(association)
+    index = mcp_capability_index()
+    gaps: list[dict[str, Any]] = []
+    for name in sorted({str(item) for item in capabilities if str(item).strip()}):
+        route = index.get(name) or {}
+        required = route.get("requires_engine") or {}
+        minimum = _engine_version(str(required.get("min_version", "")))
+        if version and minimum and version < minimum:
+            gaps.append({
+                "capability": name,
+                "route": route.get("id"),
+                "requirement": "min_version",
+                "required": str(required.get("min_version")),
+                "found": association,
+            })
+        missing = sorted(str(item) for item in required.get("uproject_plugins", []) if str(item) not in enabled)
+        if missing:
+            gaps.append({
+                "capability": name,
+                "route": route.get("id"),
+                "requirement": "uproject_plugins",
+                "required": missing,
+                "found": sorted(enabled),
+            })
+    return gaps
 
 
 def procedure_for(task_class: str) -> dict[str, Any] | None:
