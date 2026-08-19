@@ -31,7 +31,7 @@ METHOD_DOC_LIMIT = 420
 PROPERTY_LIMIT = 140
 PLUGIN_LINE = re.compile(r"\*\*Plugin\*\*:\s*([^\r\n*]+)")
 MODULE_LINE = re.compile(r"\*\*Module\*\*:\s*([^\r\n*]+)")
-PROPERTY_LINE = re.compile(r"^-\s+``([^`]+)``\s*\(([^)]*)\):\s*(.*)$")
+PROPERTY_LINE = re.compile(r"^-\s+``([^`]+)``\s*\((.+)\):\s*(.*)$")
 DOTTED_CALL = re.compile(r"(?<![\w.])(" + MODULE_SYMBOL + r"|[A-Z][A-Za-z0-9_]+)\.([a-z_][A-Za-z0-9_]*)")
 PROSE_FIELDS = ("does", "produces")
 

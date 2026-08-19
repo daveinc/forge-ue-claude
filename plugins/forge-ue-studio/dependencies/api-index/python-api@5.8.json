@@ -3,7 +3,7 @@
  "api": "python-api",
  "engine_version": "5.8",
  "generated_by": "scripts/api_index.py",
- "generated_at": "2026-08-19T12:11:42Z",
+ "generated_at": "2026-08-19T12:19:42Z",
  "provenance": {
   "source_file": "unreal_api.json",
   "source_bytes": 26011094,
@@ -137,6 +137,7 @@
     "blueprint_display_name": "(str) [Read-Write] Overrides the BP's display name in the editor UI",
     "blueprint_namespace": "(str) [Read-Write] The namespace of this blueprint (if set, the Blueprint will be treated differently for the context menu)",
     "compile_mode": "(BlueprintCompileMode) [Read-Write] The mode that will be used when compiling this class.",
+    "default_binding_class": "(type(Class)) [Read-Write] The default binding type that any new nodes will use when created",
     "deprecate": "(bool) [Read-Write] Deprecates the Blueprint, marking the generated class with the CLASS_Deprecated flag",
     "enable_linked_anim_layer_instance_sharing": "(bool) [Read-Write] If true, linked animation layers will be instantiated only once per AnimClass instead of once per AnimInstance, AnimClas [...]",
     "generate_abstract_class": "(bool) [Read-Write] Whether or not this blueprint's class is a abstract class or not. Should set CLASS_Abstract in the KismetCompiler.",
@@ -458,10 +459,13 @@
    "editor_properties": {
     "asset_import_task": "(AssetImportTask) [Read-Write] Task for importing file via script interfaces",
     "automated_import_data": "(AutomatedAssetImportData) [Read-Write] Data for how to import files via the automated command line importing interface",
+    "context_class": "(type(Class)) [Read-Write] Class of the context object used to help create the object.",
     "create_new": "(bool) [Read-Write] The default value to return from CanCreateNew()",
     "edit_after_new": "(bool) [Read-Write] true if the associated editor should be opened after creating a new object.",
     "editor_import": "(bool) [Read-Write] true if the factory imports objects from files.",
     "formats": "(Array[str]) [Read-Write] List of formats supported by the factory. Each entry is of the form \"ext;Description\" where ext is the file extens [...]",
+    "parent_class": "(type(Class)) [Read-Write] The parent class of the created blueprint",
+    "supported_class": "(type(Class)) [Read-Write] The class manufactured by this factory.",
     "supported_workflows": "(uint8) [Read-Write] Which workflows are supported.",
     "text": "(bool) [Read-Write] true if the factory imports objects from text."
    }
@@ -1130,10 +1134,12 @@
    "editor_properties": {
     "asset_import_task": "(AssetImportTask) [Read-Write] Task for importing file via script interfaces",
     "automated_import_data": "(AutomatedAssetImportData) [Read-Write] Data for how to import files via the automated command line importing interface",
+    "context_class": "(type(Class)) [Read-Write] Class of the context object used to help create the object.",
     "create_new": "(bool) [Read-Write] The default value to return from CanCreateNew()",
     "edit_after_new": "(bool) [Read-Write] true if the associated editor should be opened after creating a new object.",
     "editor_import": "(bool) [Read-Write] true if the factory imports objects from files.",
     "formats": "(Array[str]) [Read-Write] List of formats supported by the factory. Each entry is of the form \"ext;Description\" where ext is the file extens [...]",
+    "supported_class": "(type(Class)) [Read-Write] The class manufactured by this factory.",
     "supported_workflows": "(uint8) [Read-Write] Which workflows are supported.",
     "text": "(bool) [Read-Write] true if the factory imports objects from text."
    }
@@ -1753,10 +1759,12 @@
    "editor_properties": {
     "asset_import_task": "(AssetImportTask) [Read-Write] Task for importing file via script interfaces",
     "automated_import_data": "(AutomatedAssetImportData) [Read-Write] Data for how to import files via the automated command line importing interface",
+    "context_class": "(type(Class)) [Read-Write] Class of the context object used to help create the object.",
     "create_new": "(bool) [Read-Write] The default value to return from CanCreateNew()",
     "edit_after_new": "(bool) [Read-Write] true if the associated editor should be opened after creating a new object.",
     "editor_import": "(bool) [Read-Write] true if the factory imports objects from files.",
     "formats": "(Array[str]) [Read-Write] List of formats supported by the factory. Each entry is of the form \"ext;Description\" where ext is the file extens [...]",
+    "supported_class": "(type(Class)) [Read-Write] The class manufactured by this factory.",
     "supported_workflows": "(uint8) [Read-Write] Which workflows are supported.",
     "text": "(bool) [Read-Write] true if the factory imports objects from text."
    }
@@ -2129,6 +2137,7 @@
     "override_lod_streaming_settings": "(bool) [Read-Write]",
     "physics_asset": "(PhysicsAsset) [Read-Write]",
     "positive_bounds_extension": "(Vector) [Read-Write]",
+    "post_process_anim_blueprint": "(type(Class)) [Read-Write]",
     "post_process_anim_bplod_threshold": "(int32) [Read-Write] Max LOD level that post-process anim graphs are evaluated.",
     "ray_tracing_min_lod": "(int32) [Read-Write]",
     "sampling_info": "(SkeletalMeshSamplingInfo) [Read-Write]",
