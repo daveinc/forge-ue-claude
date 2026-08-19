@@ -178,8 +178,8 @@ python <forge-plugin-root>/scripts/forge.py procedure --task-class <task-class>
 | `steps[].produces` | What the packet must return for that step, named per step rather than as one lump |
 
 `task_class` is a free string in `forge.work-packet/v2`, so a misspelt class resolves to no procedure
-and nothing refuses it. Forge does not fail that closed — only four procedures exist, and most Unreal
-shapes have none yet — but it does not let it pass silently either: `dispatch` warns on stderr and
+and nothing refuses it. Forge does not fail that closed — eight procedures exist, and Unreal shapes
+outside them have none — but it does not let it pass silently either: `dispatch` warns on stderr and
 records `procedure.procedured: false` with the nearest declared classes in
 `.forge/state/work-orders.json`, so an improvised packet is visible in the ledger rather than
 indistinguishable from a doctrined one.

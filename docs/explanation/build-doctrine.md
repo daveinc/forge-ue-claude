@@ -137,16 +137,33 @@ Four checks in `validate_repo.py` prove consumption mechanically:
 
 The last two are the ones that matter. The first of them is the same shape as the existing guard that every verb be reachable from a workflow; the second is the same shape as the 0.7.0 fix for terminal states that had no writer. A job folder is easy to check for, which is the point of choosing a file tree over an in-context brief.
 
-A fifth check belongs in that table one day and does not belong there yet: *every task class named in `unreal_routing.prefer_editor_closed_for` and `prefer_live_editor_for` has a procedure*. It would fail on a clean tree the day it was written, because `route-policy.json` names fifteen shapes of Unreal work and the catalogue covers four of them — `ik-retarget`, `batch-import` and `lod-generation` on `lane.ue-editor-closed`, and `world-blockout` on `lane.ue-editor`. Shipping the guard would force the eleven missing procedures to be invented in one sitting to make a lint pass, which is exactly the improvisation the catalogue exists to stop.
+A fifth check belongs in that table one day and does not belong there yet: *every task class named in `unreal_routing.prefer_editor_closed_for` and `prefer_live_editor_for` has a procedure*. It would fail on a clean tree the day it was written, because `route-policy.json` names fifteen shapes of Unreal work and the catalogue covers eight of them — `ik-retarget`, `batch-import`, `lod-generation`, `asset-audit`, `bulk-property-edit` and `cook-and-build-preparation` on `lane.ue-editor-closed`, and `world-blockout` and `pie-verification` on `lane.ue-editor`. Shipping the guard would force the remaining seven procedures to be invented in one sitting to make a lint pass, which is exactly the improvisation the catalogue exists to stop.
 
-So it is an aspiration, and the gap it aspires to close is named here rather than left to be rediscovered. Eleven routing shapes have no procedure today:
+So it is an aspiration, and the gap it aspires to close is named here rather than left to be rediscovered. Seven routing shapes have no procedure today:
 
-| Lane the shape routes to | Shapes with no procedure |
-|---|---|
-| `lane.ue-editor-closed` | `asset-audit`, `bulk-property-edit`, `null-rhi-safe-work`, `deterministic-script`, `cook-and-build-preparation`, `unsafe-inside-editor-tick` |
-| `lane.ue-editor` | `schema-discoverable-inspection`, `bounded-scene-or-blueprint-mutation`, `pie-verification`, `viewport-evidence`, `typed-readback` |
+| Lane the shape routes to | Shape with no procedure | Why |
+|---|---|---|
+| `lane.ue-editor-closed` | `null-rhi-safe-work` | Not a task class. A property of work: it needs no rendering device, so it survives `-nullrhi` |
+| `lane.ue-editor-closed` | `deterministic-script` | Not a task class. A property of work: it is reproducible from a script and needs no human in the loop |
+| `lane.ue-editor-closed` | `unsafe-inside-editor-tick` | Not a task class. A property of work: it would corrupt or stall a live editor's tick |
+| `lane.ue-editor` | `schema-discoverable-inspection` | Not a task class. A property of the *route*: the native MCP server answers in discovery mode, which `route-registry.json` already states under `tool_surface` |
+| `lane.ue-editor` | `typed-readback` | Not a task class. A way of reading state, which `unreal_routing.result_authority` already governs |
+| `lane.ue-editor` | `viewport-evidence` | Not a task class. A kind of evidence. Every procedure that can produce one already names it under `evidence` |
+| `lane.ue-editor` | `bounded-scene-or-blueprint-mutation` | Not a task class. A routing bucket joining two different jobs with an *or* and qualifying them with a bound. Its Blueprint half is `world-blockout`'s authoring steps; its scene half has no live call at all, which is why `world-blockout` splits to `lane.ue-editor-closed` to place an actor |
 
-Every one of them is legitimate Unreal work that a request can resolve to, and every one of them is a packet whose steps, acceptance and evidence an agent currently improvises — which `procedure_resolution` says out loud on dispatch, under `procedured: false`, so the gap is already observable per packet rather than only countable here. The guard becomes shippable on the day this table is empty, and the honest measure of progress on the catalogue is how many rows it has lost. Nothing may be deleted from `route-policy.json` to shorten it; a shape without a procedure is a procedure not yet written, never a shape that does not exist.
+That is a different claim from the one this section used to make. Four of the eleven were task classes and are now written. The other seven are not work anyone requests — nobody says *today we are doing typed-readback* — and writing a procedure for each would put seven entries in a closed vocabulary that describe nothing, in a file where **a procedure that exists will be followed**. Padding the catalogue is worse than leaving it short.
+
+The right fix is in `route-policy.json`, and it is a doctrine change rather than a lint fix, so it is proposed here and not applied:
+
+- `unreal_routing.prefer_editor_closed_for` and `prefer_live_editor_for` should hold **task classes only**, and should be the list the fifth guard checks. On that reading they hold six and two entries respectively today, and the guard is shippable now.
+- The three editor-closed properties belong under a sibling key — `unreal_routing.route_closed_when`, a list of *reasons* rather than shapes. They are what a router consults when a request resolves to a task class the catalogue does not cover, or to none: work that is null-RHI-safe, deterministic, or unsafe inside the editor tick takes the closed lane whatever it is called. Expressed as a step attribute they would also work — a step could carry `unsafe_inside_editor_tick: true` — but a step already names a capability, and the capability already implies the lane, so a second per-step lane signal would be a second source of truth.
+- `schema-discoverable-inspection` should be deleted from the routing list outright. It restates `tool_surface` on the `unreal-native-mcp` row, which is where a reader already looks and where it is already true.
+- `typed-readback` and `viewport-evidence` should become a `unreal_routing.live_lane_yields` note — what the live lane is *for* — rather than shapes of work. `result_authority` is the sentence they belong beside.
+- `bounded-scene-or-blueprint-mutation` should be replaced by the real classes hiding inside it once someone writes them, and the bound should stay as prose about why they are safe on the live lane. Splitting it is the only entry on this list that costs new procedures.
+
+Nothing may be deleted from `route-policy.json` to shorten the table without that argument being made first; a shape without a procedure is a procedure not yet written until someone shows it is not a shape. The seven above are the argument, made in writing, and the deletion is still not taken here.
+
+`procedure_resolution` says all of this out loud on dispatch, under `procedured: false`, so a packet whose task class is one of the seven is visible in the ledger rather than indistinguishable from a doctrined one.
 
 ### `requires_engine` has a reader
 
