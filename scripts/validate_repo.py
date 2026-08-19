@@ -139,6 +139,22 @@ def vacuous_assertions(path: Path) -> list[int]:
     return found
 
 
+def called_names(source: str, function: str) -> set[str]:
+    """Every function name called inside one top-level function of a module."""
+    tree = ast.parse(source)
+    node = next(
+        (item for item in tree.body if isinstance(item, ast.FunctionDef) and item.name == function),
+        None,
+    )
+    if node is None:
+        return set()
+    return {
+        call.func.id if isinstance(call.func, ast.Name) else call.func.attr
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call) and isinstance(call.func, (ast.Name, ast.Attribute))
+    }
+
+
 def neutrality_banned_tokens(hosts: list) -> list[str]:
     """Derive banned vendor tokens from the host registry itself.
 
@@ -703,6 +719,27 @@ def main() -> int:
             "doctrine nothing loads is prose, and this repository has shipped that twice already",
             failures,
         )
+
+    for function, writer, consequence in (
+        (
+            "dispatch_work",
+            "write_job",
+            "a dispatched packet would leave no job folder, so nothing on disk records what its worker was handed "
+            "and 'the brief was thin' stays a suspicion rather than a checkable claim",
+        ),
+        (
+            "execute_release",
+            "write_job_result",
+            "a released work order would leave no result.json, so the job folder records what was asked and never "
+            "what came back",
+        ),
+    ):
+        if writer not in called_names(forge_source, function):
+            fail(
+                f"forge.py {function}() never calls {writer}(); {consequence}. The job tree is specified in "
+                "docs/explanation/build-doctrine.md, and a tree nothing populates is the 0.7.0 defect again",
+                failures,
+            )
 
     verdict_block = re.search(r"VERDICT_COMMANDS = frozenset\(\s*\{(.*?)\}\s*\)", forge_source, re.DOTALL)
     if not verdict_block:
