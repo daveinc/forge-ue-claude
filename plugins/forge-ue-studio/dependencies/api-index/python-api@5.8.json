@@ -3,7 +3,7 @@
  "api": "python-api",
  "engine_version": "5.8",
  "generated_by": "scripts/api_index.py",
- "generated_at": "2026-08-19T12:19:42Z",
+ "generated_at": "2026-08-19T17:29:22Z",
  "provenance": {
   "source_file": "unreal_api.json",
   "source_bytes": 26011094,
@@ -20,8 +20,8 @@
  },
  "coverage": {
   "symbols_in_source": 11794,
-  "classes_detailed": 28,
-  "methods_detailed": 529,
+  "classes_detailed": 41,
+  "methods_detailed": 640,
   "symbol_manifest": "python-api@5.8.symbols.json",
   "note": "Two tiers. This file carries full method detail only for the symbols a shipped procedure reaches; the manifest carries every symbol name so a lookup that found nothing can say whether the name is unknown to this engine build or merely not indexed for any task class yet."
  },
@@ -31,6 +31,24 @@
   "ue.python.commandlet"
  ],
  "task_classes": {
+  "asset-audit": {
+   "ue.batch": [
+    "AssetRegistry",
+    "AssetRegistryDependencyOptions",
+    "AssetRegistryHelpers",
+    "EditorAssetLibrary",
+    "unreal"
+   ],
+   "ue.python.commandlet": [
+    "ARFilter",
+    "AssetData",
+    "AssetRegistry",
+    "AssetRegistryDependencyOptions",
+    "AssetRegistryHelpers",
+    "EditorAssetLibrary",
+    "unreal"
+   ]
+  },
   "batch-import": {
    "ue.batch": [
     "AssetImportTask",
@@ -46,6 +64,39 @@
     "AssetToolsHelpers",
     "EditorAssetLibrary",
     "FbxImportUI",
+    "unreal"
+   ]
+  },
+  "bulk-property-edit": {
+   "ue.batch": [
+    "EditorAssetLibrary",
+    "EditorAssetSubsystem",
+    "ScopedEditorTransaction",
+    "unreal"
+   ],
+   "ue.python.commandlet": [
+    "AssetData",
+    "AssetRegistryHelpers",
+    "EditorAssetLibrary",
+    "EditorAssetSubsystem",
+    "Object",
+    "StructBase",
+    "unreal"
+   ]
+  },
+  "cook-and-build-preparation": {
+   "ue.batch": [
+    "CookFunctionLibrary",
+    "EditorValidatorSubsystem",
+    "ValidateAssetsResults",
+    "ValidateAssetsSettings",
+    "unreal"
+   ],
+   "ue.python.commandlet": [
+    "AssetRegistryHelpers",
+    "EditorAssetLibrary",
+    "EditorAssetSubsystem",
+    "PackageTools",
     "unreal"
    ]
   },
@@ -110,6 +161,32 @@
   }
  },
  "classes": {
+  "ARFilter": {
+   "kind": "class",
+   "summary": "A struct to serve as a filter for Asset Registry queries. Each component element is processed as an 'OR' operation while all the components are processed together as an 'AND' operation. This type is mirrored in NoExportTypes.h",
+   "bases": [
+    "StructBase"
+   ],
+   "module": "CoreUObject",
+   "methods": {
+    "get_blueprint_assets": {
+     "signature": "x.get_blueprint_assets() -> Array[AssetData]",
+     "doc": "Gets asset data for all blueprint assets that match the filter. ClassPaths in the filter specify the blueprint's parent class. Returns: Array[AssetData]: out_asset_data (Array[AssetData]):"
+    }
+   },
+   "editor_properties": {
+    "class_names": "(Array[Name]) [Read-Write]",
+    "class_paths": "(Array[TopLevelAssetPath]) [Read-Write] The filter component for class path names. Instances of the specified classes, but not subclasses (b [...]",
+    "include_only_on_disk_assets": "(bool) [Read-Write] If true, use only DiskGatheredData, do not calculate from UObjects.",
+    "package_names": "(Array[Name]) [Read-Write] The filter component for package names",
+    "package_paths": "(Array[Name]) [Read-Write] The filter component for package paths",
+    "recursive_class_paths_exclusion_set": "(Set[TopLevelAssetPath]) [Read-Write] Only if bRecursiveClasses is true, the results will exclude classes (and subclasses) in this list",
+    "recursive_classes": "(bool) [Read-Write] If true, subclasses of ClassPaths will also be included and RecursiveClassPathsExclusionSet will be excluded.",
+    "recursive_classes_exclusion_set": "(Set[Name]) [Read-Write]",
+    "recursive_paths": "(bool) [Read-Write] If true, PackagePath components will be recursive",
+    "soft_object_paths": "(Array[SoftObjectPath]) [Read-Write] The filter component containing the paths of specific assets to match."
+   }
+  },
   "AnimBlueprint": {
    "kind": "class",
    "summary": "An Anim Blueprint is essentially a specialized Blueprint whose graphs control the animation of a Skeletal Mesh. It can perform blending of animations, directly control the bones of the skeleton, and output a final pose for a Skeletal Mesh each frame.",
@@ -218,6 +295,75 @@
     "variable_frame_stripping_settings": "(VariableFrameStrippingSettings) [Read-Write]"
    }
   },
+  "AssetData": {
+   "kind": "class",
+   "summary": "A struct to hold important information about an assets found by the Asset Registry This struct is transient and should never be serialized",
+   "bases": [
+    "StructBase"
+   ],
+   "module": "CoreUObject",
+   "methods": {
+    "find_asset_native_class": {
+     "signature": "x.find_asset_native_class() -> type(Class)",
+     "doc": "Returns the first native class of the asset type that can be found. Normally this is just the FAssetData::GetClass(), however if the class is a blueprint generated class it may not be loaded. In which case GetAncestorClassNames will be used to find the first native super class. This can be slow if temporary caching mode is not on. Returns: type(Class):"
+    },
+    "get_asset": {
+     "signature": "x.get_asset() -> Object",
+     "doc": "Returns the asset UObject if it is loaded or loads the asset if it is unloaded then returns the result Returns: Object:"
+    },
+    "get_class": {
+     "signature": "x.get_class() -> type(Class)",
+     "doc": "Get Class Returns: type(Class):"
+    },
+    "get_export_text_name": {
+     "signature": "x.get_export_text_name() -> str",
+     "doc": "Returns the name for the asset in the form: Class'ObjectPath' Returns: str:"
+    },
+    "get_full_name": {
+     "signature": "x.get_full_name() -> str",
+     "doc": "Returns the full name for the asset in the form: Class ObjectPath Returns: str:"
+    },
+    "get_tag_value": {
+     "signature": "x.get_tag_value(tag_name) -> str or None",
+     "doc": "Gets the value associated with the given tag as a string Args: tag_name (Name): Returns: str or None: out_tag_value (str):"
+    },
+    "has_editor_only_data": {
+     "signature": "x.has_editor_only_data() -> bool",
+     "doc": "Returns true if the asset has its editor-only data Returns: bool:"
+    },
+    "is_asset_loaded": {
+     "signature": "x.is_asset_loaded() -> bool",
+     "doc": "Returns true if the asset is loaded Returns: bool:"
+    },
+    "is_cooked": {
+     "signature": "x.is_cooked() -> bool",
+     "doc": "Returns true if the asset is cooked Returns: bool:"
+    },
+    "is_redirector": {
+     "signature": "x.is_redirector() -> bool",
+     "doc": "Returns true if the this asset is a redirector. Returns: bool:"
+    },
+    "is_u_asset": {
+     "signature": "x.is_u_asset() -> bool",
+     "doc": "Returns true if this is the primary asset in a package, true for maps and assets but false for secondary objects like class redirectors Returns: bool:"
+    },
+    "is_valid": {
+     "signature": "x.is_valid() -> bool",
+     "doc": "Checks to see if this AssetData refers to an asset or is NULL Returns: bool:"
+    },
+    "to_soft_object_path": {
+     "signature": "x.to_soft_object_path() -> SoftObjectPath",
+     "doc": "Convert to a SoftObjectPath for loading Returns: SoftObjectPath:"
+    }
+   },
+   "editor_properties": {
+    "asset_class": "(Name) [Read-Write]",
+    "asset_class_path": "(TopLevelAssetPath) [Read-Write] The path of the asset's class, e.g. /Script/Engine.StaticMesh",
+    "asset_name": "(Name) [Read-Write] The name of the asset without the package",
+    "package_name": "(Name) [Read-Write] The name of the package in which the asset is found, this is the full long package name such as /Game/Path/Package",
+    "package_path": "(Name) [Read-Write] The path to the package in which the asset is found, this is /Game/Path with the Package stripped off"
+   }
+  },
   "AssetImportTask": {
    "kind": "class",
    "summary": "Contains data for a group of assets to import",
@@ -248,6 +394,146 @@
     "replace_existing_settings": "(bool) [Read-Write] Replace existing settings when overwriting existing assets",
     "result": "(Array[Object]) [Read-Write]",
     "save": "(bool) [Read-Write] Save after importing"
+   }
+  },
+  "AssetRegistry": {
+   "kind": "class",
+   "summary": "Asset Registry",
+   "bases": [
+    "Interface"
+   ],
+   "module": "AssetRegistry",
+   "methods": {
+    "get_all_assets": {
+     "signature": "x.get_all_assets(include_only_on_disk_assets=False) -> Array[AssetData] or None",
+     "doc": "Gets asset data for all assets in the registry. This method may be slow, use a filter if possible to avoid iterating over the entire registry. Args: include_only_on_disk_assets (bool): Returns: Array[AssetData] or None: out_asset_data (Array[AssetData]): the list of assets in this path"
+    },
+    "get_all_cached_paths": {
+     "signature": "x.get_all_cached_paths() -> Array[str]",
+     "doc": "Gets a list of all paths that are currently cached Returns: Array[str]: out_path_list (Array[str]):"
+    },
+    "get_ancestor_class_names": {
+     "signature": "x.get_ancestor_class_names(class_path_name) -> Array[TopLevelAssetPath] or None",
+     "doc": "Returns true if the specified ClassName's ancestors could be found. If so, OutAncestorClassNames is a list of all its ancestors. This can be slow if temporary caching mode is not on. Args: class_path_name (TopLevelAssetPath): Returns: Array[TopLevelAssetPath] or None: out_ancestor_class_names (Array[TopLevelAssetPath]):"
+    },
+    "get_asset_by_object_path": {
+     "signature": "x.get_asset_by_object_path(object_path, include_only_on_disk_assets=False) -> AssetData",
+     "doc": "Get Asset by Object Path deprecated: Use other version that takes a SoftObjectPath Args: object_path (Name): include_only_on_disk_assets (bool): Returns: AssetData:",
+     "deprecated": true
+    },
+    "get_assets": {
+     "signature": "x.get_assets(filter, skip_ar_filtered_assets=True) -> Array[AssetData] or None",
+     "doc": "Gets asset data for all assets that match the filter. Assets returned must satisfy every filter component if there is at least one element in the component's array. Assets will satisfy a component if they match any of the elements in it. Args: filter (ARFilter): filter to apply to the assets in the AssetRegistry skip_ar_filtered_assets (bool): If true, skips Objects that return true for IsAsset but are not assets in [...]"
+    },
+    "get_assets_by_class": {
+     "signature": "x.get_assets_by_class(class_path_name, search_sub_classes=False) -> Array[AssetData] or None",
+     "doc": "Gets asset data for all assets with the supplied class Args: class_path_name (TopLevelAssetPath): the full path of the class name of the assets requested, in a TopLevelAssetPath structure. search_sub_classes (bool): if true, all subclasses of the passed in class will be searched as well Returns: Array[AssetData] or None: out_asset_data (Array[AssetData]): the list of assets in this path"
+    },
+    "get_assets_by_package_name": {
+     "signature": "x.get_assets_by_package_name(package_name, include_only_on_disk_assets=False, skip_ar_filtered_assets=True) -> Array[AssetData] or None",
+     "doc": "Gets asset data for the assets in the package with the specified package name see: IAssetRegistry class header for bIncludeOnlyOnDiskAssets. Args: package_name (Name): the package name for the requested assets (eg, /Game/MyFolder/MyAsset) include_only_on_disk_assets (bool): If true, use only DiskGatheredData, do not calculate from UObjects. skip_ar_filtered_assets (bool): If true, skips Objects that return true for I [...]"
+    },
+    "get_assets_by_path": {
+     "signature": "x.get_assets_by_path(package_path, recursive=False, include_only_on_disk_assets=False) -> Array[AssetData] or None",
+     "doc": "Gets asset data for all assets in the supplied folder path see: IAssetRegistry class header for bIncludeOnlyOnDiskAssets. Args: package_path (Name): the path to query asset data in (eg, /Game/MyFolder) recursive (bool): if true, all supplied paths will be searched recursively include_only_on_disk_assets (bool): If true, use only DiskGatheredData, do not calculate from UObjects. Returns: Array[AssetData] or None: out_ [...]"
+    },
+    "get_assets_by_paths": {
+     "signature": "x.get_assets_by_paths(package_paths, recursive=False, include_only_on_disk_assets=False) -> Array[AssetData] or None",
+     "doc": "Gets asset data for all assets in any of the supplied folder paths see: IAssetRegistry class header for bIncludeOnlyOnDiskAssets. Args: package_paths (Array[Name]): the paths to query asset data in (eg, /Game/MyFolder) recursive (bool): if true, all supplied paths will be searched recursively include_only_on_disk_assets (bool): If true, use only DiskGatheredData, do not calculate from UObjects. Returns: Array[AssetDa [...]"
+    },
+    "get_dependencies": {
+     "signature": "x.get_dependencies(package_name, dependency_options) -> Array[Name] or None",
+     "doc": "Gets a list of paths to objects that are referenced by the supplied package. (On disk references ONLY) Args: package_name (Name): The name of the package for which to gather dependencies (eg, /Game/MyFolder/MyAsset) dependency_options (AssetRegistryDependencyOptions): Which kinds of dependencies to include in the output list Returns: Array[Name] or None: out_dependencies (Array[Name]): A list of packages that are ref [...]"
+    },
+    "get_derived_class_names": {
+     "signature": "x.get_derived_class_names(class_names, excluded_class_names) -> Set[TopLevelAssetPath]",
+     "doc": "Returns the names of all classes derived by the supplied class names, excluding any classes matching the excluded class names. This can be slow if temporary caching mode is not on. Args: class_names (Array[TopLevelAssetPath]): excluded_class_names (Set[TopLevelAssetPath]): Returns: Set[TopLevelAssetPath]: out_derived_class_names (Set[TopLevelAssetPath]):"
+    },
+    "get_in_memory_assets": {
+     "signature": "x.get_in_memory_assets(filter, skip_ar_filtered_assets=True) -> Array[AssetData] or None",
+     "doc": "Gets asset data for in-memory assets only, that match the filter. Returns assets that would be excluded by calling GetAssets with bIncludeOnlyOnDiskAssets set to true. note: This method IGNORES the value of bIncludeOnlyOnDiskAssets on the provided filter. Assets returned must satisfy every filter component if there is at least one element in the component's array. Assets will satisfy a component if they match any of [...]"
+    },
+    "get_referencers": {
+     "signature": "x.get_referencers(package_name, reference_options) -> Array[Name] or None",
+     "doc": "Gets a list of packages that reference the supplied package. (On disk references ONLY) Args: package_name (Name): the name of the package for which to gather dependencies (eg, /Game/MyFolder/MyAsset) reference_options (AssetRegistryDependencyOptions): which kinds of references to include in the output list Returns: Array[Name] or None: out_referencers (Array[Name]): a list of packages that reference the package whose [...]"
+    },
+    "get_sub_paths": {
+     "signature": "x.get_sub_paths(base_path, recurse) -> Array[str]",
+     "doc": "Gets a list of all paths that are currently cached below the passed-in base path Args: base_path (str): recurse (bool): Returns: Array[str]: out_path_list (Array[str]):"
+    },
+    "has_assets": {
+     "signature": "x.has_assets(package_path, recursive=False) -> bool",
+     "doc": "Does the given path contain assets, optionally also testing sub-paths? Args: package_path (Name): the path to query asset data in (eg, /Game/MyFolder) recursive (bool): if true, the supplied path will be tested recursively Returns: bool:"
+    },
+    "is_loading_assets": {
+     "signature": "x.is_loading_assets() -> bool",
+     "doc": "Returns true if the asset registry is currently loading files and does not yet know about all assets. This is a legacy function that only returns true when the asset registry is performing its initial search for assets. Prefer using IsGathering() to know if the asset registry is currently loading files. Returns: bool:"
+    },
+    "is_search_all_assets": {
+     "signature": "x.is_search_all_assets() -> bool",
+     "doc": "Whether SearchAllAssets has been called, or was auto-called at startup. When async (editor or cooking), if SearchAllAssets has ever been called, any newly-mounted directory will be automatically searched. Returns: bool:"
+    },
+    "is_search_async": {
+     "signature": "x.is_search_async() -> bool",
+     "doc": "Whether searching is done async (and was started at startup), or synchronously and on-demand, requiring ScanPathsSynchronous or SearchAllAssets. Returns: bool:"
+    },
+    "k2_get_asset_by_object_path": {
+     "signature": "x.k2_get_asset_by_object_path(object_path, include_only_on_disk_assets=False, skip_ar_filtered_assets=True) -> AssetData",
+     "doc": "Gets the asset data for the specified object path see: IAssetRegistry class header for bIncludeOnlyOnDiskAssets. Args: object_path (SoftObjectPath): the path of the object to be looked up include_only_on_disk_assets (bool): If true, use only DiskGatheredData, do not calculate from UObjects. skip_ar_filtered_assets (bool): If true, skips Objects that return true for IsAsset but are not assets in the current platform. [...]"
+    },
+    "prioritize_search_path": {
+     "signature": "x.prioritize_search_path(path_to_prioritize) -> None",
+     "doc": "If assets are currently being asynchronously scanned in the specified path, this will cause them to be scanned before other assets. Args: path_to_prioritize (str):"
+    },
+    "run_assets_through_filter": {
+     "signature": "x.run_assets_through_filter(asset_data_list, filter) -> Array[AssetData]",
+     "doc": "Trims items out of the asset data list that do not pass the supplied filter Args: asset_data_list (Array[AssetData]): filter (ARFilter): Returns: Array[AssetData]: asset_data_list (Array[AssetData]):"
+    },
+    "scan_files_synchronous": {
+     "signature": "x.scan_files_synchronous(file_paths, force_rescan=False) -> None",
+     "doc": "Scan the specified individual files right now and populate the asset registry. If bForceRescan is true, the paths will be scanned again, even if they were previously scanned. Args: file_paths (Array[str]): force_rescan (bool):"
+    },
+    "scan_modified_asset_files": {
+     "signature": "x.scan_modified_asset_files(file_paths) -> None",
+     "doc": "Forces a rescan of specific filenames, call this when you need to refresh from disk Args: file_paths (Array[str]):"
+    },
+    "scan_paths_synchronous": {
+     "signature": "x.scan_paths_synchronous(paths, force_rescan=False, ignore_deny_list_scan_filters=False) -> None",
+     "doc": "Scan the supplied paths recursively right now and populate the asset registry. If bForceRescan is true, the paths will be scanned again, even if they were previously scanned. Args: paths (Array[str]): force_rescan (bool): ignore_deny_list_scan_filters (bool):"
+    },
+    "search_all_assets": {
+     "signature": "x.search_all_assets(synchronous_search) -> None",
+     "doc": "Look for all assets on disk (can be async or synchronous) Args: synchronous_search (bool):"
+    },
+    "use_filter_to_exclude_assets": {
+     "signature": "x.use_filter_to_exclude_assets(asset_data_list, filter) -> Array[AssetData]",
+     "doc": "Trims items out of the asset data list that pass the supplied filter Args: asset_data_list (Array[AssetData]): filter (ARFilter): Returns: Array[AssetData]: asset_data_list (Array[AssetData]):"
+    },
+    "wait_for_completion": {
+     "signature": "x.wait_for_completion() -> None",
+     "doc": "Wait for scan to be complete. If called during editor startup before OnPostEngineInit, and there are assets with classes in not-yet-loaded plugin modules, WaitForCompletion returns silently with those assets still ungathered."
+    },
+    "wait_for_package": {
+     "signature": "x.wait_for_package(package_name) -> None",
+     "doc": "Wait for the scan of a specific package to be complete Args: package_name (str):"
+    }
+   }
+  },
+  "AssetRegistryDependencyOptions": {
+   "kind": "class",
+   "summary": "namespace UE::AssetRegistry",
+   "bases": [
+    "StructBase"
+   ],
+   "module": "AssetRegistry",
+   "editor_properties": {
+    "include_editor_only_package_references": "(bool) [Read-Write] Dependencies which are only needed in the editor.",
+    "include_game_package_references": "(bool) [Read-Write] Dependencies which are needed in the game as well as the editor.",
+    "include_hard_management_references": "(bool) [Read-Write] Reference that says one object directly manages another object, set when Primary Assets manage things explicitly",
+    "include_hard_package_references": "(bool) [Read-Write] Dependencies which are required for correct usage of the source asset, and must be loaded at the same time",
+    "include_searchable_names": "(bool) [Read-Write] References to specific SearchableNames inside a package",
+    "include_soft_management_references": "(bool) [Read-Write] Indirect management references, these are set through recursion for Primary Assets that manage packages or other primary [...]",
+    "include_soft_package_references": "(bool) [Read-Write] Dependencies which don't need to be loaded for the object to be used (i.e. soft object paths)"
    }
   },
   "AssetRegistryHelpers": {
@@ -468,6 +754,20 @@
     "supported_class": "(type(Class)) [Read-Write] The class manufactured by this factory.",
     "supported_workflows": "(uint8) [Read-Write] Which workflows are supported.",
     "text": "(bool) [Read-Write] true if the factory imports objects from text."
+   }
+  },
+  "CookFunctionLibrary": {
+   "kind": "class",
+   "summary": "Cook Function Library",
+   "bases": [
+    "Object"
+   ],
+   "module": "UnrealEd",
+   "methods": {
+    "cook_asset": {
+     "signature": "X.cook_asset(object, for_platform, destination_subfolder, cook_commandline_args=\"\") -> None",
+     "doc": "Writes the cooked version of the provided object's package into the Saved folder, in the subfolder defined by DestinationSubfolder. Extra arguments (such as -unversioned) can be provided by CookCommandlineArgs. This function is experimental and may not exactly match the behavior of the cook commandlet. Args: object (Object): for_platform (str): destination_subfolder (str): cook_commandline_args (str):"
+    }
    }
   },
   "EditorActorSubsystem": {
@@ -750,6 +1050,188 @@
     }
    }
   },
+  "EditorAssetSubsystem": {
+   "kind": "class",
+   "summary": "UEditorAssetSubsystem Subsystem for exposing asset related utilities to scripts. Asset Paths can be represented in the following ways: (Reference/Text Path) StaticMesh'/Game/MyFolder/MyAsset.MyAsset' (Full Name) StaticMesh /Game/MyFolder/MyAsset.MyAsset (Path Name) /Game/MyFolder/MyAsset.MyAsset (Package Name) /Game/My [...]",
+   "bases": [
+    "EditorSubsystem"
+   ],
+   "module": "UnrealEd",
+   "methods": {
+    "add_on_extract_asset_from_file": {
+     "signature": "x.add_on_extract_asset_from_file(delegate) -> None",
+     "doc": "Call this to add a callback to extract an asset from a file, for example from a drag and drop operation. Args: delegate (OnExtractAssetFromFileDynamic):"
+    },
+    "checkout_asset": {
+     "signature": "x.checkout_asset(asset_to_checkout) -> bool",
+     "doc": "Checkout an asset. Args: asset_to_checkout (str): Asset Path of the asset that we want to checkout. Returns: bool: True if the operation succeeds."
+    },
+    "checkout_directory": {
+     "signature": "x.checkout_directory(directory_path, recursive=True) -> bool",
+     "doc": "Checkout all assets in a directory. It will load the assets if needed. All objects that are in the directory will be checked out. Assets will be loaded before being checked out. Args: directory_path (str): Directory of the assets to be checked out. recursive (bool): If the AssetPath is a folder, the search will be recursive and will checkout the assets in the sub folders. Returns: bool: True if the operation succeeds [...]"
+    },
+    "checkout_loaded_asset": {
+     "signature": "x.checkout_loaded_asset(asset_to_checkout) -> bool",
+     "doc": "Checkout the asset corresponding to an object. Args: asset_to_checkout (Object): Asset to checkout. Returns: bool: True if the operation succeeds."
+    },
+    "checkout_loaded_assets": {
+     "signature": "x.checkout_loaded_assets(assets_to_checkout) -> bool",
+     "doc": "Checkout the assets. Args: assets_to_checkout (Array[Object]): Assets to checkout. Returns: bool: True if the operation succeeds."
+    },
+    "consolidate_assets": {
+     "signature": "x.consolidate_assets(asset_to_consolidate_to, assets_to_consolidate) -> bool",
+     "doc": "Consolidates assets by replacing all references/uses of the provided AssetsToConsolidate with references to AssetToConsolidateTo. This is useful when you want all references of assets to be replaced by a single asset. The function first attempts to directly replace all relevant references located within objects that are already loaded and in memory. Next, it deletes the AssetsToConsolidate, leaving behind object redi [...]"
+    },
+    "delete_asset": {
+     "signature": "x.delete_asset(asset_path_to_delete) -> bool",
+     "doc": "Delete the package an asset is in. All objects in the package will be deleted. This is a Force Delete. It does not check if the asset has references in other Levels or by Actors. It will close all the asset editors and may clear the Transaction buffer (Undo History). Will try to mark the file as deleted. The Asset will be loaded before being deleted. Args: asset_path_to_delete (str): Asset Path of the asset to delete [...]"
+    },
+    "delete_directory": {
+     "signature": "x.delete_directory(directory_path) -> bool",
+     "doc": "Delete the packages inside a directory. If the directory is then empty, delete the directory. This is a Force Delete. It does not check if the assets have references in other Levels or by Actors. It will close all the asset editors and may clear the Transaction buffer (Undo History). Will try to mark the file as deleted. Assets will be loaded before being deleted. The search is always recursive. It will try to delete [...]"
+    },
+    "delete_loaded_asset": {
+     "signature": "x.delete_loaded_asset(asset_to_delete) -> bool",
+     "doc": "Delete an asset that is already loaded. This is a Force Delete. It does not check if the asset has references in other Levels or by Actors. It will close all the asset editors and may clear the Transaction buffer (Undo History). Will try to mark the file as deleted. Args: asset_to_delete (Object): Asset to delete. Returns: bool: True if the operation succeeds."
+    },
+    "delete_loaded_assets": {
+     "signature": "x.delete_loaded_assets(assets_to_delete) -> bool",
+     "doc": "Delete assets that are already loaded. This is a Force Delete. It does not check if the assets have references in other Levels or by Actors. It will close all the asset editors and may clear the Transaction buffer (Undo History). Will try to mark the files as deleted. Args: assets_to_delete (Array[Object]): Loaded assets to delete. Returns: bool: True if the operation succeeds."
+    },
+    "do_assets_exist": {
+     "signature": "x.do_assets_exist(asset_paths) -> bool",
+     "doc": "Check if assets exist in the Asset Registry. Args: asset_paths (Array[str]): Asset Paths of the assets to check for existence. Returns: bool: True if all assets exist and are valid."
+    },
+    "does_asset_exist": {
+     "signature": "x.does_asset_exist(asset_path) -> bool",
+     "doc": "Check if an asset exists in the Asset Registry. Args: asset_path (str): Asset Path to check for existence. Returns: bool: True if the asset exists and is valid."
+    },
+    "does_directory_contain_assets": {
+     "signature": "x.does_directory_contain_assets(directory_path, recursive=True) -> bool",
+     "doc": "Check if a directory contains any assets. Args: directory_path (str): Long Path Name of the directory. recursive (bool): Returns: bool: True if there is any assets."
+    },
+    "does_directory_exist": {
+     "signature": "x.does_directory_exist(directory_path) -> bool",
+     "doc": "Check if a directory exists. Args: directory_path (str): Long Path Name of the directory. Returns: bool: True if it does exist and it is valid."
+    },
+    "duplicate_asset": {
+     "signature": "x.duplicate_asset(source_asset_path, destination_asset_path) -> Object",
+     "doc": "Duplicate an asset. Will try to checkout the file. The Asset will be loaded before being duplicated. Args: source_asset_path (str): Asset Path of the asset that we want to copy from. destination_asset_path (str): Asset Path of the duplicated asset. Returns: Object: The duplicated object if the operation succeeds."
+    },
+    "duplicate_directory": {
+     "signature": "x.duplicate_directory(source_directory_path, destination_directory_path) -> bool",
+     "doc": "Duplicate a directory and the assets in it. Will try to checkout the files. The Assets will be loaded before being duplicated. Args: source_directory_path (str): Directory of the assets that we want to duplicate from. destination_directory_path (str): Directory of the duplicated asset. Returns: bool: The duplicated object if the operation succeeds."
+    },
+    "duplicate_loaded_asset": {
+     "signature": "x.duplicate_loaded_asset(source_asset, destination_asset_path) -> Object",
+     "doc": "Duplicate an asset that is already loaded. Will try to checkout the file. Args: source_asset (Object): Asset that we want to copy from. destination_asset_path (str): Asset Path of the duplicated asset. Returns: Object: The duplicated object if the operation succeeds"
+    },
+    "find_asset_data": {
+     "signature": "x.find_asset_data(asset_path) -> AssetData",
+     "doc": "Return the AssetData for the Asset that can then be used with AssetRegistryHelpers. Args: asset_path (str): Asset Path to retrieve data from. Returns: AssetData: The AssetData found."
+    },
+    "find_package_referencers_for_asset": {
+     "signature": "x.find_package_referencers_for_asset(asset_path, load_assets_to_confirm=False) -> Array[str]",
+     "doc": "Find Package Referencers for an asset. Only Soft and Hard dependencies will be looked for. Soft are dependencies which don't need to be loaded for the object to be used. Hard are dependencies which are required for correct usage of the source asset and must be loaded at the same time. Other references may exist. The asset may be currently used in memory by another asset, by the editor or by code. Package dependencies [...]"
+    },
+    "get_all_assets_by_meta_data_tags": {
+     "signature": "x.get_all_assets_by_meta_data_tags(required_tags, allowed_classes) -> Array[AssetData]",
+     "doc": "Gets all assets which have the given tags. params: RequiredTags The tags the assets should have params: AllowedClasses The class types the contained assets should have Args: required_tags (Set[Name]): allowed_classes (Set[type(Class)]): Returns: Array[AssetData]:"
+    },
+    "get_asset_filename_length_for_cooking": {
+     "signature": "x.get_asset_filename_length_for_cooking(asset_path) -> int32",
+     "doc": "Returns the length of the computed cooked package name and path Args: asset_path (str): Returns: int32:"
+    },
+    "get_loaded_asset_filename_length_for_cooking": {
+     "signature": "x.get_loaded_asset_filename_length_for_cooking(asset) -> int32",
+     "doc": "Returns the length of the computed cooked package name and path Args: asset (Object): Returns: int32:"
+    },
+    "get_metadata_tag": {
+     "signature": "x.get_metadata_tag(object, tag) -> str",
+     "doc": "Get the value associated with the given tag of a loaded asset's metadata. Args: object (Object): The object from which to retrieve the metadata. tag (Name): The tag to find in the metadata. Returns: str: The string value associated with the tag."
+    },
+    "get_metadata_tag_values": {
+     "signature": "x.get_metadata_tag_values(object) -> Map[Name, str]",
+     "doc": "Get all tags/values of a loaded asset's metadata. Args: object (Object): The object from which to retrieve the metadata. Returns: Map[Name, str]: The list of all Tags and Values."
+    },
+    "get_path_name_for_loaded_asset": {
+     "signature": "x.get_path_name_for_loaded_asset(loaded_asset) -> str",
+     "doc": "Return a valid AssetPath for a loaded asset. Similar to GetPathName(). The format will be: /Game/MyFolder/MyAsset.MyAsset Args: loaded_asset (Object): The loaded asset to get the path of. Returns: str: If valid, the asset Path of the loaded asset."
+    },
+    "get_tag_values": {
+     "signature": "x.get_tag_values(asset_path) -> Map[Name, str]",
+     "doc": "Gets all TagValues (from Asset Registry) associated with an (unloaded) asset as strings value. Args: asset_path (str): Asset Path we are trying to find. Returns: Map[Name, str]: The list of all TagNames & TagValues."
+    },
+    "list_assets": {
+     "signature": "x.list_assets(directory_path, recursive=True, include_folder=False) -> Array[str]",
+     "doc": "Return the list of all the assets found in the DirectoryPath. Args: directory_path (str): Directory path of the asset we want the list from. recursive (bool): The search will be recursive and will look in sub folders. include_folder (bool): The result will include folders name. Returns: Array[str]: The list of assets found."
+    },
+    "list_assets_by_tag_value": {
+     "signature": "x.list_assets_by_tag_value(tag_name, tag_value) -> Array[str]",
+     "doc": "Return the list of all the assets that have the pair of Tag/Value. Args: tag_name (Name): The tag associated with the assets requested. tag_value (str): The value associated with the assets requested. Returns: Array[str]: The list of assets found."
+    },
+    "load_asset": {
+     "signature": "x.load_asset(asset_path) -> Object",
+     "doc": "Load an asset. It will verify if the object is already loaded and only load it if it's necessary. Args: asset_path (str): Asset Path of the asset to load Returns: Object: Found or loaded asset."
+    },
+    "load_blueprint_class": {
+     "signature": "x.load_blueprint_class(asset_path) -> type(Class)",
+     "doc": "Load a Blueprint asset and return its generated class. It will verify if the object is already loaded and only load it if it's necessary. Args: asset_path (str): Asset Path of the Blueprint asset. Returns: type(Class): Found or loaded class."
+    },
+    "make_directory": {
+     "signature": "x.make_directory(directory_path) -> bool",
+     "doc": "Create a directory on disk. Args: directory_path (str): Long Path Name of the directory. Returns: bool: True if the operation succeeds."
+    },
+    "remove_metadata_tag": {
+     "signature": "x.remove_metadata_tag(object, tag) -> None",
+     "doc": "Remove the given tag from a loaded asset's metadata. Args: object (Object): The object from which to retrieve the metadata. tag (Name): The tag to remove from the metadata."
+    },
+    "remove_on_extract_asset_from_file": {
+     "signature": "x.remove_on_extract_asset_from_file(delegate) -> None",
+     "doc": "Call this to remove a callback added with AddOnExtractAssetFromFile. Args: delegate (OnExtractAssetFromFileDynamic):"
+    },
+    "rename_asset": {
+     "signature": "x.rename_asset(source_asset_path, destination_asset_path) -> bool",
+     "doc": "Rename an asset. Equivalent to a Move operation. Will try to checkout the file. The Asset will be loaded before being renamed. Args: source_asset_path (str): Asset Path of the asset that we want to copy from. destination_asset_path (str): Asset Path of the renamed asset. Returns: bool: True if the operation succeeds."
+    },
+    "rename_directory": {
+     "signature": "x.rename_directory(source_directory_path, destination_directory_path) -> bool",
+     "doc": "Rename a directory. Equivalent to a Move operation moving all contained assets. Will try to checkout the files. The Assets will be loaded before being renamed. Args: source_directory_path (str): Directory of the assets that we want to rename from. destination_directory_path (str): Directory of the renamed asset. Returns: bool: True if the operation succeeds."
+    },
+    "rename_loaded_asset": {
+     "signature": "x.rename_loaded_asset(source_asset, destination_asset_path) -> bool",
+     "doc": "Rename an asset that is already loaded. Equivalent to a Move operation. Will try to checkout the file. Args: source_asset (Object): Asset that we want to copy from. destination_asset_path (str): Asset Path of the duplicated asset. Returns: bool: True if the operation succeeds."
+    },
+    "save_asset": {
+     "signature": "x.save_asset(asset_to_save, only_if_is_dirty=True) -> bool",
+     "doc": "Save the packages the assets live in. All objects that live in the package will be saved. Will try to checkout the file first. The Asset will be loaded before being saved. Args: asset_to_save (str): Asset Path of the asset that we want to save. only_if_is_dirty (bool): Only checkout/save the asset if it's dirty. Returns: bool: True if the operation succeeds."
+    },
+    "save_directory": {
+     "signature": "x.save_directory(directory_path, only_if_is_dirty=True, recursive=True) -> bool",
+     "doc": "Save the packages the assets live in inside the directory. All objects that are in the directory will be saved. Will try to checkout the file first. Assets will be loaded before being saved. Args: directory_path (str): Directory that will be checked out and saved. only_if_is_dirty (bool): Only checkout asset that are dirty. recursive (bool): The search will be recursive and it will save the asset in the sub folders. [...]"
+    },
+    "save_loaded_asset": {
+     "signature": "x.save_loaded_asset(asset_to_save, only_if_is_dirty=True) -> bool",
+     "doc": "Save the package the asset lives in. All objects that live in the package will be saved. Will try to checkout the file. Args: asset_to_save (Object): Asset that we want to save. only_if_is_dirty (bool): Only checkout asset that are dirty. Returns: bool: True if the operation succeeds."
+    },
+    "save_loaded_assets": {
+     "signature": "x.save_loaded_assets(assets_to_save, only_if_is_dirty=True) -> bool",
+     "doc": "Save the packages the assets live in. All objects that live in the packages will be saved. Will try to checkout the files. Args: assets_to_save (Array[Object]): Assets that we want to save. only_if_is_dirty (bool): Only checkout asset that are dirty. Returns: bool: True if the operation succeeds."
+    },
+    "set_dirty_flag": {
+     "signature": "x.set_dirty_flag(object, dirty_state) -> bool",
+     "doc": "Set the package dirty flag for an asset Args: object (Object): Object we want to set the package dirty state. dirty_state (bool): The dirty state, true mean the asset package need to be save. Returns: bool: True if the operation succeeds."
+    },
+    "set_metadata_tag": {
+     "signature": "x.set_metadata_tag(object, tag, value) -> None",
+     "doc": "Set the value associated with a given tag of a loaded asset's metadata. Args: object (Object): The object from which to retrieve the metadata. tag (Name): The tag to set in the metadata. value (str): The string value to associate with the tag."
+    },
+    "sort_by_meta_data": {
+     "signature": "x.sort_by_meta_data(assets, meta_data_tag, meta_data_type, sort_order) -> Array[AssetData] or None",
+     "doc": "Sorts the assets based on their meta data's type. Supported types: FString, int, float, FDateTime. Args: assets (Array[AssetData]): The assets to sort meta_data_tag (Name): The on which the sort is based meta_data_type (EditorAssetMetaDataSortType): The meta data type of MetaDataTag sort_order (EditorAssetSortOrder): Whether to sort ascending or descending Returns: Array[AssetData] or None: Whether the data was sorte [...]"
+    }
+   }
+  },
   "EditorLevelLibrary": {
    "kind": "class",
    "summary": "Utility class to do most of the common functionalities in the World Editor. The editor should not be in play in editor mode.",
@@ -1021,6 +1503,48 @@
      "signature": "X.unload_packages(packages_to_unload) -> (out_any_packages_unloaded=bool, out_error_message=Text)",
      "doc": "Unloads a list of packages Args: packages_to_unload (Array[Package]): Array of packages to unload. Returns: tuple: out_any_packages_unloaded (bool): out_error_message (Text):"
     }
+   }
+  },
+  "EditorValidatorSubsystem": {
+   "kind": "class",
+   "summary": "UEditorValidatorSubsystem manages all the asset validation in the engine. The first validation handled is UObject::IsDataValid and its overridden functions. Those validations require custom classes and are most suited to project-specific classes. The next validation set is of all registered UEditorValidationBases. Thes [...]",
+   "bases": [
+    "EditorSubsystem"
+   ],
+   "plugin": "DataValidation",
+   "module": "DataValidation",
+   "methods": {
+    "add_validator": {
+     "signature": "x.add_validator(validator) -> None",
+     "doc": "Adds a validator to the list, making sure it is a unique instance Args: validator (EditorValidatorBase):"
+    },
+    "is_asset_valid": {
+     "signature": "x.is_asset_valid(asset_data, validation_usecase) -> (DataValidationResult, validation_errors=Array[Text], validation_warnings=Array[Text])",
+     "doc": "Loads the object referred to by the provided AssetData and runs registered validators on it. Does not add anything to any FMessageLog tabs. Args: asset_data (AssetData): validation_usecase (DataValidationUsecase): Returns: tuple: Returns Valid if the object pointed to by AssetData contains valid data; returns Invalid if the object contains invalid data or does not exist; returns NotValidated if no validations was per [...]"
+    },
+    "is_object_valid": {
+     "signature": "x.is_object_valid(object, validation_usecase) -> (DataValidationResult, validation_errors=Array[Text], validation_warnings=Array[Text])",
+     "doc": "Runs registered validators on the provided object. Does not add anything to any FMessageLog tabs. Args: object (Object): validation_usecase (DataValidationUsecase): Returns: tuple: Returns Valid if the object contains valid data; returns Invalid if the object contains invalid data; returns NotValidated if no validations was performed on the object validation_errors (Array[Text]): validation_warnings (Array[Text]):"
+    },
+    "remove_validator": {
+     "signature": "x.remove_validator(validator) -> None",
+     "doc": "Removes a validator Should be called during module shutdown if a validator was added. Args: validator (EditorValidatorBase):"
+    },
+    "validate_assets_with_settings": {
+     "signature": "x.validate_assets_with_settings(asset_data_list, settings) -> (int32, out_results=ValidateAssetsResults)",
+     "doc": "Called to validate assets from either the UI or a commandlet. Loads the specified assets and runs all registered validators on them. Populates the message log with errors and warnings with clickable links. Args: asset_data_list (Array[AssetData]): settings (ValidateAssetsSettings): Structure passing context and settings for ValidateAssetsWithSettings Returns: ValidateAssetsResults: Number of assets with validation fa [...]"
+    },
+    "validate_changelist": {
+     "signature": "x.validate_changelist(changelist, settings) -> (DataValidationResult, out_results=ValidateAssetsResults)",
+     "doc": "Called to validate assets from either the UI or a commandlet. Loads the specified assets and runs all registered validators on them. Populates the message log with errors and warnings with clickable links. Args: changelist (DataValidationChangelist): settings (ValidateAssetsSettings): Structure passing context and settings for ValidateAssetsWithSettings Returns: ValidateAssetsResults: Validation results for the chang [...]"
+    },
+    "validate_changelists": {
+     "signature": "x.validate_changelists(changelists, settings) -> (DataValidationResult, out_results=ValidateAssetsResults)",
+     "doc": "Validate Changelists Args: changelists (Array[DataValidationChangelist]): settings (ValidateAssetsSettings): Returns: ValidateAssetsResults: out_results (ValidateAssetsResults):"
+    }
+   },
+   "editor_properties": {
+    "validate_on_save": "(bool) [Read-Write] Whether it should validate assets on save inside the editor"
    }
   },
   "FbxImportUI": {
@@ -1975,6 +2499,62 @@
     "welding_threshold": "(float) [Read-Write] Threshold in object space at which vertices are welded together."
    }
   },
+  "Object": {
+   "kind": "class",
+   "summary": "The base class of all UE objects. The type of an object is defined by its UClass. This provides support functions for creating and using objects, and virtual functions that should be overridden in child classes. see: https://docs.unrealengine.com/ProgrammingAndScripting/ProgrammingWithCPP/UnrealArchitecture/Objects",
+   "bases": [
+    "_ObjectBase"
+   ],
+   "module": "CoreUObject",
+   "methods": {
+    "acquire_editor_element_handle": {
+     "signature": "x.acquire_editor_element_handle(allow_create=True) -> ScriptTypedElementHandle",
+     "doc": "Acquire Editor Object Element Handle Args: allow_create (bool): Returns: ScriptTypedElementHandle:"
+    },
+    "is_editor_property_overridden": {
+     "signature": "x.is_editor_property_overridden(property_name) -> EditorPropertyValueState",
+     "doc": "Attempts to query whether the value of a named property on the given object overrides the value of its archetype (ie, would ResetEditorProperty do anything?). Args: property_name (Name): The name of the object property to query the value of. Returns: EditorPropertyValueState: What state the requested property is in."
+    },
+    "reset_editor_property": {
+     "signature": "x.reset_editor_property(property_name, change_notify_mode=PropertyAccessChangeNotifyMode.DEFAULT) -> bool",
+     "doc": "Attempts to reset the value of a named property on the given object so that it matches the value of the archetype. Args: property_name (Name): The name of the object property to reset the value of. change_notify_mode (PropertyAccessChangeNotifyMode): When to emit property change notifications. Returns: bool: Whether the property value was found and correctly reset."
+    }
+   }
+  },
+  "PackageTools": {
+   "kind": "class",
+   "summary": "Package Tools",
+   "bases": [
+    "Object"
+   ],
+   "module": "UnrealEd",
+   "methods": {
+    "filename_to_package_name": {
+     "signature": "X.filename_to_package_name(filename) -> str",
+     "doc": "Tries to convert a given relative or absolute filename to a long package name or path starting with a root like /Game This works on both package names and directories, and it does not validate that it actually exists on disk. Args: filename (str): Filename to convert. Returns: str: Resulting long package name if the supplied filename properly maps to a long package root, empty string otherwise."
+    },
+    "package_name_to_filename": {
+     "signature": "X.package_name_to_filename(package_name, extension=\"\") -> str",
+     "doc": "Converts a long package name to a file name. This can be called on package paths as well, provide no extension in that case. Will return an empty string if it fails. Args: package_name (str): Long Package Name extension (str): Package extension. Returns: str: Package filename, or empty if it failed."
+    },
+    "sanitize_package_name": {
+     "signature": "X.sanitize_package_name(package_name) -> str",
+     "doc": "Replaces all invalid package name characters with _ Args: package_name (str): Returns: str:"
+    }
+   }
+  },
+  "ScopedEditorTransaction": {
+   "kind": "class",
+   "summary": "Type used to create and managed a scoped editor transaction in Python",
+   "bases": [
+    "object"
+   ],
+   "methods": {
+    "cancel": {
+     "signature": "cancel(self) -> None -- cancel this transaction"
+    }
+   }
+  },
   "SkeletalMesh": {
    "kind": "class",
    "summary": "SkeletalMesh is geometry bound to a hierarchical skeleton of bones which can be animated for the purpose of deforming the mesh. Skeletal Meshes are built up of two parts; a set of polygons composed to make up the surface of the mesh, and a hierarchical skeleton which can be used to animate the polygons. The 3D models, [...]",
@@ -2711,6 +3291,93 @@
      "signature": "x.update_nanite_source_filename(static_mesh, new_source_filename) -> bool",
      "doc": "Update the Nanite hi-res source filename. Args: static_mesh (StaticMesh): Mesh to update the nanite source filename new_source_filename (str): The source filename we want to set. If empty, imported nanite mesh will be remove. If not empty, the file must exist otherwise nothing will be done. Returns: bool: true if the source filename was updated (cleared or replace by an existing filename), false otherwise."
     }
+   }
+  },
+  "StructBase": {
+   "kind": "class",
+   "summary": "Type for all Unreal exposed struct instances",
+   "bases": [
+    "_WrapperBase"
+   ],
+   "methods": {
+    "assign": {
+     "signature": "assign(self, other: object) -> None -- assign the value of this Unreal struct to value of the given object"
+    },
+    "cast": {
+     "signature": "cast(cls: Type[_T], object: Union[object, Mapping[str, object], Iterable[object]]) -> _T -- cast the given object to this Unreal struct type. Can be partial Mapping[fieldName, fiedValue] or a sequence of field values"
+    },
+    "copy": {
+     "signature": "copy(self) -> Any -- copy this Unreal struct"
+    },
+    "export_text": {
+     "signature": "export_text(self) -> str -- exports the content of the Unreal struct of this type"
+    },
+    "get_editor_property": {
+     "signature": "get_editor_property(self, name: Union[Name, str]) -> object -- get the value of any property visible to the editor"
+    },
+    "import_text": {
+     "signature": "import_text(self, content: str) -> bool -- imports the provided string into the Unreal struct"
+    },
+    "set_editor_properties": {
+     "signature": "set_editor_properties(self, properties: Mapping[str, object]) -> None -- set the value of any properties visible to the editor (from a name->value dict), ensuring that the pre/post change notifications are called"
+    },
+    "set_editor_property": {
+     "signature": "set_editor_property(self, name: Union[Name, str], value: object, notify_mode: PropertyAccessChangeNotifyMode=PropertyAccessChangeNotifyMode.DEFAULT) -> None -- set the value of any property visible to the editor, ensuring that the pre/post change notifications are called"
+    },
+    "static_struct": {
+     "signature": "static_struct(cls) -> ScriptStruct -- get the Unreal struct of this type"
+    },
+    "to_dict": {
+     "signature": "to_dict(self) -> Dict[str, object] -- convert this Unreal struct into a dict of its properties"
+    },
+    "to_tuple": {
+     "signature": "to_tuple(self) -> Tuple[object, ...] -- break this Unreal struct into a tuple of its properties"
+    }
+   }
+  },
+  "ValidateAssetsResults": {
+   "kind": "class",
+   "summary": "Validate Assets Results",
+   "bases": [
+    "StructBase"
+   ],
+   "plugin": "DataValidation",
+   "module": "DataValidation",
+   "editor_properties": {
+    "asset_limit_reached": "(bool) [Read-Only] True if FValidateAssetSettings::MaxAssetsToValidation was reached",
+    "assets_details": "(Map[str, ValidateAssetsDetails]) [Read-Only] Per asset details",
+    "num_checked": "(int32) [Read-Only] Amount of tested assets",
+    "num_external_objects": "(int32) [Read-Only] Total amount of external objects to validate with their owning asset (e.g. actors with maps).",
+    "num_invalid": "(int32) [Read-Only] Amount of assets with errors",
+    "num_requested": "(int32) [Read-Only] Total amount of assets that were gathered to validate, not including external objects such as actors.",
+    "num_skipped": "(int32) [Read-Only] Amount of assets skipped",
+    "num_unable_to_validate": "(int32) [Read-Only] Amount of assets that could not be validated",
+    "num_valid": "(int32) [Read-Only] Amount of assets without errors or warnings",
+    "num_warnings": "(int32) [Read-Only] Amount of assets with warnings",
+    "validator_statistics": "(Map[TopLevelAssetPath, ValidatorStatistics]) [Read-Only] Per-validator statistics on assets validated and assets added for validation"
+   }
+  },
+  "ValidateAssetsSettings": {
+   "kind": "class",
+   "summary": "Validate Assets Settings",
+   "bases": [
+    "StructBase"
+   ],
+   "plugin": "DataValidation",
+   "module": "DataValidation",
+   "editor_properties": {
+    "capture_asset_load_logs": "(bool) [Read-Write] If true, captures log warnings and errors from loading assets for validation and reports them as validation results",
+    "capture_logs_during_validation": "(bool) [Read-Write] If true, captures log warnings and errors from other operations that happen during validation and adds them to validatio [...]",
+    "capture_warnings_during_validation_as_errors": "(bool) [Read-Write] If true, captured log warnings during validation are added to the validation results as errors (requires bCaptureLogsDur [...]",
+    "collect_per_asset_details": "(bool) [Read-Write] If true, will add an FValidateAssetsDetails for each asset to the results",
+    "load_assets_for_validation": "(bool) [Read-Write] If false, unloaded assets will get skipped from validation.",
+    "load_external_objects_for_validation": "(bool) [Read-Write] If false, external objects (e.g. actors stored separately from maps) will not be loaded when",
+    "max_assets_to_validate": "(int32) [Read-Write] Maximum number of assets to attempt to validate",
+    "show_if_no_failures": "(bool) [Read-Write] If true, will add notifications for files with no validation and display even if everything passes",
+    "skip_excluded_directories": "(bool) [Read-Write] If true, will not validate files in excluded directories",
+    "unload_assets_loaded_for_validation": "(bool) [Read-Write] If true, will attempt to unload assets which were previously unloaded, and loaded for validation.",
+    "validate_referencers_of_deleted_assets": "(bool) [Read-Write] Should we validate referencers of deleted assets in changelists",
+    "validation_usecase": "(DataValidationUsecase) [Read-Write] The usecase requiring datavalidation"
    }
   },
   "unreal": {

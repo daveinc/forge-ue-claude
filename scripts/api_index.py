@@ -34,6 +34,57 @@ DOTTED_CALL = re.compile(r"(?<![\w.])(" + MODULE_SYMBOL + r"|[A-Z][A-Za-z0-9_]+)
 PROSE_FIELDS = ("does", "produces")
 
 SEEDS: dict[str, dict[str, list[str]]] = {
+    "asset-audit": {
+        "ue.python.commandlet": [
+            MODULE_SYMBOL,
+            "ARFilter",
+            "AssetData",
+            "AssetRegistry",
+            "AssetRegistryDependencyOptions",
+            "AssetRegistryHelpers",
+            "EditorAssetLibrary",
+        ],
+        "ue.batch": [
+            MODULE_SYMBOL,
+            "AssetRegistry",
+            "AssetRegistryDependencyOptions",
+            "AssetRegistryHelpers",
+            "EditorAssetLibrary",
+        ],
+    },
+    "bulk-property-edit": {
+        "ue.python.commandlet": [
+            MODULE_SYMBOL,
+            "AssetData",
+            "AssetRegistryHelpers",
+            "EditorAssetLibrary",
+            "EditorAssetSubsystem",
+            "Object",
+            "StructBase",
+        ],
+        "ue.batch": [
+            MODULE_SYMBOL,
+            "EditorAssetLibrary",
+            "EditorAssetSubsystem",
+            "ScopedEditorTransaction",
+        ],
+    },
+    "cook-and-build-preparation": {
+        "ue.python.commandlet": [
+            MODULE_SYMBOL,
+            "AssetRegistryHelpers",
+            "EditorAssetLibrary",
+            "EditorAssetSubsystem",
+            "PackageTools",
+        ],
+        "ue.batch": [
+            MODULE_SYMBOL,
+            "CookFunctionLibrary",
+            "EditorValidatorSubsystem",
+            "ValidateAssetsResults",
+            "ValidateAssetsSettings",
+        ],
+    },
     "ik-retarget": {
         "ue.python.commandlet": [
             MODULE_SYMBOL,
