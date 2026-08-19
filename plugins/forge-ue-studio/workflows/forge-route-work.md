@@ -2,7 +2,7 @@
 name: route-work
 seat: studio-director
 consumes: .planning/ (GSD phase and plan state), .forge/state/packet-registry.json, .forge/state/route-decisions.json, .forge/state/leases.json, .forge/capabilities/registry.json, .forge/capabilities/qualifications.json, .forge/context/activation-policy.json, .forge/acceptance/registry.json
-produces: .forge/state/route-decisions.json, .forge/state/work-orders.json, .forge/state/leases.json
+produces: .forge/state/route-decisions.json, .forge/state/work-orders.json, .forge/state/leases.json, .forge/jobs/
 never-reads: .forge/state/lifecycle.json
 -->
 
@@ -223,8 +223,17 @@ python <forge-plugin-root>/scripts/forge.py dispatch --project <project-root> --
 - proves every declared capability is reachable *right now*
 - refuses as `engine_prerequisite_missing` when this project's engine or `.uproject` does not meet the `requires_engine` a declared capability's route states
 - refuses when available routes have drifted from the ones the decision was scored against
+- writes the job folder — `.forge/jobs/<canonical-work-order>/` with `brief.md`, `packet.json` and one
+  file per referral under `context/` — **before** it acquires anything, so a worker never holds the
+  project super-lock with nothing to read
 - takes the leases and isolation
 - records the order transition in `.forge/state/work-orders.json`
+
+The brief is rendered from the registries at the moment the job is written, never transcribed: its steps,
+non-goals, acceptance, verification and evidence come from the procedure, and its tool and API call names
+from the catalogue and the API index as they resolve right now. Hand the working agent that folder rather
+than a summary of it. A dispatch that is then refused leaves the folder behind on purpose — it holds no
+lease, and it is the record of what was attempted.
 
 `exec acquire` remains for taking leases alone, under the same routing checks:
 
@@ -280,7 +289,8 @@ Check each returned result before acting on it:
 python <forge-plugin-root>/scripts/forge.py validate --kind attempt-result --input <result-path>
 ```
 
-A result that omits its verification or evidence is not a result.
+A result that omits its verification or evidence is not a result. Pass the file that passes this check to
+`release_lease` as `--result`, so the job folder holds what came back beside the brief that asked for it.
 </step>
 
 <step name="handle_failure">
@@ -313,10 +323,17 @@ elsewhere is recovered once its grace window passes.
 Persist transitions, deactivate packet-only surfaces, and release:
 
 ```powershell
-python <forge-plugin-root>/scripts/forge.py exec release --project <project-root> --work-order <id> --outcome passed|failed --apply
+python <forge-plugin-root>/scripts/forge.py exec release --project <project-root> --work-order <id> --outcome passed|failed --result <result-path> --apply
 ```
 
 A failed outcome discards the worktree; a passed one keeps it for merge.
+
+`--result` files the worker's attempt result as `result.json` in that order's job folder, which is where
+the brief that asked for it lives. It is checked against `forge.attempt-result/v1` **before** anything is
+torn down, and a malformed one refuses the release rather than freeing a lane that can no longer be
+re-released to file a corrected result. Omitting it is allowed and lossy: the release then writes what it
+observed under `result_source: release-observation`, which records the outcome and the teardown and
+nothing the worker found.
 
 This is what moves the order out of flight. `passed` records it `ACCEPTED`, `failed` records it
 `REJECTED`, and both keep what dispatch recorded about it. An order left unreleased rests at

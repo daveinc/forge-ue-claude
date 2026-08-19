@@ -97,23 +97,25 @@ A brief that exists only in an agent's context is unobservable and unreproducibl
 
 ```text
 .forge/jobs/
-  <verb>/                       one folder per Forge workflow: route-work, visual-production, …
-    <work-order>/
-      brief.md                  objective, ordered steps, tools and routes, non-goals,
-                                acceptance, evidence — what the working agent reads
-      packet.json               the forge.work-packet/v2 for this job
-      context/                  each context package as its own file, one per referral
-      result.json               the attempt result, written on release
+  <work-order>/                 the canonical work order, and nothing above it
+    brief.md                    objective, ordered steps, tools and routes, non-goals,
+                                acceptance, verification, evidence — what the agent reads
+    packet.json                 the forge.work-packet/v2 for this job
+    context/                    each context package as its own file, one per referral
+    result.json                 the forge.attempt-result/v1, written on release
 ```
 
-Four things this settles:
+Five things this settles:
 
 - **The packet is already the brief's data half.** `forge.py dispatch --packet <path>` takes a file today, but nothing says where that file lives, so packets are written wherever the agent chose and then vanish. Giving them a canonical path is the change; the artifact is not new.
 - **Context packages become files.** The minimal referrals a packet carries are assembled in context today and never observed. Writing each as its own file under `context/` makes what a worker was actually handed inspectable while Forge is still being developed, and turns "the brief was thin" into a checkable claim rather than a suspicion.
-- **The verb folder is the index.** A job sits under the verb that dispatched it, so finding its brief needs no registry lookup. `.forge/state/work-orders.json` stays the ledger of *status*; the job folder holds the *content*.
-- **Retention is keep-for-now.** Jobs are not deleted on completion. A `jobs.retention` key in `.forge/config.json` defaults to `keep`, and sweeping completed jobs past a window is a later phase — not built and not scheduled. Debuggability first; the sweeper is one function once the tree has proven its shape.
+- **The result keeps its existing contract.** `result.json` is the `forge.attempt-result/v1` this repository already ships a schema, a `validate --kind attempt-result` verb and a workflow step for. `exec release --result <path>` files the worker's own result there, checking it *before* the teardown, because a release that has already freed the lane cannot be re-run to file a corrected one. A release handed none writes what it observed in the same contract, marked `result_source: release-observation`, so a job whose worker filed nothing is visibly that rather than silently empty. What was added is a location; a second format for one artifact is how a reader ends up with two answers.
+- **There is no verb segment, and that is a correction.** This section used to put a job under the verb that dispatched it. A work order is dispatched once and touched afterwards by verbs that never knew which workflow opened it — `exec release` has a work order and no packet — so a path composed from the caller's own verb opens a **second folder for one order**, which is the aliasing defect this repository has already fixed twice under other names. The order is unique through `packet-registry.json`, an alias resolves to it, and `job_dir` is the one function both writers call. Today the segment would also be a constant: of 31 workflows only `forge-route-work` dispatches. The verb is recorded *inside* the brief as `Opened by`, where it is a field the ledger can carry rather than a path segment two writers can spell differently.
+- **Retention is keep-for-now.** Jobs are not deleted on completion. `jobs.retention` in `.forge/config.json` defaults to `keep`, is read when a job is written, and is stated in the brief, so it is a live setting rather than a declaration nothing consults. Sweeping completed jobs past a window is a later phase — not built and not scheduled. Debuggability first; the sweeper is one function once the tree has proven its shape.
 
-`.forge/jobs/` is canon rather than rendered: portable, host-neutral, and the evidence trail for what was asked of whom. `docs/reference/repository-layout.md` gains the directory when Phase 1 creates it.
+The folder is written **before** the leases are taken. A folder that fails to appear after acquisition leaves a worker holding the project super-lock with nothing to read, which is the worse of the two orderings. An acquisition that then fails therefore leaves an unclaimed folder behind, and it is **kept**: it holds no lease and grants nothing, the lease ledger remains the only authority on what is held, and it is the record of what was attempted and refused — which is the claim this tree exists to make checkable. The next dispatch of that order renders over it from the registries as they read then. Nothing is written on a dry run.
+
+`.forge/jobs/` is canon rather than rendered: portable, host-neutral, and the evidence trail for what was asked of whom. It is project state and not repository state, so this repository's `.gitignore` excludes it alongside `.forge/evidence/`.
 
 ## What consumes it, and what proves it
 
@@ -122,7 +124,7 @@ This repository's recurring defect is data declared and read by nothing: `tool_s
 Four consumers, in the order Phase 1 should land them:
 
 1. **`forge-plan-phase` PRE** resolves the request into task classes from the catalogue and hands GSD's plan workflow their steps and non-goals. This is what gives a delegating workflow something of its own to contribute.
-2. **`forge-route-work`'s `compile_packet`** fills `capabilities`, `acceptance`, `verification` and `evidence` from the procedure rather than from whatever the agent wrote, and writes the job folder — `brief.md`, `packet.json`, and one file per context package.
+2. **`forge-route-work`'s `compile_packet`** fills `capabilities`, `acceptance`, `verification` and `evidence` from the procedure rather than from whatever the agent wrote. `dispatch` then writes the job folder from it — `brief.md`, `packet.json`, and one file per context package — because the folder has to be written by the code that admits the packet rather than by a workflow step an agent can skip.
 3. **`forge.py dispatch`** refuses a packet whose task class has a procedure that the packet's declared capabilities, verification or evidence do not cover, under a new `ERROR_REASON` entry. This is the guard that runs at runtime rather than at lint time.
 4. **GSD's working agent** reads `brief.md` from the job folder. This is the hand-off: doctrine reaches the agent doing the work as a file, not as an instruction someone remembered to repeat.
 
@@ -133,7 +135,7 @@ Four checks in `validate_repo.py` prove consumption mechanically:
 | Every procedure's lane and every capability it names exist in `route-registry.json` | A procedure names a route nothing serves |
 | Every procedure carries at least one acceptance, verification and evidence line | A procedure is written but says nothing a packet can be checked against |
 | `procedures.json` is read by at least one module under `plugins/forge-ue-studio/scripts/` | The layer decays into prose |
-| `dispatch` writes a job folder, and `exec release` writes its `result.json` | The tree is specified but never populated |
+| `dispatch_work` calls the job-folder writer, and `execute_release` calls the result writer | The tree is specified but never populated |
 
 The last two are the ones that matter. The first of them is the same shape as the existing guard that every verb be reachable from a workflow; the second is the same shape as the 0.7.0 fix for terminal states that had no writer. A job folder is easy to check for, which is the point of choosing a file tree over an in-context brief.
 

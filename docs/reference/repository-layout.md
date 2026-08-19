@@ -47,6 +47,8 @@ Forge applies a reversible project-local overlay:
   acceptance/       acceptance-suite registry
   capabilities/     detected, consented, and qualified routes
   context/          phase-scoped activation policy
+  jobs/             one folder per canonical work order, written by dispatch:
+                    brief.md, packet.json, context/ and result.json
   learnings/        evidence-backed reusable recipes
   research/         approved sources and capability research
   reviews/          plan and result review state

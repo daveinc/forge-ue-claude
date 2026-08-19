@@ -12,7 +12,7 @@ Two different things get called planning, and only the second is GSD's.
 
 **Build doctrine** is what a game of this kind needs built, in what order, with which capabilities and tools, and what evidence closes a step. Forge is the game planner: *"add a red magic spell"* is inert to GSD, and turning it into an ability, Niagara systems, a cast animation and notify, a socket, hit handling and an input binding — each with its lane and its tools — is Forge's work and no one else's. GSD then schedules and records the phases.
 
-Forge hands that down as files, never as instructions someone remembered to repeat. Doctrine ships as a catalogue in the plugin, and every job Forge opens is written to `.forge/jobs/<verb>/<work-order>/` — a brief, its packet, and one file per context package — so the agent doing the work, GSD's included, opens one folder and finds exactly what that job needs and nothing else. See [build doctrine](../../../docs/explanation/build-doctrine.md).
+Forge hands that down as files, never as instructions someone remembered to repeat. Doctrine ships as a catalogue in the plugin, and every job Forge opens is written to `.forge/jobs/<work-order>/` — a brief, its packet, one file per context package, and the attempt result filed on release — so the agent doing the work, GSD's included, opens one folder and finds exactly what that job needs and nothing else. The path keys the canonical work order and nothing above it, so no two verbs can open two folders for one order. See [build doctrine](../../../docs/explanation/build-doctrine.md).
 
 Read as "Forge does no planning", the old wording left doctrine homeless, and a verb with nothing of its own to contribute could only wrap a GSD call. `forge-onboard`'s CORE is one line reading *Run GSD's onboarding* for exactly that reason.
 
@@ -45,13 +45,14 @@ Forge owns the behaviour outright; no GSD workflow is involved. Used where Forge
 ## The shape of every delegating verb
 
 ```
-PRE    Forge   resolve the request into task classes, write the job folder from
-               their doctrine, qualify capabilities, take the Unreal write-lock
-               / lane lease, assign the canonical packet ID
+PRE    Forge   resolve the request into task classes, qualify capabilities, assign
+               the canonical packet ID, then dispatch — which writes the job folder
+               from their doctrine before it takes the Unreal write-lock / lane lease
 CORE   GSD     the stock workflow, unmodified, via run or relay — working from
                the brief in the job folder
-POST   Forge   acceptance registry, evidence contract, in-engine verification,
-               the job's result file, then present the outcome in Forge vocabulary
+POST   Forge   acceptance registry, evidence contract, in-engine verification, then
+               release, which files the attempt result in the job folder, and present
+               the outcome in Forge vocabulary
 ```
 
 PRE and POST are Forge's. CORE is untouched upstream. If a game concern cannot be expressed in PRE or POST — because it must be *held across* GSD's steps, like the Unreal write-lock — acquire it in PRE and release it in POST, and say so in the skill.
