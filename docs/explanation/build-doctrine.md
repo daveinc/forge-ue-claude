@@ -72,14 +72,20 @@ Doctrine is enforceable only as data. Phase 1 builds it; this section is its con
 
 **Key:** `task_class` — the field `forge.work-packet/v2` already requires, that `route-policy.json` already scopes qualification by in `qualification.grant_scope`, and whose values (`ik-retarget`, `batch-import`, `lod-generation`) `unreal_routing` already names. The procedure layer introduces no key space; it fills the one already in use.
 
-**Shape:** one entry per task class, supplying exactly the work-packet fields an agent currently improvises.
+**Shape:** one entry per task class, supplying exactly the work-packet fields an agent currently improvises. What is stored is what a human writes; what is derived is what `procedure_for` computes from it and no one hand-maintains.
 
 ```
-task_class -> lane, capabilities[], steps[], non_goals[], acceptance[], verification[], evidence[]
-step       -> does, produces, capability
+stored     task_class -> lane, capabilities[], steps[], non_goals[], acceptance[], verification[], evidence[]
+           step       -> does, produces, capability
+derived    capability_lanes{}, lanes[], packets, packet_split[]
+           packet_split entry -> lane, capabilities[], steps[]
 ```
 
-The catalogue names capabilities, not tools. `route-registry.json` already maps a capability to the routes that serve it and the tool surface each exposes, so a second list of tool names here would be a second source of truth that drifts. The concrete tools appear in the brief, resolved through that registry at the moment the job is written — which is also the only moment the answer is true, since a route's availability depends on whether the editor is open.
+`lane` on a task class is not the lane the work runs on. It is where the bulk of it sits — a one-word label, useful for reading the catalogue and for checking it against `route-policy.json`'s `unreal_routing`, and never the authority on what a packet takes. **The authority is the step.** Each step names one capability, `route-registry.json` maps that capability to the route that serves it and so to its lane, and `procedure_for` resolves every step's capability through that map into `capability_lanes`. What falls out is the shape the work actually has: `lanes` is the distinct set the steps span, `packets` is how many there are, and `packet_split` says which capabilities and which numbered steps belong to each.
+
+This is why `ik-retarget` is two packets and not one, and it is derived rather than declared. Its `lane` reads `lane.ue-editor-closed` and five of its seven steps do sit there on `ue.python.commandlet` and `ue.batch`; the PIE readback and the viewport capture name `ue.pie` and `ue.viewport`, which the registry serves from the live editor. Two lanes, mutually exclusive through the project super-lock, therefore two packets — and nothing had to say so, because the capabilities already did. `dispatch` reads the same derivation: a packet holding one of those lanes is refused when it omits a capability the procedure needs *on the lane it already took*, and admitted when it covers its own lane and leaves the other to its sibling packet.
+
+No second vocabulary was introduced for this. A procedure names capabilities; lanes come from the registry that already owns them; the split follows from the lanes. The catalogue names capabilities, not tools. `route-registry.json` already maps a capability to the routes that serve it and the tool surface each exposes, so a second list of tool names here would be a second source of truth that drifts. The concrete tools appear in the brief, resolved through that registry at the moment the job is written — which is also the only moment the answer is true, since a route's availability depends on whether the editor is open.
 
 A feature request resolves to a *set* of task classes, not one — the spell above is six or seven of them with an order between them. Resolving a request into that set is `forge-plan-phase`'s job, and what makes it doctrine rather than improvisation is that it must pick from the catalogue's closed list. A request that resolves to a task class with no procedure is a gap to fill in the catalogue, not a licence to invent steps inline.
 
