@@ -1917,6 +1917,28 @@ class McpGateTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("declared but never raised", output)
 
+    def test_a_procedure_naming_a_call_this_engine_lacks_fails(self):
+        def mutate(root):
+            self._rewrite(
+                root / "plugins" / "forge-ue-studio" / "doctrine" / "procedures.json",
+                lambda doc: doc["procedures"]["world-blockout"]["steps"][3].__setitem__(
+                    "does", "Call LevelEditorSubsystem.make_me_a_level and hope."
+                ),
+            )
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("make_me_a_level", output)
+
+    def test_an_unreadable_api_index_fails_the_build_rather_than_raising(self):
+        def mutate(root):
+            for path in (root / "plugins" / "forge-ue-studio" / "dependencies" / "api-index").glob("*.json"):
+                path.unlink()
+
+        code, output = self._validate(mutate)
+        self.assertEqual(code, 1)
+        self.assertIn("procedure symbol guard could not run", output)
+
     def test_fallback_diverging_from_the_catalog_fails(self):
         def mutate(root):
             self._rewrite(

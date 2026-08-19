@@ -681,6 +681,19 @@ def main() -> int:
             if not procedure.get(field):
                 fail(f"Procedure {task_class!r} declares no {field}, so a packet cannot be checked against it", failures)
 
+    try:
+        from api_index import procedure_symbol_failures
+
+        for message in procedure_symbol_failures(procedure_document):
+            fail(message, failures)
+    except Exception as exc:
+        fail(
+            f"The procedure symbol guard could not run ({type(exc).__name__}: {exc}); a procedure may name an "
+            "Unreal call that does not exist and nothing would catch it. Regenerate the API index with "
+            "scripts/api_index.py",
+            failures,
+        )
+
     procedure_readers = sorted(
         name for name, text in module_sources.items() if procedures_path.name in text
     )
