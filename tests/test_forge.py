@@ -1006,7 +1006,7 @@ class McpRouteTests(unittest.TestCase):
         self.assertEqual([], rows[0]["tools"])
         self.assertIn("result file", rows[0]["tool_surface"])
 
-    def test_a_commandlet_packet_carries_the_call_names_no_catalogue_holds(self):
+    def test_each_lane_is_handed_the_call_surface_it_has_and_not_the_other_one(self):
         contracts = {
             "ue.python.commandlet": {
                 "provider": "unreal-python",
@@ -1014,13 +1014,29 @@ class McpRouteTests(unittest.TestCase):
                 "status": "AVAILABLE_UNVERIFIED",
                 "lane": "lane.ue-editor-closed",
                 "tool_surface": "result file is the authority",
-            }
+            },
+            "ue.live.typed": {
+                "provider": "unreal-native-mcp",
+                "kind": "mcp",
+                "status": "AVAILABLE_UNVERIFIED",
+                "lane": "lane.ue-editor",
+                "tool_surface": "typed tools on the live editor",
+            },
         }
-        row = forge.resolve_tool_access(contracts, {"ue.python.commandlet"}, "world-blockout")[0]
-        self.assertEqual([], row["tools"])
-        self.assertIn("LevelEditorSubsystem.new_level", row["api_calls"])
-        self.assertIn("EditorActorSubsystem.spawn_actor_from_class", row["api_calls"])
-        self.assertNotIn("IKRetargeterController.auto_map_chains", row["api_calls"])
+        rows = {
+            row["capability"]: row
+            for row in forge.resolve_tool_access(contracts, set(contracts), "world-blockout")
+        }
+        closed, live = rows["ue.python.commandlet"], rows["ue.live.typed"]
+        self.assertEqual("lane.ue-editor-closed", closed["lane"])
+        self.assertEqual([], closed["tools"])
+        self.assertIn("LevelEditorSubsystem.new_level", closed["api_calls"])
+        self.assertIn("EditorActorSubsystem.spawn_actor_from_class", closed["api_calls"])
+        self.assertNotIn("IKRetargeterController.auto_map_chains", closed["api_calls"])
+        self.assertEqual("lane.ue-editor", live["lane"])
+        self.assertEqual([], live["api_calls"])
+        self.assertIn("create", live["tools"])
+        self.assertEqual([], sorted(set(closed["api_calls"]) & set(live["tools"])))
         self.assertEqual(
             [], forge.resolve_tool_access(contracts, {"ue.python.commandlet"}, "landscape-sculpt")[0]["api_calls"]
         )
