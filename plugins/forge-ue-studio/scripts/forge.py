@@ -51,6 +51,16 @@ from forge_core import (
     utc_now,
     validate_payload,
 )
+from forge_api_index import (
+    API_ID,
+    ApiIndexError,
+    api_call_names,
+    api_classes_for,
+    api_lookup,
+    index_path_for,
+    load_index,
+    load_symbols,
+)
 from forge_mcp import (
     agent_route_briefing,
     agent_tool_surface,

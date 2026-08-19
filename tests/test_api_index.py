@@ -2,22 +2,25 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
 MODULE_PATH = ROOT / "scripts" / "api_index.py"
+RESOLVER_PATH = ROOT / "plugins" / "forge-ue-studio" / "scripts" / "forge_api_index.py"
 INDEX_DIR = ROOT / "plugins" / "forge-ue-studio" / "dependencies" / "api-index"
 INDEX_PATH = INDEX_DIR / "python-api@5.8.json"
 SYMBOLS_PATH = INDEX_DIR / "python-api@5.8.symbols.json"
 PROCEDURES_PATH = ROOT / "plugins" / "forge-ue-studio" / "doctrine" / "procedures.json"
 SHIPPED_BUDGET = 700_000
 
-SPEC = importlib.util.spec_from_file_location("forge_api_index", MODULE_PATH)
+SPEC = importlib.util.spec_from_file_location("api_index", MODULE_PATH)
 assert SPEC and SPEC.loader
 api_index = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(api_index)
+resolver = sys.modules["forge_api_index"]
 
 
 class ApiIndexShipsSmallTest(unittest.TestCase):
@@ -43,48 +46,54 @@ class ApiIndexShipsSmallTest(unittest.TestCase):
 
 
 class ApiIndexResolutionTest(unittest.TestCase):
+    def test_the_resolver_ships_inside_the_plugin_where_a_packet_compiler_reaches_it(self):
+        self.assertEqual(Path(resolver.__file__).resolve(), RESOLVER_PATH.resolve())
+        generator = MODULE_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("def api_classes_for", generator)
+        self.assertIn("def build", generator)
+
     def test_resolution_is_assorted_per_task_class(self):
-        lod = api_index.api_classes_for("lod-generation", ["ue.batch"])
+        lod = resolver.api_classes_for("lod-generation", ["ue.batch"])
         self.assertIn("StaticMeshEditorSubsystem", lod)
         self.assertNotIn("IKRetargeterController", lod)
-        retarget = api_index.api_classes_for("ik-retarget", ["ue.batch"])
+        retarget = resolver.api_classes_for("ik-retarget", ["ue.batch"])
         self.assertIn("IKRetargetBatchOperation", retarget)
         self.assertNotIn("StaticMeshEditorSubsystem", retarget)
 
     def test_resolution_is_assorted_per_capability_within_one_task_class(self):
-        commandlet = api_index.api_classes_for("ik-retarget", ["ue.python.commandlet"])
-        batch = api_index.api_classes_for("ik-retarget", ["ue.batch"])
+        commandlet = resolver.api_classes_for("ik-retarget", ["ue.python.commandlet"])
+        batch = resolver.api_classes_for("ik-retarget", ["ue.batch"])
         self.assertIn("IKRetargeterController", commandlet)
         self.assertNotIn("IKRetargeterController", batch)
         self.assertNotIn("IKRetargetBatchOperation", commandlet)
 
     def test_call_names_intersect_the_provider_with_the_declared_capabilities(self):
-        reached = api_index.api_call_names("unreal-python", "world-blockout", ["ue.python.commandlet"])
+        reached = resolver.api_call_names("unreal-python", "world-blockout", ["ue.python.commandlet"])
         self.assertIn("LevelEditorSubsystem.new_level", reached)
         self.assertIn("EditorActorSubsystem.spawn_actor_from_class", reached)
-        self.assertEqual(api_index.api_call_names("unreal-python", "world-blockout", ["ue.live.typed"]), [])
-        self.assertEqual(api_index.api_call_names("unreal-native-mcp", "world-blockout", ["ue.pie"]), [])
-        self.assertEqual(api_index.api_call_names("no-such-provider", "world-blockout", ["ue.batch"]), [])
+        self.assertEqual(resolver.api_call_names("unreal-python", "world-blockout", ["ue.live.typed"]), [])
+        self.assertEqual(resolver.api_call_names("unreal-native-mcp", "world-blockout", ["ue.pie"]), [])
+        self.assertEqual(resolver.api_call_names("no-such-provider", "world-blockout", ["ue.batch"]), [])
 
     def test_a_capability_that_reaches_nothing_is_empty_but_an_unknown_task_class_is_typed(self):
-        self.assertEqual(api_index.api_classes_for("world-blockout", ["ue.viewport"]), {})
-        with self.assertRaises(api_index.ApiIndexError) as caught:
-            api_index.api_classes_for("landscape-sculpt", ["ue.python.commandlet"])
+        self.assertEqual(resolver.api_classes_for("world-blockout", ["ue.viewport"]), {})
+        with self.assertRaises(resolver.ApiIndexError) as caught:
+            resolver.api_classes_for("landscape-sculpt", ["ue.python.commandlet"])
         self.assertEqual(caught.exception.reason, "api_index_unknown_task_class")
 
     def test_a_missing_index_folder_is_a_typed_failure(self):
-        with self.assertRaises(api_index.ApiIndexError) as caught:
-            api_index.load_index(None, ROOT / "plugins" / "forge-ue-studio" / "dependencies" / "no-index-here")
+        with self.assertRaises(resolver.ApiIndexError) as caught:
+            resolver.load_index(None, ROOT / "plugins" / "forge-ue-studio" / "dependencies" / "no-index-here")
         self.assertEqual(caught.exception.reason, "api_index_missing")
 
 
 class ApiIndexHonestyTest(unittest.TestCase):
     def test_lookup_separates_indexed_unindexed_and_absent(self):
-        self.assertEqual(api_index.api_lookup("LevelEditorSubsystem")["status"], "indexed")
-        unindexed = api_index.api_lookup("Landscape")
+        self.assertEqual(resolver.api_lookup("LevelEditorSubsystem")["status"], "indexed")
+        unindexed = resolver.api_lookup("Landscape")
         self.assertEqual(unindexed["status"], "present_not_indexed")
         self.assertNotIn("reason", unindexed)
-        absent = api_index.api_lookup("NotAnUnrealClassAnywhere")
+        absent = resolver.api_lookup("NotAnUnrealClassAnywhere")
         self.assertEqual(absent["status"], "absent")
         self.assertEqual(absent["reason"], "api_symbol_absent")
         self.assertEqual(absent["engine_version"], "5.8")
@@ -182,7 +191,7 @@ class ProcedureSymbolGuardTest(unittest.TestCase):
 
 class GeneratorTest(unittest.TestCase):
     def test_generator_refuses_a_source_directory_with_no_dump(self):
-        with self.assertRaises(api_index.ApiIndexError) as caught:
+        with self.assertRaises(resolver.ApiIndexError) as caught:
             api_index.build(ROOT / "scripts", "5.8", ROOT / "scripts")
         self.assertEqual(caught.exception.reason, "api_index_missing")
 
