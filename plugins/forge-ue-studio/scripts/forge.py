@@ -164,6 +164,7 @@ from forge_routing import (
     lane_failure_counts,
     procedure_for,
     procedure_gaps,
+    procedure_resolution,
     procedures,
     procedures_path,
     record_blocked_lane,
@@ -240,12 +241,12 @@ def execute_acquire(
 
 
 def procedure_brief(task_class: str) -> dict[str, Any]:
-    found = procedure_for(task_class)
     return {
         "schema": PROCEDURE_SCHEMA,
         "task_class": task_class,
         "source": str(procedures_path()),
-        "procedure": found,
+        "procedure": procedure_for(task_class),
+        "resolution": procedure_resolution(task_class),
         "declared": sorted(procedures()),
     }
 
@@ -280,6 +281,27 @@ def dispatch_work(
             reason=ERROR_REASON["CONTRACT_INVALID"],
             code=EXIT_CONTRACT,
             errors=contract["errors"],
+            packet=str(packet_path),
+        )
+
+    procedure = procedure_for(str(packet.get("task_class", "")))
+    resolution = procedure_resolution(str(packet.get("task_class", "")))
+    if not resolution["procedured"]:
+        print(json.dumps({"warning": resolution}), file=sys.stderr)
+    gaps = procedure_gaps(packet, procedure) if procedure else []
+    if gaps:
+        raise fail(
+            f"Task class {packet.get('task_class')!r} has a build procedure this packet leaves uncovered in "
+            f"{len(gaps)} way(s); dispatching would run the procedure with a step nothing can perform",
+            reason=ERROR_REASON["PROCEDURE_UNCOVERED"],
+            code=EXIT_CONTRACT,
+            gaps=gaps,
+            procedure={
+                "task_class": procedure["task_class"],
+                "lanes": procedure["lanes"],
+                "packets": procedure["packets"],
+                "packet_split": procedure["packet_split"],
+            },
             packet=str(packet_path),
         )
 
@@ -353,7 +375,7 @@ def dispatch_work(
     result = executor.acquire(root, packet, owner or str(profile["id"]), apply=apply)
     if apply and not blocked:
         clear_lane_failures(root, [str(item.get("lane")) for item in live if item.get("lane")])
-    recorded = record_dispatch(root, packet, admission, result["leases"], autonomy) if apply else None
+    recorded = record_dispatch(root, packet, admission, result["leases"], autonomy, resolution) if apply else None
     return {
         "schema": "forge.dispatch/v1",
         "mode": "apply" if apply else "dry-run",
@@ -364,6 +386,7 @@ def dispatch_work(
         "route": admission["source"],
         "route_recorded_at": admission["recorded_at"],
         "contract": {"kind": "work-packet", "ok": True},
+        "procedure": {**resolution, "covered": bool(procedure)},
         "autonomy": autonomy,
         "tool_access": live,
         "drift": [],

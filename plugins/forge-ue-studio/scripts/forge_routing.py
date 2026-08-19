@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import difflib
 import os
 import platform
 import sys
@@ -80,6 +81,30 @@ def procedure_for(task_class: str) -> dict[str, Any] | None:
             }
             for lane in spanned
         ],
+    }
+
+
+def procedure_resolution(task_class: str) -> dict[str, Any]:
+    name = str(task_class)
+    known = sorted(procedures())
+    found = procedure_for(name)
+    if found is not None:
+        return {
+            "task_class": name,
+            "procedured": True,
+            "lane": found["lane"],
+            "lanes": found["lanes"],
+            "packets": found["packets"],
+        }
+    return {
+        "task_class": name,
+        "procedured": False,
+        "nearest": difflib.get_close_matches(name.casefold(), known, n=3, cutoff=0.7),
+        "known": known,
+        "note": (
+            f"no build procedure covers task class {name!r}, so this packet's steps, acceptance, verification "
+            "and evidence were improvised rather than taken from doctrine"
+        ),
     }
 
 
@@ -467,7 +492,7 @@ def decide_blocked_lane(root: Path, packet: dict[str, Any], blocked: list[dict[s
             "reason": answer["reason"], "risk": "entered a lane whose ownership could not be determined"}
 
 
-def record_dispatch(root: Path, packet: dict[str, Any], admission: dict[str, Any], leases: list[dict[str, Any]], autonomy: dict[str, Any] | None = None) -> dict[str, Any]:
+def record_dispatch(root: Path, packet: dict[str, Any], admission: dict[str, Any], leases: list[dict[str, Any]], autonomy: dict[str, Any] | None = None, procedure: dict[str, Any] | None = None) -> dict[str, Any]:
     """Write the order transition in the same breath as the acquisition that earned it."""
     order = str(packet.get("work_order", ""))
     entry = {
@@ -482,6 +507,8 @@ def record_dispatch(root: Path, packet: dict[str, Any], admission: dict[str, Any
         "route_source": admission["source"],
         "route_recorded_at": admission["recorded_at"],
         "entered_undetermined_lane": autonomy if autonomy and autonomy.get("proceed") else None,
+        "task_class": packet.get("task_class"),
+        "procedure": procedure or procedure_resolution(str(packet.get("task_class", ""))),
     }
     def mutate(document: dict[str, Any]) -> None:
         document["orders"] = [

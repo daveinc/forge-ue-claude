@@ -3717,6 +3717,45 @@ class DispatchAdmissionTests(unittest.TestCase):
             self.assertEqual(orders[0]["status"], "DISPATCHED")
             self.assertEqual(orders[0]["leases"], [result["leases"][0]["lease_id"]])
 
+    def test_a_packet_leaving_its_task_class_procedure_uncovered_is_refused(self):
+        with self.game() as root:
+            self.record(root)
+            path = self.packet(root, task_class="ik-retarget", capabilities=["ue.python.commandlet"])
+            before = forge.executor.lease_state_path(root).read_bytes()
+            with self.assertRaises(forge.ForgeExit) as caught:
+                forge.dispatch_work(str(root), str(path), None, apply=True)
+            self.assertEqual(caught.exception.reason, forge.ERROR_REASON["PROCEDURE_UNCOVERED"])
+            self.assertIn("ue.batch", " ".join(caught.exception.extra["gaps"]))
+            self.assertEqual(caught.exception.extra["procedure"]["packets"], 2)
+            self.assertEqual(forge.executor.lease_state_path(root).read_bytes(), before)
+            self.assertEqual(forge.executor.status(root)["active"], [])
+
+    def test_a_packet_covering_its_lane_of_the_procedure_is_admitted(self):
+        with self.game() as root:
+            request = json.loads((root / "request.json").read_text(encoding="utf-8"))
+            request["task_class"] = "ik-retarget"
+            request["required_capabilities"] = ["ue.python.commandlet", "ue.batch"]
+            (root / "request.json").write_text(json.dumps(request), encoding="utf-8")
+            self.record(root)
+            path = self.packet(
+                root, task_class="ik-retarget", capabilities=["ue.python.commandlet", "ue.batch"]
+            )
+            result = forge.dispatch_work(str(root), str(path), None, apply=True)
+            self.assertEqual(result["procedure"]["task_class"], "ik-retarget")
+            self.assertEqual(result["procedure"]["packets"], 2)
+            self.assertIs(result["procedure"]["covered"], True)
+            self.assertEqual([lease["lane"] for lease in result["leases"]], ["ue-editor-closed-api"])
+
+    def test_a_task_class_no_procedure_covers_is_admitted_without_one(self):
+        with self.game() as root:
+            self.record(root)
+            result = forge.dispatch_work(str(root), str(self.packet(root)), None, apply=True)
+            self.assertFalse(result["procedure"]["covered"])
+            self.assertFalse(result["procedure"]["procedured"])
+            orders = json.loads(forge.work_orders_path(root).read_text(encoding="utf-8"))["orders"]
+            self.assertIs(orders[0]["procedure"]["procedured"], False)
+            self.assertIn("improvised", orders[0]["procedure"]["note"])
+
     def test_a_packet_failing_its_contract_is_refused_before_anything_is_taken(self):
         with self.game() as root:
             self.record(root)
@@ -4086,6 +4125,20 @@ class ProcedureDoctrineTests(unittest.TestCase):
         self.assertIsNone(forge.procedure_for("engine-operation"))
         self.assertIsNone(forge.procedure_brief("engine-operation")["procedure"])
 
+    def test_a_misspelt_task_class_is_told_which_one_it_nearly_was(self):
+        for typo in ("ik_retarget", "IK-Retarget", "retarget-ik"):
+            with self.subTest(task_class=typo):
+                resolution = forge.procedure_resolution(typo)
+                self.assertFalse(resolution["procedured"])
+                self.assertIn("ik-retarget", resolution["nearest"])
+
+    def test_an_unprocedured_class_says_so_rather_than_resolving_silently(self):
+        resolution = forge.procedure_resolution("engine-operation")
+        self.assertFalse(resolution["procedured"])
+        self.assertEqual(resolution["nearest"], [])
+        self.assertIn("improvised", resolution["note"])
+        self.assertEqual(resolution["known"], sorted(forge.procedures()))
+
     def test_a_packet_missing_a_capability_its_own_lane_needs_is_a_gap(self):
         procedure = forge.procedure_for("ik-retarget")
         packet = {"capabilities": ["ue.python.commandlet"], "task_class": "ik-retarget"}
@@ -4112,6 +4165,13 @@ class ProcedureDoctrineTests(unittest.TestCase):
             if "procedures.json" in path.read_text(encoding="utf-8")
         )
         self.assertEqual(readers, ["forge_routing.py"])
+
+    def test_the_packet_compiler_workflow_reads_the_procedure_before_it_compiles(self):
+        text = (ROOT / "plugins" / "forge-ue-studio" / "workflows" / "forge-route-work.md").read_text(encoding="utf-8")
+        step = text.split("<step name=\"compile_packet\">")[1].split("</step>")[0]
+        self.assertIn("forge.py procedure --task-class", step)
+        for field in ("acceptance", "verification", "evidence", "capabilities"):
+            self.assertIn(field, step)
 
     def test_the_planner_hands_the_procedure_steps_to_gsd(self):
         text = (ROOT / "plugins" / "forge-ue-studio" / "workflows" / "forge-plan-phase.md").read_text(encoding="utf-8")

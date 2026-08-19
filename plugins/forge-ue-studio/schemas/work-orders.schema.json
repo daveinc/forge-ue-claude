@@ -21,7 +21,12 @@
           "leases": {"type": "array", "items": {"type": "string"}},
           "isolation_mode": {"type": "string"},
           "route_source": {"type": ["string", "null"]},
-          "route_recorded_at": {"type": ["string", "null"]}
+          "route_recorded_at": {"type": ["string", "null"]},
+          "task_class": {"type": ["string", "null"]},
+          "procedure": {
+            "type": ["object", "null"],
+            "description": "How this packet's task class resolved against doctrine/procedures.json. `procedured: false` means no procedure covered it, so its steps, acceptance and evidence were improvised rather than taken from doctrine, and `nearest` names the closest declared task classes because an unresolved class is usually a misspelling of one that exists."
+          }
         },
         "additionalProperties": true
       }

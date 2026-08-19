@@ -71,6 +71,7 @@ ERROR_REASON = MappingProxyType(
         "ROUTE_DECISION_STALE": "route_decision_stale",
         "ROUTE_UNREACHABLE": "route_unreachable",
         "ROUTE_BLOCKED": "route_blocked",
+        "PROCEDURE_UNCOVERED": "procedure_uncovered",
         "USAGE": "usage",
         "UNKNOWN": "unknown",
         **executor.ERROR_REASONS,

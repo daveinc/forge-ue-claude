@@ -158,6 +158,38 @@ and complexity class, objective, non-goals, referrals, inputs, exact write scope
 capabilities, context budget, output contract, acceptance, verification, evidence, invalidation
 hashes.
 
+Read the procedure for the packet's task class first, and fill `capabilities`, `non_goals`,
+`acceptance`, `verification` and `evidence` from it rather than writing them fresh:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py procedure --task-class <task-class>
+```
+
+| In the answer | What to do with it |
+|---|---|
+| `procedure` is `null` | No doctrine covers this shape. Write the fields yourself, and say in the packet that you did |
+| `resolution.nearest` is non-empty | The task class you named nearly matches a declared one. Fix the spelling rather than proceeding unprocedured on a typo |
+| `packet_split` | One packet per entry: its `lane` and `capabilities` are that packet's, and its `steps` are the steps it owns |
+| `packets` above 1 | The steps span mutually exclusive lanes. One packet would silently drop every step on the other lane |
+| `steps[].produces` | What the packet must return for that step, named per step rather than as one lump |
+
+`task_class` is a free string in `forge.work-packet/v2`, so a misspelt class resolves to no procedure
+and nothing refuses it. Forge does not fail that closed — only four procedures exist, and most Unreal
+shapes have none yet — but it does not let it pass silently either: `dispatch` warns on stderr and
+records `procedure.procedured: false` with the nearest declared classes in
+`.forge/state/work-orders.json`, so an improvised packet is visible in the ledger rather than
+indistinguishable from a doctrined one.
+
+`ik-retarget` is the worked case: the batch pass sits on `lane.ue-editor-closed` and the root-motion
+check sits on `lane.ue-editor`, so it is two packets. The step an invented list drops is the one
+whose absence fails no build, which is why the list comes from doctrine and not from the session.
+
+`dispatch` refuses a packet that takes a procedure's lane without declaring every capability the
+procedure needs on that lane, under `procedure_uncovered`. Fill the fields from the procedure rather
+than finding that out at admission.
+
+> **Why:** [build doctrine](../../../docs/explanation/build-doctrine.md) § *The procedure layer*
+
 Never forward the full GDD or the resident conversation.
 
 Check it against its contract before dispatching:
