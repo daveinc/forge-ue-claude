@@ -124,13 +124,23 @@ Four checks in `validate_repo.py` prove consumption mechanically:
 
 | Check | Fails when |
 |---|---|
-| Every task class named in `unreal_routing.prefer_editor_closed_for` and `prefer_live_editor_for` has a procedure | Doctrine falls behind routing |
 | Every procedure's lane and every capability it names exist in `route-registry.json` | A procedure names a route nothing serves |
 | Every procedure carries at least one acceptance, verification and evidence line | A procedure is written but says nothing a packet can be checked against |
 | `procedures.json` is read by at least one module under `plugins/forge-ue-studio/scripts/` | The layer decays into prose |
 | `dispatch` writes a job folder, and `exec release` writes its `result.json` | The tree is specified but never populated |
 
 The last two are the ones that matter. The first of them is the same shape as the existing guard that every verb be reachable from a workflow; the second is the same shape as the 0.7.0 fix for terminal states that had no writer. A job folder is easy to check for, which is the point of choosing a file tree over an in-context brief.
+
+A fifth check belongs in that table one day and does not belong there yet: *every task class named in `unreal_routing.prefer_editor_closed_for` and `prefer_live_editor_for` has a procedure*. It would fail on a clean tree the day it was written, because `route-policy.json` names fifteen shapes of Unreal work and the catalogue covers four of them — `ik-retarget`, `batch-import` and `lod-generation` on `lane.ue-editor-closed`, and `world-blockout` on `lane.ue-editor`. Shipping the guard would force the eleven missing procedures to be invented in one sitting to make a lint pass, which is exactly the improvisation the catalogue exists to stop.
+
+So it is an aspiration, and the gap it aspires to close is named here rather than left to be rediscovered. Eleven routing shapes have no procedure today:
+
+| Lane the shape routes to | Shapes with no procedure |
+|---|---|
+| `lane.ue-editor-closed` | `asset-audit`, `bulk-property-edit`, `null-rhi-safe-work`, `deterministic-script`, `cook-and-build-preparation`, `unsafe-inside-editor-tick` |
+| `lane.ue-editor` | `schema-discoverable-inspection`, `bounded-scene-or-blueprint-mutation`, `pie-verification`, `viewport-evidence`, `typed-readback` |
+
+Every one of them is legitimate Unreal work that a request can resolve to, and every one of them is a packet whose steps, acceptance and evidence an agent currently improvises — which `procedure_resolution` says out loud on dispatch, under `procedured: false`, so the gap is already observable per packet rather than only countable here. The guard becomes shippable on the day this table is empty, and the honest measure of progress on the catalogue is how many rows it has lost. Nothing may be deleted from `route-policy.json` to shorten it; a shape without a procedure is a procedure not yet written, never a shape that does not exist.
 
 ## Recommended, not done here
 
