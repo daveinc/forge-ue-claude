@@ -7,27 +7,27 @@
       "capabilities": ["ue.python.commandlet", "ue.batch", "ue.pie", "ue.viewport"],
       "steps": [
         {
-          "does": "Confirm the source and target skeletons are compatible before authoring anything: retarget root present on both, pelvis and root bone naming resolved, and every source chain with a target counterpart. The shipped tool catalogue carries no skeleton-inspection call, so read the skeleton through unreal.* in an editor-closed script rather than assuming a tool name.",
+          "does": "Confirm the source and target skeletons are compatible before authoring anything: retarget root present on both, pelvis and root bone naming resolved, and every source chain with a target counterpart. The shipped tool catalogue carries no skeleton-inspection call, so read the skeleton editor-closed: unreal.load_asset opens each skeletal mesh, IKRigController.get_controller reaches an existing rig, IKRigController.is_skeletal_mesh_compatible answers whether a mesh can drive that rig at all, SkeletalMesh.get_bone_parent and SkeletalMesh.get_bone_children walk the hierarchy, and Skeleton.get_reference_pose is the pose every comparison is made against.",
           "produces": "A compatibility report naming every source bone and chain with no target counterpart, and the decision taken for each.",
           "capability": "ue.python.commandlet"
         },
         {
-          "does": "Author or verify an IK Rig for the source skeleton and one for the target, each with its retarget root set and its FK chains defined. A missing chain on either side silently drops that limb from the retarget rather than failing it.",
+          "does": "Author or verify an IK Rig for the source skeleton and one for the target, each with its retarget root set and its FK chains defined. AssetToolsHelpers.get_asset_tools hands back the tools and AssetTools.create_asset mints the asset through IKRigDefinitionFactory; every edit after that goes through the controller IKRigController.get_controller returns. IKRigController.set_skeletal_mesh binds the mesh and reports incompatibility rather than raising, IKRigController.set_retarget_root names the single pelvis bone, IKRigController.add_retarget_chain adds a chain and returns the uniquified name it actually took, IKRigController.get_retarget_chains reads back what the asset now holds, and IKRigController.apply_auto_generated_retarget_definition fills the definition when the skeleton matches a known template and returns false when it does not. A missing chain on either side silently drops that limb from the retarget rather than failing it, so the read-back is the check and never the return value of the call that added it.",
           "produces": "Two IK Rig assets saved under the declared content path, each with its chain list recorded in the result file.",
           "capability": "ue.python.commandlet"
         },
         {
-          "does": "Author the IK Retargeter asset and its chain mapping, source chain to target chain, and record every chain left unmapped as a deliberate decision rather than an omission.",
+          "does": "Author the IK Retargeter asset and its chain mapping, source chain to target chain, and record every chain left unmapped as a deliberate decision rather than an omission. AssetTools.create_asset mints the asset through IKRetargetFactory, and every edit after that goes through IKRetargeterController.get_controller: IKRetargeterController.set_ik_rig binds the source and target rigs, IKRetargeterController.auto_map_chains proposes the mapping, IKRetargeterController.set_source_chain overrides a proposal that is wrong, IKRetargeterController.get_all_chain_settings reads back what the asset holds, and IKRetargeterController.create_retarget_pose with IKRetargeterController.auto_align_all_bones settles the retarget pose. Thirteen of the fifteen scripted methods on IKRetargeter itself are deprecated on this engine, so reach the asset through the controller and never through the asset class.",
           "produces": "One IK Retargeter asset and the chain mapping table it carries.",
           "capability": "ue.python.commandlet"
         },
         {
-          "does": "Batch-retarget every source sequence named in the packet, in an editor-closed script under the project-exclusive lease, in batches small enough that one failure does not lose the pass. Never run this inside a live editor tick.",
+          "does": "Batch-retarget every source sequence named in the packet, in an editor-closed script under the project-exclusive lease, in batches small enough that one failure does not lose the pass. IKRetargetBatchOperation.run_batch_retarget takes one IKRetargetBatchOperationInputs struct and is the call to use; IKRetargetBatchOperation.duplicate_and_retarget is the older positional form and is deprecated on this engine. Both return an array of asset data, so an empty array is a failed pass and never a quiet success. Never run this inside a live editor tick.",
           "produces": "One retargeted target asset per source sequence, and a result file naming each source and the asset it produced or the error it raised.",
           "capability": "ue.batch"
         },
         {
-          "does": "Re-point the Animation Blueprint at the target skeleton and rebind every sequence reference it still holds to the source skeleton.",
+          "does": "Re-point the Animation Blueprint at the target skeleton and rebind every sequence reference it still holds to the source skeleton. AnimBlueprint.get_nodes_of_class finds the nodes that carry a sequence reference, AnimBlueprint.add_node_asset_override swaps the asset a node plays, AnimSequence.set_retarget_source_asset re-points a sequence still carrying its source mesh, and EditorAssetLibrary.save_loaded_asset persists each one, because an unsaved rebind survives nothing.",
           "produces": "A recompiled Animation Blueprint with no remaining source-skeleton reference, and the list of references rebound.",
           "capability": "ue.python.commandlet"
         },
@@ -58,7 +58,8 @@
         "The editor-closed result file is the authority on what the batch did, never the commandlet exit code, which can be zero on a pass that retargeted nothing.",
         "An independent verifier reloads the retargeted assets from disk rather than reading the batch log.",
         "Root motion delta and pelvis translation are read off a running PIE loop, not inferred from the asset.",
-        "The PIE readback is taken only after IsPIERunning reports true; PIE does not report running immediately."
+        "The PIE readback is taken only after IsPIERunning reports true; PIE does not report running immediately.",
+        "Every editor-closed step asserts unreal.is_editor() before it does anything else and refuses the pass when the answer disagrees with the lane it was dispatched on. A script that believes it is on lane.ue-editor-closed while running inside a live editor is a lease violation the lease ledger cannot detect after the fact."
       ],
       "evidence": [
         "The result file listing every source sequence and the target asset it produced.",
@@ -68,11 +69,11 @@
     },
     "world-blockout": {
       "lane": "lane.ue-editor",
-      "capabilities": ["ue.live.typed", "ue.pie", "ue.viewport"],
+      "capabilities": ["ue.live.typed", "ue.pie", "ue.viewport", "ue.python.commandlet"],
       "steps": [
         {
-          "does": "Fix the level's content path, world bounds, grid cell size and the count and kind of building before any asset exists, and confirm with AssetTools.exists that no declared path is already occupied.",
-          "produces": "A blockout brief naming the level path, the world bounds, the cell size, and one row per building giving its archetype and its grid cell.",
+          "does": "Fix the level's content path, world bounds, grid cell size and the count and kind of building before any asset exists, and confirm with AssetTools.exists that no declared path is already occupied. Declare here whether the level is a partitioned world: level creation takes that flag as an argument and no later step sets it, so a brief that stays silent has the default decide it.",
+          "produces": "A blockout brief naming the level path, the world bounds, the cell size, whether the world is partitioned, and one row per building giving its archetype and its grid cell.",
           "capability": "ue.live.typed"
         },
         {
@@ -86,9 +87,9 @@
           "capability": "ue.live.typed"
         },
         {
-          "does": "Create the level and place the ground plane and one instance per building on the declared grid. The shipped tool catalogue carries no level-creation or actor-placement call for this route: discover the toolset through list_toolsets and describe_toolset before calling, and if the live route exposes none, move the placement to an editor-closed script rather than improvising a tool name.",
-          "produces": "A saved level asset holding the placed instances, plus the call names actually used, recorded so the next run does not rediscover them.",
-          "capability": "ue.live.typed"
+          "does": "Create the level and place the ground plane and one instance per building on the declared grid. The live route carries no level-creation or actor-placement call, so this step runs editor-closed under the project-exclusive lease and the procedure is two packets rather than one: unreal.get_editor_subsystem hands back both subsystems, LevelEditorSubsystem.new_level creates the level at the declared path with is_partitioned_world stated rather than defaulted, EditorActorSubsystem.spawn_actor_from_class places one instance per grid cell, EditorActorSubsystem.set_actor_transform seats it, EditorActorSubsystem.get_all_level_actors reads back what actually landed and LevelEditorSubsystem.save_current_level persists it. LevelEditorSubsystem.new_level closes the current persistent level without saving it, so save before calling it. EditorLevelLibrary.spawn_actor_from_class is the same call on the older library, but thirty-two of that library's thirty-seven methods are marked deprecated on this engine, so prefer the subsystems. Where the optional ue.live.python route is bound this step collapses back into the live packet and the split disappears, but that route is not a prerequisite, so the editor-closed path is the default and the two-packet split is what the doctrine assumes.",
+          "produces": "A saved level asset holding the placed instances, and the per-cell spawn result naming the actor each call returned.",
+          "capability": "ue.python.commandlet"
         },
         {
           "does": "Run PIE and read the world back with GetVisibleActors, after IsPIERunning reports true. Outside a running session it returns an empty array rather than erroring, so an empty readback is a failure and never a pass.",
@@ -105,7 +106,7 @@
         "Final art, materials, lighting or landscape sculpting; a blockout settles scale and layout and stops.",
         "Gameplay logic inside the building Blueprints.",
         "Nanite, LOD or collision optimisation, which is `lod-generation`.",
-        "World partition or level streaming configuration.",
+        "Level streaming setup and runtime world-partition tuning: cell size, loading ranges, data layers and streaming sources. The partitioned-world flag itself is not deferred, because level creation forces it and step one declares it.",
         "Importing external meshes, which is `batch-import`."
       ],
       "acceptance": [
@@ -118,13 +119,13 @@
         "GetVisibleActors in a running PIE session returns one record per placed building, read after IsPIERunning reports true.",
         "AssetTools.exists is re-run after save_assets, because an asset reads as existing before it is on disk.",
         "An independent verifier re-opens the level in a fresh session rather than trusting the authoring session's own readback.",
-        "Placement is checked against the brief's grid rows, not against what the level happens to contain."
+        "Placement is checked against the brief's grid rows, not against what the level happens to contain.",
+        "The editor-closed placement step asserts unreal.is_editor() before it does anything else and refuses the pass when the answer disagrees with the lane it was dispatched on. The live steps and the closed step are two packets and only one of them may hold the project."
       ],
       "evidence": [
         "A viewport capture of the whole map from the recorded overview transform, carrying an image part.",
         "The PIE actor readback listing every placed building by name and transform.",
-        "The blockout brief from step one, so the result can be checked against what was asked for.",
-        "The call names used for level creation and placement, since the catalogue does not carry them."
+        "The blockout brief from step one, so the result can be checked against what was asked for."
       ]
     },
     "batch-import": {
@@ -172,7 +173,8 @@
       "verification": [
         "The result file is the authority on what imported, never the commandlet exit code, which can be zero on a pass that imported nothing.",
         "Every imported asset is re-loaded from disk in a second process rather than read back from the importing one.",
-        "The idempotence pass runs over the same manifest and is confirmed to change nothing."
+        "The idempotence pass runs over the same manifest and is confirmed to change nothing.",
+        "Every editor-closed step asserts unreal.is_editor() before it does anything else and refuses the pass when the answer disagrees with the lane it was dispatched on. A script that believes it is on lane.ue-editor-closed while running inside a live editor is a lease violation the lease ledger cannot detect after the fact."
       ],
       "evidence": [
         "The result file with a per-source outcome.",
@@ -226,7 +228,8 @@
       "verification": [
         "The after table is measured off the rebuilt assets, not read from the build log.",
         "The result file is the authority on what was built, never the commandlet exit code.",
-        "An independent verifier re-measures on a fresh load rather than trusting the building session's numbers."
+        "An independent verifier re-measures on a fresh load rather than trusting the building session's numbers.",
+        "Every editor-closed step asserts unreal.is_editor() before it does anything else and refuses the pass when the answer disagrees with the lane it was dispatched on. A script that believes it is on lane.ue-editor-closed while running inside a live editor is a lease violation the lease ledger cannot detect after the fact."
       ],
       "evidence": [
         "The baseline and after triangle tables, matched row for row.",
