@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       engine_path:
-        description: "Engine root on the runner"
+        description: "Engine root on the runner. Left empty, the driver discovers it from the registry and then the launcher default."
         required: false
-        default: 'C:\Program Files\Epic Games\UE_5.8'
+        default: ''
 
 permissions:
   contents: read
@@ -44,7 +44,7 @@ jobs:
       - name: Drive a real editor
         shell: pwsh
         run: |
-          ./tests/unreal/run_unreal_acceptance.ps1 -EnginePath "${{ github.event.inputs.engine_path || 'C:\Program Files\Epic Games\UE_5.8' }}"
+          ./tests/unreal/run_unreal_acceptance.ps1 -EnginePath "${{ github.event.inputs.engine_path }}"
       - name: Publish the acceptance result
         if: always()
         uses: actions/upload-artifact@v4

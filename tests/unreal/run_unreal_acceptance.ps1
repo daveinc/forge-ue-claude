@@ -15,7 +15,8 @@
       - a commandlet runs against the closed project and writes its result file
 
 .PARAMETER EnginePath
-    Engine root, e.g. "C:\Program Files\Epic Games\UE_5.8".
+    Engine root, e.g. "C:\Program Files\Epic Games\UE_5.8". Discovered from the
+    registry and then the launcher default when not given.
 
 .PARAMETER WorkPath
     Where the throwaway project is built. Deleted and recreated each run.
@@ -25,7 +26,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$EnginePath = "C:\Program Files\Epic Games\UE_5.8",
+    [string]$EnginePath = "",
     [string]$WorkPath = (Join-Path $env:TEMP "forge-unreal-acceptance"),
     [switch]$KeepProject
 )
@@ -35,6 +36,61 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $forge = Join-Path $repoRoot "plugins\forge-ue-studio\scripts\forge.py"
 $results = @()
 $editor = $null
+
+function Get-EngineVersion {
+    param([string]$Root)
+    $manifest = Join-Path $Root "Engine\Build\Build.version"
+    if (-not (Test-Path $manifest)) { return $null }
+    try {
+        $parsed = Get-Content -Raw -Encoding utf8 $manifest | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+    if ($null -eq $parsed.MajorVersion -or $null -eq $parsed.MinorVersion) { return $null }
+    return "{0}.{1}" -f $parsed.MajorVersion, $parsed.MinorVersion
+}
+
+function Resolve-EnginePath {
+    param([string]$Explicit)
+    $looked = @()
+    if ($Explicit) { return [pscustomobject]@{ Path = $Explicit; Source = "the -EnginePath argument"; Looked = $looked } }
+
+    foreach ($hive in @("HKLM:\SOFTWARE\EpicGames\Unreal Engine", "HKLM:\SOFTWARE\Epic Games\Unreal Engine")) {
+        $looked += $hive
+        if (-not (Test-Path $hive)) { continue }
+        $installed = Get-ChildItem $hive -ErrorAction SilentlyContinue |
+            ForEach-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).InstalledDirectory } |
+            Where-Object { $_ -and (Test-Path $_) }
+        if ($installed) {
+            $newest = $installed | Sort-Object -Descending | Select-Object -First 1
+            return [pscustomobject]@{ Path = $newest; Source = "the installed-engine registry"; Looked = $looked }
+        }
+    }
+
+    foreach ($builds in @("HKCU:\SOFTWARE\Epic Games\Unreal Engine\Builds", "HKCU:\SOFTWARE\EpicGames\Unreal Engine\Builds")) {
+        $looked += $builds
+        if (-not (Test-Path $builds)) { continue }
+        $key = Get-ItemProperty $builds -ErrorAction SilentlyContinue
+        $roots = $key.PSObject.Properties |
+            Where-Object { $_.Name -notlike "PS*" } |
+            ForEach-Object { $_.Value } |
+            Where-Object { $_ -and (Test-Path $_) }
+        if ($roots) {
+            return [pscustomobject]@{ Path = ($roots | Select-Object -First 1); Source = "a registered source build"; Looked = $looked }
+        }
+    }
+
+    $default = "C:\Program Files\Epic Games"
+    $looked += "$default\UE_*"
+    if (Test-Path $default) {
+        $launcher = Get-ChildItem $default -Directory -Filter "UE_*" -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1
+        if ($launcher) {
+            return [pscustomobject]@{ Path = $launcher.FullName; Source = "the launcher default location"; Looked = $looked }
+        }
+    }
+    return [pscustomobject]@{ Path = $null; Source = $null; Looked = $looked }
+}
 
 function Add-Result {
     param([string]$Stage, [string]$Status, [string]$Detail, [hashtable]$Fields)
@@ -88,8 +144,19 @@ print(json.dumps(forge_mcp.live_editor_holds_project(pathlib.Path(r'$Project')))
     return ($raw | ConvertFrom-Json)
 }
 
+$resolved = Resolve-EnginePath -Explicit $EnginePath
+if (-not $resolved.Path) {
+    Write-Host "Forge Unreal acceptance" -ForegroundColor Cyan
+    Write-Host "  no Unreal Engine found. Looked in: $($resolved.Looked -join '; ')" -ForegroundColor Yellow
+    Write-Host "  pass -EnginePath <root> to name one explicitly." -ForegroundColor Yellow
+    exit 0
+}
+$EnginePath = $resolved.Path
+$engineVersion = Get-EngineVersion -Root $EnginePath
+
 Write-Host "Forge Unreal acceptance" -ForegroundColor Cyan
 Write-Host "  engine : $EnginePath"
+Write-Host "  version: $(if ($engineVersion) { $engineVersion } else { 'unreadable' }) (from $($resolved.Source))"
 Write-Host "  work   : $WorkPath"
 Write-Host ""
 
@@ -98,7 +165,7 @@ try {
     $cmdExe = Join-Path $EnginePath "Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
     if (-not (Test-Path $editorExe)) { throw "UnrealEditor.exe not found under $EnginePath" }
     if (-not (Test-Path $cmdExe)) { throw "UnrealEditor-Cmd.exe not found under $EnginePath" }
-    Add-Result "engine-binaries" "PASS" "editor and commandlet binaries resolved"
+    Add-Result "engine-binaries" "PASS" "editor and commandlet binaries resolved from $($resolved.Source)" @{ engine_version = $engineVersion; engine_path = $EnginePath }
 
     if (Test-Path $WorkPath) { Remove-Item -Recurse -Force $WorkPath }
     $projectDir = Join-Path $WorkPath "ForgeFixture"
@@ -106,7 +173,7 @@ try {
     $uproject = Join-Path $projectDir "ForgeFixture.uproject"
     @{
         FileVersion = 3
-        EngineAssociation = ""
+        EngineAssociation = $(if ($engineVersion) { $engineVersion } else { "" })
         Category = ""
         Description = "Throwaway fixture for Forge acceptance. Safe to delete."
         Plugins = @(
@@ -204,7 +271,8 @@ try {
         if ($mcpSignal) {
             $endpoint = if ($live.endpoint) { $live.endpoint } else { "http://127.0.0.1:8000/mcp" }
             $raw = Invoke-Native -Exe "python" -NativeArgs @(
-                (Join-Path $PSScriptRoot "live_editor_stages.py"), "--url", $endpoint
+                (Join-Path $PSScriptRoot "live_editor_stages.py"), "--url", $endpoint,
+                "--engine-version", $engineVersion
             ) -AllowFailure
             try {
                 foreach ($item in ($raw | ConvertFrom-Json).stages) {
@@ -296,6 +364,7 @@ $failed = @($results | Where-Object { $_.status -eq 'FAIL' })
 $summary = [pscustomobject]@{
     schema = "forge.unreal-acceptance/v1"
     engine = $EnginePath
+    engine_version = $engineVersion
     stages = $results
     passed = @($results | Where-Object { $_.status -eq 'PASS' }).Count
     failed = $failed.Count

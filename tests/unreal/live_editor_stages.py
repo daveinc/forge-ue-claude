@@ -5,10 +5,16 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import sys
 import time
 from typing import Any
 
 from mcp_client import McpError, McpSession, text_of
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "plugins" / "forge-ue-studio" / "scripts"))
+
+import forge_mcp
 
 HELP = "The acceptance stages that need a live editor: Blueprint authoring, PIE, and whether the shipped tool catalogue still matches the engine."
 BLUEPRINT_TOOLSET = "editor_toolset.toolsets.blueprint.BlueprintTools"
@@ -117,41 +123,56 @@ def schema_defaults_stage(session: McpSession) -> dict[str, str]:
     )
 
 
-CATALOGUE = (
-    pathlib.Path(__file__).resolve().parents[2]
-    / "plugins" / "forge-ue-studio" / "dependencies" / "tool-catalog" / "unreal-mcp@5.8.json"
-)
+CATALOGUE_SERVER = "unreal-mcp"
 
 
-def catalogue_stage(session: McpSession, advertised: set[str]) -> dict[str, str]:
-    try:
-        catalogue = json.loads(CATALOGUE.read_text(encoding="utf-8"))
-    except OSError as exc:
-        return stage("catalogue-matches-engine", "FAIL", f"no catalogue to check: {exc}")
-    toolsets = catalogue["toolsets"]
-    gone = sorted(set(toolsets) - advertised)
+def catalogue_stage(session: McpSession, advertised: set[str], engine_version: str | None) -> dict[str, str]:
+    catalogue = forge_mcp.tool_catalog(CATALOGUE_SERVER, engine_version)
+    if not catalogue:
+        return stage(
+            "catalogue-matches-engine", "NOT_PROVEN",
+            f"no shipped catalogue for {CATALOGUE_SERVER!r}, so there is nothing to check against "
+            f"UE {engine_version or 'unknown'}; this is an absent catalogue, not a drifted one",
+        )
+    catalogued = str(catalogue.get("engine_version", "")) or "unknown"
+    skewed = bool(engine_version) and catalogued != engine_version
+    written_for = f"the catalogue was read off UE {catalogued} and this engine is UE {engine_version}"
+
+    gone = sorted(set(catalogue["toolsets"]) - advertised)
     if gone:
+        if skewed:
+            return stage(
+                "catalogue-matches-engine", "NOT_PROVEN",
+                f"catalogued toolsets not advertised here: {', '.join(gone)}, but {written_for}, "
+                "so this cannot be told apart from a version difference",
+            )
         return stage(
             "catalogue-matches-engine", "FAIL",
             f"catalogued toolsets no longer advertised: {', '.join(gone)}",
         )
+
     undescribed = []
-    for name, body in toolsets.items():
+    for name, body in catalogue["toolsets"].items():
         try:
             described = text_of(session.call_tool("describe_toolset", {"toolset_name": name}))
         except McpError as exc:
             return stage("catalogue-matches-engine", "FAIL", f"describe_toolset({name}) failed: {str(exc)[:200]}")
         undescribed += [f"{name}.{tool}" for tool in body["tools"] if tool not in described]
     if undescribed:
+        if skewed:
+            return stage(
+                "catalogue-matches-engine", "NOT_PROVEN",
+                f"catalogued tools not described here: {', '.join(undescribed)}, but {written_for}, "
+                "so this cannot be told apart from a version difference",
+            )
         return stage(
             "catalogue-matches-engine", "FAIL",
             f"catalogued tools no longer described: {', '.join(undescribed)}",
         )
-    total = sum(len(body["tools"]) for body in toolsets.values())
-    return stage(
-        "catalogue-matches-engine", "PASS",
-        f"{len(toolsets)} catalogued toolsets and {total} tools are still advertised by the engine",
-    )
+
+    total = sum(len(body["tools"]) for body in catalogue["toolsets"].values())
+    settled = f"{len(catalogue['toolsets'])} catalogued toolsets and {total} tools are still advertised by the engine"
+    return stage("catalogue-matches-engine", "PASS", f"{settled}, though {written_for}" if skewed else settled)
 
 
 def _image_bytes(result: dict[str, Any]) -> int:
@@ -169,6 +190,7 @@ def _image_bytes(result: dict[str, Any]) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=HELP)
     parser.add_argument("--url", default="http://127.0.0.1:8000/mcp")
+    parser.add_argument("--engine-version")
     parser.add_argument("--output")
     args = parser.parse_args(argv)
 
@@ -187,12 +209,16 @@ def main(argv: list[str] | None = None) -> int:
             stages.append(blueprint_stage(session))
             stages.append(pie_stage(session))
             stages.append(schema_defaults_stage(session))
-            stages.append(catalogue_stage(session, advertised))
+            stages.append(catalogue_stage(session, advertised, args.engine_version))
     except McpError as exc:
         detail = str(exc)[:300]
         stages = [stage("blueprint-create-compile", "FAIL", detail), stage("pie-and-viewport-evidence", "FAIL", detail)]
 
-    rendered = json.dumps({"schema": "forge.live-editor-stages/v1", "url": args.url, "stages": stages}, indent=2)
+    rendered = json.dumps(
+        {"schema": "forge.live-editor-stages/v1", "url": args.url,
+         "engine_version": args.engine_version, "stages": stages},
+        indent=2,
+    )
     print(rendered)
     if args.output:
         with open(args.output, "w", encoding="utf-8") as handle:
