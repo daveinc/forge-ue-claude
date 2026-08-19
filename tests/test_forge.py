@@ -3717,6 +3717,31 @@ class DispatchAdmissionTests(unittest.TestCase):
             self.assertEqual(orders[0]["status"], "DISPATCHED")
             self.assertEqual(orders[0]["leases"], [result["leases"][0]["lease_id"]])
 
+    def test_an_alias_and_its_canonical_id_never_open_two_ledger_entries(self):
+        with self.game() as root:
+            registry_path = root / ".forge" / "state" / "packet-registry.json"
+            registry = forge.load_json(registry_path)
+            registry["aliases"] = [{"alias": "FI-UNREAL-DISPLAY", "canonical": "FI-UNREAL"}]
+            registry_path.write_text(json.dumps(registry), encoding="utf-8")
+            self.assertEqual("FI-UNREAL", forge.canonical_order_for(root, "FI-UNREAL-DISPLAY"))
+            self.record(root)
+            forge.record_blocked_lane(
+                root, {"work_order": "FI-UNREAL-DISPLAY"},
+                [{"capability": "ue.python.commandlet", "lane": "lane.ue-editor-closed"}], "refused")
+            self.assertEqual(
+                ["FI-UNREAL"],
+                [item["work_order"] for item in forge.load_json(forge.work_orders_path(root))["orders"]])
+            forge.dispatch_work(
+                str(root), str(self.packet(root, work_order="FI-UNREAL-DISPLAY")), None, apply=True)
+            self.assertEqual(
+                ["FI-UNREAL"],
+                [item["work_order"] for item in forge.load_json(forge.work_orders_path(root))["orders"]])
+            forge.execute_release(str(root), "FI-UNREAL-DISPLAY", "passed", apply=True)
+            orders = forge.load_json(forge.work_orders_path(root))["orders"]
+            self.assertEqual(["FI-UNREAL"], [item["work_order"] for item in orders])
+            self.assertEqual("ACCEPTED", orders[0]["status"])
+            self.assertEqual(str(forge.route_decisions_path(root)), orders[0]["route_source"])
+
     def test_a_packet_leaving_its_task_class_procedure_uncovered_is_refused(self):
         with self.game() as root:
             self.record(root)

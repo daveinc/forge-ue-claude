@@ -161,6 +161,16 @@ def canonical_order(packet_registry: dict[str, Any], work_order: str) -> str:
     return aliases.get(work_order, work_order)
 
 
+def canonical_order_for(root: Path, work_order: str) -> str:
+    """The registered id behind a work order, resolved against this project's registry.
+
+    Every ledger keyed by work order resolves through here, so an alias and the
+    id it stands for can never open two entries for one order.
+    """
+    path = root / ".forge" / "state" / "packet-registry.json"
+    return canonical_order(load_json(path) if path.is_file() else {}, str(work_order))
+
+
 def record_route_decision(root: Path, decision: dict[str, Any], owner: str | None = None) -> dict[str, Any]:
     """Write the decision under its canonical work order, replacing any earlier one."""
     path = route_decisions_path(root)
@@ -189,9 +199,7 @@ def resolve_route_decision(root: Path, work_order: str, freshness_minutes: int |
     skipped routing cannot acquire by omitting a flag, and a decision the
     environment has outlived cannot authorise a lane it no longer describes.
     """
-    packet_registry_path = root / ".forge" / "state" / "packet-registry.json"
-    registry = load_json(packet_registry_path) if packet_registry_path.is_file() else {}
-    order = canonical_order(registry, work_order)
+    order = canonical_order_for(root, work_order)
     document = read_route_decisions(root)
     entry = next(
         (item for item in document["decisions"] if str(item.get("canonical_work_order")) == order),
@@ -316,6 +324,7 @@ def record_release(root: Path, work_order: str, outcome: str, lease_status: str)
     """
     status = "REJECTED" if outcome == "failed" else "ACCEPTED"
     closed_at = utc_now()
+    work_order = canonical_order_for(root, work_order)
 
     def mutate(document: dict[str, Any]) -> None:
         orders = document.get("orders", [])
@@ -338,7 +347,7 @@ def record_blocked_lane(root: Path, packet: dict[str, Any], blocked: list[dict[s
     A refusal that leaves no trace cannot be resumed from and cannot be counted,
     so the next session repeats it and the breaker has nothing to break on.
     """
-    order = str(packet.get("work_order", ""))
+    order = canonical_order_for(root, str(packet.get("work_order", "")))
     lanes = sorted({str(item.get("lane")) for item in blocked if item.get("lane")})
     moment = utc_now()
     entry = {
@@ -494,7 +503,7 @@ def decide_blocked_lane(root: Path, packet: dict[str, Any], blocked: list[dict[s
 
 def record_dispatch(root: Path, packet: dict[str, Any], admission: dict[str, Any], leases: list[dict[str, Any]], autonomy: dict[str, Any] | None = None, procedure: dict[str, Any] | None = None) -> dict[str, Any]:
     """Write the order transition in the same breath as the acquisition that earned it."""
-    order = str(packet.get("work_order", ""))
+    order = canonical_order_for(root, str(packet.get("work_order", "")))
     entry = {
         "work_order": order,
         "status": "DISPATCHED",

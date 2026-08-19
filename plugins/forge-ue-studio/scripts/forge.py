@@ -156,6 +156,7 @@ from forge_routing import (
     WORK_ORDERS_SCHEMA,
     blocked_lane_policy,
     canonical_order,
+    canonical_order_for,
     capability_lanes,
     clear_lane_failures,
     confirm_autonomous_entry,
