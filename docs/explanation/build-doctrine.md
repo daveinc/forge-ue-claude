@@ -44,6 +44,26 @@ GSD plans a phase called *retarget the character animations*.
 
 What goes wrong without doctrine is the middle: an agent asked to plan a retarget phase invents a step list each time, and the step that gets dropped is the one whose absence does not fail a build — the root-motion check.
 
+## Forge is the game planner
+
+That example starts after someone has already said the word *retarget*. Real requests do not arrive in task classes. A user says **"add a red magic spell"**, and that sentence is inert to GSD — it has no way to know what a spell is made of.
+
+Forge does. A spell means a gameplay ability with its cost and cooldown, Niagara systems for the cast, the projectile and the impact, a cast animation with a notify, a socket on the character to spawn from, hit handling and damage application, an input binding, audio cues, and a red material and lighting treatment that still reads at gameplay distance. It also means the Niagara work and the animation work are separate lanes that can run in parallel, that the socket must exist before either lands, and that the ability should compile before the effect is worth authoring.
+
+**Decomposing intent into that list is Forge's job and no one else's.** GSD then schedules the phases and records what happened. This is the whole reason build doctrine needs a home: without one, the decomposition is re-invented every session by whichever agent is holding the request, and it comes out different every time.
+
+Doctrine therefore has two layers, and they are not the same thing.
+
+| | Doctrine catalogue | Job brief |
+|---|---|---|
+| **What** | What a task class always means | What *this* job is, resolved for this project |
+| **Lifetime** | Ships with the plugin, versioned in git | Written when a job lands, kept until swept |
+| **Where** | `plugins/forge-ue-studio/doctrine/` | `.forge/jobs/` in the project |
+| **Written by** | A human, deliberately | Forge, per job, from the catalogue plus the request |
+| **Read by** | Forge, when planning and compiling a packet | The agent doing the work, GSD's included |
+
+The catalogue is the closed vocabulary. The brief is what an agent actually opens.
+
 ## The procedure layer
 
 Doctrine is enforceable only as data. Phase 1 builds it; this section is its contract, not its content.
@@ -59,17 +79,46 @@ task_class -> lane, capabilities[], steps[], non_goals[], acceptance[], verifica
 step       -> does, produces, capability
 ```
 
+The catalogue names capabilities, not tools. `route-registry.json` already maps a capability to the routes that serve it and the tool surface each exposes, so a second list of tool names here would be a second source of truth that drifts. The concrete tools appear in the brief, resolved through that registry at the moment the job is written — which is also the only moment the answer is true, since a route's availability depends on whether the editor is open.
+
+A feature request resolves to a *set* of task classes, not one — the spell above is six or seven of them with an order between them. Resolving a request into that set is `forge-plan-phase`'s job, and what makes it doctrine rather than improvisation is that it must pick from the catalogue's closed list. A request that resolves to a task class with no procedure is a gap to fill in the catalogue, not a licence to invent steps inline.
+
 Prose belongs in this document. The procedure file is what a packet compiler reads.
+
+## The job tree
+
+A brief that exists only in an agent's context is unobservable and unreproducible. Forge writes every job to disk, in a tree shaped so that an agent — Forge's or GSD's — opens exactly one folder and finds everything that job needs and nothing it does not.
+
+```text
+.forge/jobs/
+  <verb>/                       one folder per Forge workflow: route-work, visual-production, …
+    <work-order>/
+      brief.md                  objective, ordered steps, tools and routes, non-goals,
+                                acceptance, evidence — what the working agent reads
+      packet.json               the forge.work-packet/v2 for this job
+      context/                  each context package as its own file, one per referral
+      result.json               the attempt result, written on release
+```
+
+Four things this settles:
+
+- **The packet is already the brief's data half.** `forge.py dispatch --packet <path>` takes a file today, but nothing says where that file lives, so packets are written wherever the agent chose and then vanish. Giving them a canonical path is the change; the artifact is not new.
+- **Context packages become files.** The minimal referrals a packet carries are assembled in context today and never observed. Writing each as its own file under `context/` makes what a worker was actually handed inspectable while Forge is still being developed, and turns "the brief was thin" into a checkable claim rather than a suspicion.
+- **The verb folder is the index.** A job sits under the verb that dispatched it, so finding its brief needs no registry lookup. `.forge/state/work-orders.json` stays the ledger of *status*; the job folder holds the *content*.
+- **Retention is keep-for-now.** Jobs are not deleted on completion. A `jobs.retention` key in `.forge/config.json` defaults to `keep`, and sweeping completed jobs past a window is a later phase — not built and not scheduled. Debuggability first; the sweeper is one function once the tree has proven its shape.
+
+`.forge/jobs/` is canon rather than rendered: portable, host-neutral, and the evidence trail for what was asked of whom. `docs/reference/repository-layout.md` gains the directory when Phase 1 creates it.
 
 ## What consumes it, and what proves it
 
 This repository's recurring defect is data declared and read by nothing: `tool_surface` went a release unread, and `requires_engine` in `route-registry.json` is read by nothing today. A doctrine document with no consumer is the next instance of it.
 
-Three consumers, in the order Phase 1 should land them:
+Four consumers, in the order Phase 1 should land them:
 
-1. **`forge-plan-phase` PRE** resolves the phase's task class and hands GSD's plan workflow the procedure's steps and non-goals as the request. This is what gives a delegating workflow something of its own to contribute.
-2. **`forge-route-work`'s `compile_packet`** fills `capabilities`, `acceptance`, `verification` and `evidence` from the procedure rather than from whatever the agent wrote.
+1. **`forge-plan-phase` PRE** resolves the request into task classes from the catalogue and hands GSD's plan workflow their steps and non-goals. This is what gives a delegating workflow something of its own to contribute.
+2. **`forge-route-work`'s `compile_packet`** fills `capabilities`, `acceptance`, `verification` and `evidence` from the procedure rather than from whatever the agent wrote, and writes the job folder — `brief.md`, `packet.json`, and one file per context package.
 3. **`forge.py dispatch`** refuses a packet whose task class has a procedure that the packet's declared capabilities, verification or evidence do not cover, under a new `ERROR_REASON` entry. This is the guard that runs at runtime rather than at lint time.
+4. **GSD's working agent** reads `brief.md` from the job folder. This is the hand-off: doctrine reaches the agent doing the work as a file, not as an instruction someone remembered to repeat.
 
 Four checks in `validate_repo.py` prove consumption mechanically:
 
@@ -79,12 +128,14 @@ Four checks in `validate_repo.py` prove consumption mechanically:
 | Every procedure's lane and every capability it names exist in `route-registry.json` | A procedure names a route nothing serves |
 | Every procedure carries at least one acceptance, verification and evidence line | A procedure is written but says nothing a packet can be checked against |
 | `procedures.json` is read by at least one module under `plugins/forge-ue-studio/scripts/` | The layer decays into prose |
+| `dispatch` writes a job folder, and `exec release` writes its `result.json` | The tree is specified but never populated |
 
-The last one is the one that matters, and it is the same shape as the existing guard that every verb be reachable from a workflow.
+The last two are the ones that matter. The first of them is the same shape as the existing guard that every verb be reachable from a workflow; the second is the same shape as the 0.7.0 fix for terminal states that had no writer. A job folder is easy to check for, which is the point of choosing a file tree over an in-context brief.
 
 ## Recommended, not done here
 
 - `requires_engine` is declared on three routes in `route-registry.json` and read by nothing. The procedure resolver is its natural reader: a procedure whose lane requires an engine version or `.uproject` plugin the project does not have should refuse before a lease is taken. Read it there, or delete it.
-- `forge-onboard` and `forge-resume-work` carry one-line CORE sections because they have nothing of their own to add. Once the procedure layer exists their PRE should carry doctrine — onboarding an existing project means recognising which task classes its `Content/` and modules already imply, and resuming means restoring the procedure the interrupted packet was executing.
+- `forge-onboard` and `forge-resume-work` carry one-line CORE sections because they have nothing of their own to add. Once the procedure layer exists their PRE should carry doctrine — onboarding an existing project means recognising which task classes its `Content/` and modules already imply, and resuming means reopening the job folder the interrupted packet was working from, which is a stronger restore than the handoff record alone.
+- Sweeping completed job folders is deliberately deferred. Everything stays on disk until the tree's shape is proven in use; a retention window and the sweep that honours it are a later phase, and the `jobs.retention` key exists so that phase changes a default rather than a design.
 
 See [the delegation contract](../../plugins/forge-ue-studio/references/delegation-contract.md) and [how Forge works](how-forge-works.md).

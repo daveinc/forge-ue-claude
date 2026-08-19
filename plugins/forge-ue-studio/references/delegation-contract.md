@@ -10,7 +10,9 @@ Two different things get called planning, and only the second is GSD's.
 
 **Planning artifacts** are `.planning/` — ROADMAP.md, PLAN.md, SUMMARY.md, phase IDs, status transitions, the schedule. GSD writes every one of them, always through `gsd_run`. Forge reads that state through `smart-entry` and never writes it; two writers is the failure this architecture exists to prevent.
 
-**Build doctrine** is what a game of this kind needs built, in what order, with which capabilities and tools, and what evidence closes a step. That is Unreal domain procedure, GSD has no reason to hold it, and Forge supplies it as content: GSD schedules and records the phase, Forge says what a phase of this kind consists of. It lives as data in the plugin — see [build doctrine](../../../docs/explanation/build-doctrine.md) for the boundary and the procedure layer's shape.
+**Build doctrine** is what a game of this kind needs built, in what order, with which capabilities and tools, and what evidence closes a step. Forge is the game planner: *"add a red magic spell"* is inert to GSD, and turning it into an ability, Niagara systems, a cast animation and notify, a socket, hit handling and an input binding — each with its lane and its tools — is Forge's work and no one else's. GSD then schedules and records the phases.
+
+Forge hands that down as files, never as instructions someone remembered to repeat. Doctrine ships as a catalogue in the plugin, and every job Forge opens is written to `.forge/jobs/<verb>/<work-order>/` — a brief, its packet, and one file per context package — so the agent doing the work, GSD's included, opens one folder and finds exactly what that job needs and nothing else. See [build doctrine](../../../docs/explanation/build-doctrine.md).
 
 Read as "Forge does no planning", the old wording left doctrine homeless, and a verb with nothing of its own to contribute could only wrap a GSD call. `forge-onboard`'s CORE is one line reading *Run GSD's onboarding* for exactly that reason.
 
@@ -43,12 +45,13 @@ Forge owns the behaviour outright; no GSD workflow is involved. Used where Forge
 ## The shape of every delegating verb
 
 ```
-PRE    Forge   build doctrine for the task class, capability qualification,
-               Unreal write-lock / lane lease, canonical packet ID,
-               game-dev framing of the request
-CORE   GSD     the stock workflow, unmodified, via run or relay
+PRE    Forge   resolve the request into task classes, write the job folder from
+               their doctrine, qualify capabilities, take the Unreal write-lock
+               / lane lease, assign the canonical packet ID
+CORE   GSD     the stock workflow, unmodified, via run or relay — working from
+               the brief in the job folder
 POST   Forge   acceptance registry, evidence contract, in-engine verification,
-               then present the outcome in Forge vocabulary
+               the job's result file, then present the outcome in Forge vocabulary
 ```
 
 PRE and POST are Forge's. CORE is untouched upstream. If a game concern cannot be expressed in PRE or POST — because it must be *held across* GSD's steps, like the Unreal write-lock — acquire it in PRE and release it in POST, and say so in the skill.
