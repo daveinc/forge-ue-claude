@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: review
-consumes: .forge/acceptance/registry.json, .forge/capabilities/qualifications.json, the active phase plan
+consumes: .forge/acceptance/registry.json, .forge/capabilities/qualifications.json, .forge/visual/registry.json, .gitattributes, the active phase plan
 produces: .forge/reviews/registry.json
 -->
 
@@ -17,7 +17,23 @@ finding.
 
 <process>
 
-<step name="resolve_scope" priority="first">
+<step name="declare_no_lane" priority="first">
+A reviewer's isolation mode is read-only, so this workflow takes no lane and must say so:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec supervise --project <project-root> --holder forge-review --apply
+```
+
+Naming no `--lane` records `holds_no_lane` against this run. Read `quarantined` and
+`interrupted_release` in the answer before grading: a change made in a lane a worker died in may be
+half-written, and a review that does not know that grades an incomplete diff as a complete one.
+
+**Never take a lane from this workflow.** A reviewer holding a write lease is not a reviewer.
+
+> **Why:** CHANGELOG.md 0.7.0 § *Lane supervision is reachable from any workflow, not only from the one that dispatches*
+</step>
+
+<step name="resolve_scope">
 Default to the active phase from Forge Next; an explicit phase argument overrides it.
 
 Load `.forge/acceptance/registry.json` and grade against the registered suites.
@@ -54,11 +70,14 @@ explicit verdict. Merge multiple modes into one verdict.
 Grade findings against the acceptance registry. A finding that breaks a registered suite is blocking,
 whatever the reviewer scored it.
 
-Apply Forge's own checks on the returned result:
+Apply Forge's own checks on the returned result, each against a named file:
 
-- Flag a change touching Unreal content that declared no project-exclusive lane.
-- Flag a change to a registered asset interface, which invalidates parallel visual work.
-- Accept placeholder art; reject an undeclared interface change.
+| Check | Read from | Verdict |
+|---|---|---|
+| A change touching a `lockable` or `binary` path | `.gitattributes` against the diff's paths | Flag when the plan declared no project-exclusive lane |
+| A change to a registered asset interface | `asset_interfaces` in `.forge/visual/registry.json` | Blocking. It invalidates every parallel visual task planned against the old one |
+| Placeholder art where the plan permitted it | The phase's placeholder budget | Accept. Placeholder is not a defect |
+| A step the doctrine requires and the work skipped | `forge.py procedure --task-class <task-class>` — its `steps[].produces` | Blocking. The skipped step is usually the one whose absence fails no build |
 
 Reject any offload route whose qualification was recorded under a different host, and re-run the
 review on the resident host.
