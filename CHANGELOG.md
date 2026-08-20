@@ -2,6 +2,55 @@
 
 Every section below is dated from the tag that released it. One tag is not a release: `v0.1.0` pins the exact tree an external architecture review read, so that its assessment can be reproduced. The work it marks shipped in 0.2.0, and there is no 0.1.0 section for it — the `0.1.0` heading at the bottom is the original release of 2026-08-14.
 
+## 0.8.0 - 2026-08-20
+
+### Forge owns build doctrine, and now has somewhere to put it
+
+- `.planning stays GSD's to write` was true about an artifact store and was read as *Forge does no planning at all*. So there was nowhere for the knowledge of what a game needs built, in what order, with which tools, and what proves a step done. A workflow with nothing of its own can only wrap a GSD call, and most of them did: `forge-onboard`'s entire body was the line *"Run GSD's onboarding."*
+- The rule is now **Forge owns build doctrine, GSD owns planning artifacts**. GSD decides when a phase runs and records what happened; Forge decides what a phase of this kind consists of.
+
+### A task class carries its procedure, and a packet is refused without one
+
+- `doctrine/procedures.json` maps a task class to ordered steps, capabilities, non-goals, acceptance, verification and evidence. Eight ship. `dispatch` refuses a packet that leaves its own procedure's lane uncovered.
+- Lanes are derived from each step's capability rather than declared per class, so `ik-retarget` resolves to two packets because five steps take the editor-closed route and two take the live one, and nothing had to say so.
+- Of the fifteen shapes `unreal_routing` names, four became procedures and seven were **rejected as not task classes at all** — `unsafe-inside-editor-tick` and `null-rhi-safe-work` are reasons to route closed, `viewport-evidence` is a kind of evidence. A procedure that exists will be followed, so writing one for a shape nobody requests is worse than the gap.
+
+### An agent is told which calls exist, on the lane it is actually on
+
+- The MCP catalogue serves the open editor; Unreal's Python API serves the closed one, and Forge had a catalogue for the first and nothing for the second. `dependencies/api-index/` indexes UE 5.8 — a detail tier for the symbols procedures reach, and the full 11,794 names purely so *this engine has no such symbol* stays distinguishable from *nobody indexed it yet*.
+- A packet now carries the call names its capabilities reach. An editor-closed row carries Python calls and no tools; a live row carries tools and no Python calls. `validate_repo.py` fails a procedure naming a call this engine does not have.
+- What the index settled: `EditorLevelLibrary` is 32 of 37 methods deprecated and `IKRetargeter` 13 of 15, so procedures naming them were naming dead API. `LevelEditorSubsystem.new_level` closes the current level without saving it, and forces the world-partition decision that `world-blockout` had listed as out of scope.
+
+### Every job leaves a folder holding what it was handed and what came back
+
+- `.forge/jobs/<work-order>/` holds `brief.md`, `packet.json`, `context/` and `result.json`. The brief is rendered from the registries at the moment the job is written, which is the only moment route availability is true.
+- Written before acquisition, deliberately: a folder that fails to appear after the leases are taken leaves a worker holding the project super-lock with nothing to read. `result.json` is the existing `forge.attempt-result/v1` — the folder gives the artifact a location, never a second format.
+- There is no verb segment in the path. `exec release` holds a work order and no packet, so a verb-composed path would give one order two folders.
+
+### A dead worker no longer hands over a lane it was still holding
+
+- `expire_stale_leases` freed the ledger entry without asking what the owner still held. A killed worker's lane was handed to the next taker with its git worktree on disk, its branch alive, and `quarantined` reporting nothing. Recovery now keeps the lane when an external lock survived and names an abandoned workspace rather than deleting the only copy of that work.
+- The stale sweep was also written after the conflict check, so recovery was discarded on exactly the runs that most needed it recorded.
+- `exec supervise` puts one entry point in front of the four lease verbs, and a workflow that holds no lane records `holds_no_lane` instead of being silent. Thirty-one of thirty-one workflows now reach the lane lifecycle; the measured baseline was one.
+
+### Every work-order ledger write keys on the canonical id
+
+- Route decisions resolved aliases and the ledger did not, so an aliased packet wrote its entry under the alias while its decision lived under the canonical id. All three writers now agree. The same class of bug was fixed once in 0.5.0, in one place.
+
+### A packet is refused when the engine cannot serve the route it needs
+
+- `requires_engine` was declared on three routes and read by nothing for two releases. It now refuses before a lease is taken, naming the version or plugin the project lacks. A project with no `.uproject` reports no gaps and a source-build GUID skips the version compare, because a guard that refuses on what it cannot see gets disabled.
+
+### The workflows say which file answers the question
+
+- All thirty-one name the exact command or state file each step reads. `forge-onboard` reads what a `Content/` tree implies and reaches a resumable state; `forge-next` refuses to offer an action that state says would collide; `forge-resume-work` reopens the job folder the interrupted worker was reading.
+- `survey` reports what a content tree implies — five task classes a directory walk settles with their evidence, three it cannot settle without opening an asset. It never opens one, and says so.
+
+### The production spine is mapped, and the gaps are counted rather than filled
+
+- `doctrine/spine.json` maps the eight-step production spine and four genre skeletons onto the catalogue. **Three steps are partial, five are uncovered, and none is fully covered.** Every one of the eight task classes moves, measures or checks assets that already exist; not one authors a verb.
+- Seven gaps are named, six of them blocked on doctrine rather than on any missing route. An uncovered step raises a research request through `forge.py spine` rather than passing silently, so the catalogue grows by answering rather than by assertion. No procedure was invented to make the map look complete.
+
 ## 0.7.0 - 2026-08-18
 
 ### A lane a worker died in is not a lane Forge reports as free
