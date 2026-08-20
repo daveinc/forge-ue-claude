@@ -4658,10 +4658,16 @@ class ProcedureDoctrineTests(unittest.TestCase):
 
     def test_the_planner_hands_the_procedure_steps_to_gsd(self):
         text = (ROOT / "plugins" / "forge-ue-studio" / "workflows" / "forge-plan-phase.md").read_text(encoding="utf-8")
-        pre = text.split("## PRE — Forge")[1].split("## CORE — GSD")[0]
-        self.assertIn("forge.py procedure --task-class", pre)
-        self.assertIn("`steps`", pre)
-        self.assertIn("`non_goals`", pre)
+        named = re.findall(r'<step name="([a-z_]+)"[^>]*>(.*?)</step>', text, re.DOTALL)
+        bodies, order = dict(named), [name for name, _ in named]
+        reads, hands = "read_the_procedure_for_each", "run_gsd_planner"
+        for name in (reads, hands):
+            self.assertIn(name, bodies, f"forge-plan-phase declares no <step name=\"{name}\">")
+        self.assertIn("forge.py procedure --task-class", bodies[reads])
+        for field in ("`steps`", "`non_goals`"):
+            self.assertIn(field, bodies[reads])
+            self.assertIn(field, bodies[hands], f"the step that runs GSD does not name {field} as what it hands over")
+        self.assertLess(order.index(reads), order.index(hands))
 
 
 class ProjectSurveyTests(unittest.TestCase):

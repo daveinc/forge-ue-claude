@@ -19,8 +19,6 @@ gap in the catalogue, never a licence to invent steps inline.
 
 <process>
 
-## PRE — Forge
-
 <step name="declare_no_lane" priority="first">
 Planning writes planning state and no game asset. But it must know which lanes are currently
 unavailable, because a plan scheduled onto a quarantined lane is a plan that cannot run:
@@ -102,17 +100,13 @@ A genuinely new packet carries `derived_from` naming its parent. An alternative 
 one is an `aliases` entry, not a second packet.
 </step>
 
-## CORE — GSD
-
 <step name="run_gsd_planner">
-Run GSD's planner with the procedure's `steps` and `non_goals` as the request. GSD owns PLAN.md, the
-task breakdown, the dependency analysis and the wave order.
+**CORE — GSD's workflow, unmodified.** Run GSD's planner with the procedure's `steps` and `non_goals`
+as the request. GSD owns PLAN.md, the task breakdown, the dependency analysis and the wave order.
 
 Require every returned plan to carry `required_lanes`, `mutation_risk`, and every asset interface it
 produces or consumes.
 </step>
-
-## POST — Forge
 
 <step name="reject_a_plan_that_names_no_lane">
 Grade each returned plan before it is allowed to reach execution:
