@@ -48,6 +48,7 @@ from forge_core import (
     template_files,
     template_root,
     toml_escape,
+    uproject_modules,
     utc_now,
     validate_payload,
 )
@@ -136,7 +137,15 @@ from forge_gsd import (
     translate_gsd_verb,
     verb_registry,
 )
-from forge_survey import ollama_models, survey
+from forge_survey import (
+    CONTENT_NOT_OPENED,
+    CONTENT_REQUIRES_ASSET_INSPECTION,
+    CONTENT_SCAN_LIMIT,
+    IMPORT_SOURCE_SUFFIXES,
+    content_survey,
+    ollama_models,
+    survey,
+)
 from forge_lifecycle import (
     BOOTSTRAP_CLOSABLE_VERDICTS,
     BOOTSTRAP_REPORT_FIELDS,

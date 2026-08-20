@@ -17,10 +17,12 @@ from forge_core import (
     proposal_path,
     proposal_payload_path,
     template_files,
+    uproject_modules,
     utc_now,
 )
 from forge_gsd import sync_gsd_runtime
 from forge_hosts import active_profile, apply_host_surfaces, host_command, rendered_surfaces, write_runtime
+from forge_mcp import project_engine_version
 from forge_survey import survey
 
 
@@ -235,6 +237,8 @@ def verify_overlay(project_value: str, host_override: str | None = None) -> dict
         "project": str(root.resolve()),
         "uproject": str(uproject) if uproject else None,
         "project_stage": "unreal-project" if uproject else "pre-project",
+        "engine_association": project_engine_version(uproject),
+        "modules": uproject_modules(uproject),
         "host": profile["id"],
         "checks": checks,
         "state_version": state,

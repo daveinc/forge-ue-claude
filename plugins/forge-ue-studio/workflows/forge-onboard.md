@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: onboard
-consumes: <Name>.uproject, Content/, Source/, Config/, .forge/state/install-state.json, .forge/state/packet-registry.json, .forge/visual/registry.json, doctrine/procedures.json
+consumes: forge.py survey (.uproject, Content/, Config/, Source/*.Target.cs), Source/*/*.Build.cs, .forge/state/install-state.json, .forge/state/packet-registry.json, .forge/visual/registry.json, doctrine/procedures.json
 produces: the task classes this project already implies, .forge/state/packet-registry.json entries, .forge/visual/registry.json asset interfaces
 never-reads: .forge/state/lifecycle.json (deprecated history)
 -->
@@ -87,38 +87,56 @@ never re-probe it by hand here.
 </step>
 
 <step name="read_project_state">
-Read the project itself. Each line is a file, not an impression.
+Read the project itself. One command reads most of it, and it counts rather than impressions:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py survey --project <project-root>
+```
+
+| In `forge.environment-snapshot/v1` | What it settles |
+|---|---|
+| `unreal.engine_association` | The engine version every route's `requires_engine` is checked against. A source-build GUID is an unknown, not a shortfall — say so and carry on |
+| `unreal.plugins`, and the `python_script_plugin`, `editor_scripting_utilities`, `control_rig`, `native_mcp_declared` and `vibeue_declared` flags beside it | The enabled set. The first two decide whether the editor-closed lane exists at all; the rest decide which live routes do |
+| `unreal.modules` | The C++ module boundaries, each with its `type` and `loading_phase`, read from the descriptor rather than from a `Source/` walk |
+| `content.top_level_names`, `content.top_level`, `content.totals` | The shape of what this project already contains: the project's own folder vocabulary and the `.uasset`/`.umap` distribution across it. Record the folder names as read rather than renaming them into Forge's |
+| `content.import_sources` | Import sources sitting beside their assets, counted by extension |
+| `content.signals` | Default map, default game mode, `Source/*.Target.cs` build targets, and whether `Binaries`, `Saved`, `Intermediate` or `DerivedDataCache` show the project has been built |
+| `content.implies`, `content.undetermined` | The task classes the tree settles, and the ones it cannot — carried into `resolve_task_classes` |
+| `content.not_opened` | What this report deliberately did not read. Quote it when reporting; a count is not a claim about an asset |
+| `content.truncated`, `content.scanned_files` | Whether the walk hit its file limit. `true` makes every count below it a floor, not a total |
+
+Two reads the survey does not do, and they stay yours:
 
 | Read | For |
 |---|---|
-| `<Name>.uproject` → `EngineAssociation` | The engine version every route's `requires_engine` is checked against. A source-build GUID is an unknown, not a shortfall — say so and carry on |
-| `<Name>.uproject` → `Plugins[]` where `Enabled` is not `false` | The enabled set. `PythonScriptPlugin` and `EditorScriptingUtilities` decide whether the editor-closed lane exists at all; `ControlRig`, and any native MCP or VibeUE plugin, decide which live routes do |
-| `<Name>.uproject` → `Modules[]` | The C++ module boundaries, with each module's `Type` and `LoadingPhase` |
-| `Source/*/*.Build.cs` | What each module actually depends on. A module in the descriptor with no `Build.cs` is a stale descriptor, and is a finding |
-| `Source/*.Target.cs` | Which targets build — editor, game, server — and therefore what a cook would have to cover |
-| `Content/` top-level folders, and the distribution of `.uasset` and `.umap` within them | The asset classes this project already has. Folder names are the project's own vocabulary; record them as read rather than renaming them into Forge's |
-| `Config/DefaultEngine.ini`, `Config/DefaultGame.ini` | Default map, default game mode, and the platform and rendering settings a later cook inherits |
+| `Source/*/*.Build.cs` | What each module actually depends on. A module in `unreal.modules` with no `Build.cs` is a stale descriptor, and is a finding |
+| `Config/DefaultEngine.ini`, `Config/DefaultGame.ini` beyond the default map and game mode | The platform and rendering settings a later cook inherits |
 
-Report an absent `Content/` or `Source/` as an absence. A Blueprint-only project has no `Source/` and
-is not defective; a project with neither is not an Unreal project and `verify` already said so.
+`content.present` reading `false` is an absence to report, not a failure. A Blueprint-only project has
+no `Source/` and no modules and is not defective; a project with neither `Content/` nor a `.uproject`
+is not an Unreal project and `verify` already said so.
 </step>
 
 <step name="resolve_task_classes">
-This is the step that makes onboarding Forge's rather than a directory listing. Map what
-`read_project_state` found onto the **closed** catalogue in
-[procedures.json](../doctrine/procedures.json). Never invent a class to cover an observation; an
-observation no class covers is a gap to report.
+This is the step that makes onboarding Forge's rather than a directory listing, and `survey` has
+already done the mapping against the **closed** catalogue in
+[procedures.json](../doctrine/procedures.json). Take `content.implies` and `content.undetermined` as
+they came; never invent a class to cover an observation, and report an observation no class covers as
+a gap.
 
-| What the project shows | Task class it implies |
-|---|---|
-| Any `Content/` at all — this one always applies, because finding out what a project already contains is its entire job | `asset-audit` |
-| Import sources beside their assets: FBX, OBJ, textures, or an unimported source folder | `batch-import` |
-| Skeletal meshes with AnimSequences, or existing IK Rig / IK Retargeter assets | `ik-retarget` |
-| Static meshes carrying one LOD, or Nanite disabled on dense meshes | `lod-generation` |
-| A property that must hold across a whole asset class — collision, LOD settings, texture group, material slot | `bulk-property-edit` |
-| `.umap` levels, and level geometry that is still authored rather than final | `world-blockout` |
-| A default map and a game mode that a session can actually enter | `pie-verification` |
-| Build targets, `Config/` platform settings, or a `Saved/`/`DerivedDataCache` that shows the project has been built | `cook-and-build-preparation` |
+| From the survey | What it is | What onboarding does with it |
+|---|---|---|
+| `content.implies[]` | A task class the tree settles on its own, each with the `evidence` that settled it | Claim it, and carry its `evidence` verbatim into the report |
+| `content.undetermined[]` | A task class the tree cannot settle, each with the `needs` that would and `settled_by` naming what resolves it | Record it as undetermined. It is not absent, and it is not claimed |
+
+The five it can settle are `asset-audit` — which always applies, because finding out what a project
+already contains is onboarding's entire job — `batch-import` from import sources beside their assets,
+`world-blockout` from `.umap` levels, `pie-verification` from a default map and game mode a session
+can enter, and `cook-and-build-preparation` from build targets or evidence the project has been
+built. The three it cannot are `ik-retarget`, `lod-generation` and `bulk-property-edit`: each needs an
+asset opened, the survey opens none, and `settled_by` names `asset-audit` as the class that resolves
+them. **That is why `asset-audit` is first work and not a formality** — running it is what turns three
+undetermined classes into answers.
 
 Read each class you claimed before claiming it:
 
@@ -131,7 +149,7 @@ python <forge-plugin-root>/scripts/forge.py procedure --task-class <task-class>
 | `procedure` is `null` | The class name is wrong. `resolution.nearest` gives the declared ones — fix the spelling rather than recording an unprocedured class |
 | `steps` | What a phase of this kind consists of. This is what CORE hands GSD |
 | `lanes`, `packets`, `packet_split` | Whether the work splits across the two mutually exclusive Unreal lanes. Record the split now; it is the reason a later phase is two packets and not one |
-| `capabilities` | Check each against `route-status` from `read_machine_state`. An implied class with no bound route is recorded as implied-and-unreachable, never dropped |
+| `capabilities` | Check each against `route-status` from `read_machine_state`, and against `unreal.engine_association` from `read_project_state` — a route's `requires_engine` is checked against that version. An implied class with no bound route is recorded as implied-and-unreachable, never dropped |
 
 > **Why:** [build doctrine](../../../docs/explanation/build-doctrine.md) § *The procedure layer* — § *Recommended, not done here*
 </step>

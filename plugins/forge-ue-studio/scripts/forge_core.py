@@ -220,6 +220,27 @@ def plugin_names(uproject: Path | None) -> list[str]:
     return sorted(set(names), key=str.casefold)
 
 
+def uproject_modules(uproject: Path | None) -> list[dict[str, Any]]:
+    """The C++ module boundaries a `.uproject` declares, with each module's type and loading phase.
+
+    `Modules[]` sat in every descriptor Forge already opened and nothing reported
+    it, so a workflow that wanted the module list walked `Source/` and guessed.
+    An absent descriptor and a Blueprint-only project both answer with an empty
+    list; neither is a defect and nothing is claimed about either.
+    """
+    if not uproject:
+        return []
+    return [
+        {
+            "name": str(item.get("Name", "")),
+            "type": str(item.get("Type", "")) or None,
+            "loading_phase": str(item.get("LoadingPhase", "")) or None,
+        }
+        for item in load_json(uproject).get("Modules", [])
+        if isinstance(item, dict) and item.get("Name")
+    ]
+
+
 def capability(name: str, provider: str, status: str, lane: str, reason: str) -> dict[str, Any]:
     if status not in STATUSES:
         raise fail(f"Invalid status: {status}", reason=ERROR_REASON["CONTRACT_INVALID"])

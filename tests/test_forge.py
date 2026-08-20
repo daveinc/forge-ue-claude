@@ -4664,5 +4664,177 @@ class ProcedureDoctrineTests(unittest.TestCase):
         self.assertIn("`non_goals`", pre)
 
 
+class ProjectSurveyTests(unittest.TestCase):
+
+    ONBOARD = ROOT / "plugins" / "forge-ue-studio" / "workflows" / "forge-onboard.md"
+
+    @contextmanager
+    def game(self, content=True, source=True, config=True, built=True):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            (root / "MyGame.uproject").write_text(
+                json.dumps({
+                    "FileVersion": 3,
+                    "EngineAssociation": "5.4",
+                    "Modules": [
+                        {"Name": "MyGame", "Type": "Runtime", "LoadingPhase": "Default"},
+                        {"Name": "MyGameEditor", "Type": "Editor", "LoadingPhase": "PostEngineInit"},
+                    ],
+                    "Plugins": [{"Name": "PythonScriptPlugin", "Enabled": True}],
+                }),
+                encoding="utf-8",
+            )
+            if content:
+                for relative, names in (
+                    ("Characters/Hero", ("SK_Hero.uasset", "ABP_Hero.uasset")),
+                    ("Maps", ("L_Arena.umap",)),
+                    ("Import", ("hero.fbx", "hero_D.tga", "notes.txt")),
+                ):
+                    directory = root / "Content" / relative
+                    directory.mkdir(parents=True)
+                    for name in names:
+                        (directory / name).write_text("x", encoding="utf-8")
+            if config:
+                (root / "Config").mkdir()
+                (root / "Config" / "DefaultEngine.ini").write_text(
+                    "[/Script/EngineSettings.GameMapsSettings]\n"
+                    "GameDefaultMap=/Game/Maps/L_Arena.L_Arena\n"
+                    "GlobalDefaultGameMode=/Game/BP_GameMode.BP_GameMode_C\n",
+                    encoding="utf-8",
+                )
+            if source:
+                (root / "Source").mkdir()
+                (root / "Source" / "MyGame.Target.cs").write_text("target", encoding="utf-8")
+            if built:
+                (root / "Saved").mkdir()
+            yield root
+
+    def classes(self, report, key):
+        return sorted(item["task_class"] for item in report[key])
+
+    def test_the_descriptor_yields_the_engine_association_and_every_module(self):
+        with self.game() as root:
+            modules = forge.uproject_modules(root / "MyGame.uproject")
+            self.assertEqual([item["name"] for item in modules], ["MyGame", "MyGameEditor"])
+            self.assertEqual([item["type"] for item in modules], ["Runtime", "Editor"])
+            self.assertEqual([item["loading_phase"] for item in modules], ["Default", "PostEngineInit"])
+
+    def test_a_project_with_no_descriptor_reports_no_modules_rather_than_failing(self):
+        self.assertEqual(forge.uproject_modules(None), [])
+
+    def test_verify_surfaces_the_engine_version_without_dispatching(self):
+        with self.game() as root:
+            report = forge.verify_overlay(str(root))
+            self.assertEqual(report["engine_association"], "5.4")
+            self.assertEqual([item["name"] for item in report["modules"]], ["MyGame", "MyGameEditor"])
+
+    def test_survey_surfaces_the_engine_version_and_modules_beside_the_plugins(self):
+        with self.game() as root:
+            unreal = forge.survey(str(root))["unreal"]
+            self.assertEqual(unreal["engine_association"], "5.4")
+            self.assertEqual([item["name"] for item in unreal["modules"]], ["MyGame", "MyGameEditor"])
+            self.assertEqual(unreal["plugins"], ["PythonScriptPlugin"])
+
+    def test_the_content_survey_counts_the_tree_by_top_level_folder(self):
+        with self.game() as root:
+            report = forge.content_survey(root)
+            self.assertEqual(report["top_level_names"], ["Characters", "Import", "Maps"])
+            self.assertEqual(report["totals"]["uasset"], 2)
+            self.assertEqual(report["totals"]["umap"], 1)
+            self.assertEqual(report["import_sources"], {".fbx": 1, ".tga": 1})
+            self.assertEqual(
+                {entry["name"]: entry["uasset"] for entry in report["top_level"] if entry["name"] != "."},
+                {"Characters": 2, "Import": 0, "Maps": 0},
+            )
+
+    def test_the_content_survey_implies_the_task_classes_the_tree_settles(self):
+        with self.game() as root:
+            report = forge.content_survey(root)
+            self.assertEqual(
+                self.classes(report, "implies"),
+                ["asset-audit", "batch-import", "cook-and-build-preparation", "pie-verification", "world-blockout"],
+            )
+            self.assertEqual([item for item in report["implies"] if not item["evidence"]], [])
+
+    def test_the_content_survey_leaves_the_classes_it_cannot_open_undetermined(self):
+        with self.game() as root:
+            report = forge.content_survey(root)
+            self.assertEqual(
+                self.classes(report, "undetermined"),
+                ["bulk-property-edit", "ik-retarget", "lod-generation"],
+            )
+            self.assertEqual({item["settled_by"] for item in report["undetermined"]}, {"asset-audit"})
+            self.assertEqual([item for item in report["undetermined"] if not item["needs"]], [])
+
+    def test_every_task_class_the_content_survey_names_is_in_the_closed_catalogue(self):
+        declared = set(forge.procedures())
+        with self.game() as root:
+            report = forge.content_survey(root)
+            named = set(self.classes(report, "implies")) | set(self.classes(report, "undetermined"))
+            self.assertEqual(len(named), 8, f"the survey named {sorted(named)}, not the whole catalogue")
+            self.assertEqual(sorted(named - declared), [])
+
+    def test_an_import_free_tree_does_not_imply_a_batch_import(self):
+        with self.game() as root:
+            for path in (root / "Content" / "Import").iterdir():
+                path.unlink()
+            self.assertNotIn("batch-import", self.classes(forge.content_survey(root), "implies"))
+
+    def test_a_project_without_a_default_map_does_not_imply_pie_verification(self):
+        with self.game(config=False) as root:
+            self.assertNotIn("pie-verification", self.classes(forge.content_survey(root), "implies"))
+
+    def test_an_unbuilt_blueprint_project_does_not_imply_cook_preparation(self):
+        with self.game(source=False, built=False) as root:
+            self.assertNotIn(
+                "cook-and-build-preparation", self.classes(forge.content_survey(root), "implies")
+            )
+
+    def test_an_absent_content_tree_is_reported_as_absent_and_implies_nothing_from_it(self):
+        with self.game(content=False, config=False, source=False, built=False) as root:
+            report = forge.content_survey(root)
+            self.assertEqual(report["present"], False)
+            self.assertEqual(report["root"], None)
+            self.assertEqual(report["implies"], [])
+            self.assertEqual(report["undetermined"], [])
+
+    def test_the_walk_stops_at_its_file_limit_and_says_the_counts_are_a_floor(self):
+        with self.game() as root:
+            globals_of = forge.content_survey.__globals__
+            original = globals_of["CONTENT_SCAN_LIMIT"]
+            globals_of["CONTENT_SCAN_LIMIT"] = 2
+            try:
+                report = forge.content_survey(root)
+            finally:
+                globals_of["CONTENT_SCAN_LIMIT"] = original
+            self.assertEqual(report["truncated"], True)
+            self.assertEqual(report["scanned_files"], 2)
+            self.assertLess(report["totals"]["uasset"] + report["totals"]["umap"], 3)
+            self.assertEqual(forge.content_survey(root)["truncated"], False)
+
+    def test_the_report_states_which_files_it_never_opened(self):
+        with self.game() as root:
+            stated = " ".join(forge.content_survey(root)["not_opened"])
+            for never_read in (".uasset", "LOD", "Nanite", "skeleton", "Plugins/*/Content"):
+                self.assertIn(never_read, stated)
+
+    def test_the_snapshot_carries_the_content_report_under_its_own_key(self):
+        with self.game() as root:
+            self.assertEqual(forge.survey(str(root))["content"]["present"], True)
+
+    def test_onboarding_reads_the_survey_rather_than_walking_the_tree_itself(self):
+        step = self.ONBOARD.read_text(encoding="utf-8").split('<step name="read_project_state">')[1].split("</step>")[0]
+        self.assertIn("forge.py survey --project", step)
+        for field in ("content.implies", "content.undetermined", "content.not_opened", "unreal.engine_association", "unreal.modules"):
+            self.assertIn(field, step)
+
+    def test_onboarding_resolves_task_classes_from_the_surveys_own_answer(self):
+        step = self.ONBOARD.read_text(encoding="utf-8").split('<step name="resolve_task_classes">')[1].split("</step>")[0]
+        self.assertIn("content.implies", step)
+        self.assertIn("content.undetermined", step)
+        self.assertIn("settled_by", step)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import platform
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -15,9 +17,11 @@ from forge_core import (
     expand_host_path,
     find_uproject,
     plugin_names,
+    uproject_modules,
     utc_now,
 )
 from forge_hosts import active_profile, host_prerequisites, host_profiles
+from forge_mcp import project_engine_version
 
 
 def ollama_models(path: str | None) -> list[dict[str, Any]]:
@@ -32,6 +36,165 @@ def ollama_models(path: str | None) -> list[dict[str, Any]]:
         if columns:
             models.append({"id": columns[0], "qualification": "UNQUALIFIED", "source": "ollama list"})
     return models
+
+
+CONTENT_SCAN_LIMIT = 200000
+
+
+IMPORT_SOURCE_SUFFIXES = frozenset(
+    {
+        ".fbx", ".obj", ".abc", ".dae", ".blend", ".gltf", ".glb", ".usd", ".usda", ".usdz",
+        ".psd", ".tga", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".exr", ".hdr",
+        ".wav", ".aif", ".aiff", ".mp3", ".ogg",
+    }
+)
+
+
+CONTENT_NOT_OPENED = (
+    "No .uasset or .umap is opened. Nothing is claimed about what an asset contains: its class, its LOD "
+    "count, its Nanite setting, its material slots, its skeleton, or what it references.",
+    "Only this project's own Content/ is walked. Import sources kept beside it, in a RawAssets or Art "
+    "folder, are not counted, and neither is plugin content under Plugins/*/Content.",
+    "Files are counted, not resolved. An asset present only in source control, a cooked copy, and an "
+    "authored asset are the same file to this report.",
+    f"The walk stops after {CONTENT_SCAN_LIMIT} files and says so under 'truncated'; every count below it "
+    "is then a floor rather than a total.",
+)
+
+
+CONTENT_REQUIRES_ASSET_INSPECTION = (
+    {
+        "task_class": "ik-retarget",
+        "needs": "whether a skeletal mesh has AnimSequences against it, or an IK Rig or IK Retargeter asset exists",
+    },
+    {
+        "task_class": "lod-generation",
+        "needs": "how many LODs a static mesh carries, and whether Nanite is enabled on the dense ones",
+    },
+    {
+        "task_class": "bulk-property-edit",
+        "needs": "the property values an asset class actually holds, which is what makes an edit bulk",
+    },
+)
+
+
+def _ini_setting(paths: list[Path], key: str) -> str | None:
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=\s*(\S.*)$", re.MULTILINE)
+    for path in paths:
+        if not path.is_file():
+            continue
+        match = pattern.search(path.read_text(encoding="utf-8-sig", errors="replace"))
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def content_survey(root: Path) -> dict[str, Any]:
+    """What this project's Content tree implies, counted rather than opened.
+
+    Onboarding an existing game means recognising which task classes it already
+    needs, and that recognition was a directory walk a workflow described in
+    prose. It is counted here instead: top-level folders, the .uasset and .umap
+    distribution across them, and the import sources sitting beside them.
+
+    A real game's Content/ holds tens of thousands of files, so the walk reads
+    directory entries and never a file body. That ceiling is the report's
+    honesty as much as its speed: three of the eight task classes cannot be
+    decided without opening an asset, so they come back undetermined with what
+    would settle them rather than guessed at from a filename. Raising the
+    ceiling means running asset-audit in the editor, not walking harder here.
+    """
+    content = root / "Content"
+    folders: dict[str, dict[str, Any]] = {}
+    totals = {"uasset": 0, "umap": 0, "other": 0, "directories": 0}
+    import_sources: dict[str, int] = {}
+    scanned = 0
+    truncated = False
+    if content.is_dir():
+        for current, directories, files in os.walk(content):
+            parts = Path(current).relative_to(content).parts
+            top = parts[0] if parts else "."
+            bucket = folders.setdefault(top, {"name": top, "uasset": 0, "umap": 0, "other": 0, "directories": 0})
+            bucket["directories"] += len(directories)
+            totals["directories"] += len(directories)
+            for name in files:
+                if scanned >= CONTENT_SCAN_LIMIT:
+                    truncated = True
+                    break
+                scanned += 1
+                suffix = Path(name).suffix.casefold()
+                kind = "uasset" if suffix == ".uasset" else "umap" if suffix == ".umap" else "other"
+                bucket[kind] += 1
+                totals[kind] += 1
+                if suffix in IMPORT_SOURCE_SUFFIXES:
+                    import_sources[suffix] = import_sources.get(suffix, 0) + 1
+            if truncated:
+                break
+
+    config = [root / "Config" / "DefaultEngine.ini", root / "Config" / "DefaultGame.ini"]
+    targets = sorted(path.name for path in root.glob("Source/*.Target.cs"))
+    build_evidence = sorted(
+        name for name in ("Binaries", "DerivedDataCache", "Intermediate", "Saved")
+        if (root / name).is_dir()
+    )
+    signals = {
+        "default_map": _ini_setting(config, "GameDefaultMap"),
+        "default_game_mode": _ini_setting(config, "GlobalDefaultGameMode"),
+        "config_files": [str(path) for path in config if path.is_file()],
+        "targets": targets,
+        "build_evidence": build_evidence,
+    }
+
+    named_folders = sorted(name for name in folders if name != ".")
+    implies: list[dict[str, str]] = []
+    if content.is_dir():
+        implies.append(
+            {
+                "task_class": "asset-audit",
+                "evidence": f"Content/ holds {totals['uasset']} .uasset and {totals['umap']} .umap across "
+                            f"{len(named_folders)} top-level folder(s), and what any of them contains is unread",
+            }
+        )
+        if import_sources:
+            named = ", ".join(f"{count} {suffix}" for suffix, count in sorted(import_sources.items()))
+            implies.append(
+                {"task_class": "batch-import", "evidence": f"import sources sit beside the assets: {named}"}
+            )
+        if totals["umap"]:
+            implies.append(
+                {"task_class": "world-blockout", "evidence": f"{totals['umap']} .umap level(s) under Content/"}
+            )
+    if signals["default_map"] and signals["default_game_mode"]:
+        implies.append(
+            {
+                "task_class": "pie-verification",
+                "evidence": f"Config names a default map ({signals['default_map']}) and a default game mode "
+                            f"({signals['default_game_mode']}), so a session has somewhere to enter",
+            }
+        )
+    if targets or build_evidence:
+        reasons = [f"build target(s): {', '.join(targets)}"] if targets else []
+        if build_evidence:
+            reasons.append(f"{', '.join(build_evidence)} present, so this project has been built")
+        implies.append({"task_class": "cook-and-build-preparation", "evidence": "; ".join(reasons)})
+
+    return {
+        "root": str(content) if content.is_dir() else None,
+        "present": content.is_dir(),
+        "scanned_files": scanned,
+        "truncated": truncated,
+        "scan_limit": CONTENT_SCAN_LIMIT,
+        "totals": totals,
+        "top_level": [folders[name] for name in sorted(folders)],
+        "top_level_names": named_folders,
+        "import_sources": dict(sorted(import_sources.items())),
+        "signals": signals,
+        "implies": implies,
+        "undetermined": [
+            {**item, "settled_by": "asset-audit"} for item in CONTENT_REQUIRES_ASSET_INSPECTION
+        ] if content.is_dir() else [],
+        "not_opened": list(CONTENT_NOT_OPENED),
+    }
 
 
 def survey(project_value: str, host_override: str | None = None) -> dict[str, Any]:
@@ -207,6 +370,7 @@ def survey(project_value: str, host_override: str | None = None) -> dict[str, An
         "Host detection reports which runtimes could hold the resident seat; it does not qualify any of them for a task class.",
         "A local runtime, model executable, endpoint, or credential does not prove model identity, task quality, complexity ceiling, context savings, cost, or tool access.",
         "Blender and Unreal visual routes remain unranked until representative asset-class benchmarks pass.",
+        "The Content survey counts files and opens none, so a task class it leaves undetermined is undetermined rather than absent.",
     ]
 
     return {
@@ -215,7 +379,10 @@ def survey(project_value: str, host_override: str | None = None) -> dict[str, An
         "host": {"os": platform.platform(), "machine": platform.machine(), "python": platform.python_version()},
         "project": {"requested": str(requested), "root": str(project), "uproject": str(uproject) if uproject else None},
         "tools": tools,
+        "content": content_survey(project),
         "unreal": {
+            "engine_association": project_engine_version(uproject),
+            "modules": uproject_modules(uproject),
             "plugins": plugins,
             "native_mcp_declared": native_mcp,
             "vibeue_declared": vibeue,
