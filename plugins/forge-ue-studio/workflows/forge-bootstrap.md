@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: bootstrap
-consumes: .forge/config.json, .forge/directives.md, .forge/state/install-state.json, .forge/state/install-jobs.json, .forge/state/packet-registry.json
+consumes: .forge/config.json, .forge/directives.md, .forge/state/install-state.json, .forge/state/install-jobs.json, .forge/state/packet-registry.json, forge.py survey (runtime, modules, engine_association, content)
 produces: .forge/capabilities/detected.json, .forge/state/install-jobs.json, .forge/state/bootstrap-report.json
 never-reads: .forge/state/lifecycle.json (deprecated history)
 -->
@@ -33,6 +33,28 @@ scripts/forge.py install --project <root> --apply
 Never continue in the current task.
 </step>
 
+<step name="declare_no_lane">
+**Skip if:** the overlay was just installed — this run has already stopped.
+
+Bootstrap investigates read-only and installs nothing, so it holds no lane:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec supervise --project <project-root> --holder forge-bootstrap --apply
+```
+
+Naming no `--lane` records `holds_no_lane` against this run.
+
+**This cannot come first, and the reason is structural.** `.forge/state/leases.json` ships in the
+overlay, so before `apply_overlay` there is no lease ledger to declare against — which is exactly why
+that step stops the session rather than continuing into one. Every step below this point runs against
+an overlay that exists.
+
+A `quarantined` or `interrupted_release` answer here means a previous session died holding something
+in a project that is only now being bootstrapped. Report it; do not clear it from this workflow.
+
+> **Why:** CHANGELOG.md 0.7.0 § *Lane supervision is reachable from any workflow, not only from the one that dispatches*
+</step>
+
 <step name="resume_from_ledger">
 **Skip if:** this is not a `--resume` invocation.
 
@@ -62,7 +84,13 @@ python <forge-plugin-root>/scripts/forge.py profile --project <project-root> --a
 
 Run `profile` without `--apply` first to read what it would record.
 
+`survey` answers the environment; read `runtime.detected_hosts` for the host CLIs, `modules[]` and
+`engine_association` for what this project is built as, and `content` for what it already holds.
+`content.not_opened` states what the walk deliberately does not claim — carry that caveat into the
+report rather than dropping it.
+
 `profile` records what is present; only `forge-capability-admin` records what is proven to work.
+Nothing here promotes a detection to a qualification.
 
 > **Why:** CHANGELOG.md 0.4.0 § *Re-profiling the same machine no longer proposes a change to it* — 0.3.1 § *The profile verb worked again, and every verb got exercised*
 </step>

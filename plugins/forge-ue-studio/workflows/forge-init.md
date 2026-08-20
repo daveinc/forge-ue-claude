@@ -1,7 +1,7 @@
 <!-- forge:workflow
 name: init
-consumes: .forge/state/packet-registry.json, .forge/directives.md, .planning/
-produces: compact GDD, decision ledger, acceptance spine, .forge/state/packet-registry.json
+consumes: .forge/state/packet-registry.json, .forge/directives.md, .forge/config.json (human_gates), .planning/
+produces: compact GDD, decision ledger, .forge/acceptance/registry.json, .forge/visual/registry.json, .forge/state/packet-registry.json, .forge/mcp.json
 never-reads: .forge/state/lifecycle.json (deprecated history)
 -->
 
@@ -35,8 +35,26 @@ Run `gsd-new-project` without `--auto`, preserving its questions, agent dispatch
 state files and stop points.
 </step>
 
+<step name="declare_no_lane">
+Inception writes design and planning artifacts, never a game asset, so it holds no lane:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec supervise --project <project-root> --holder forge-init --apply
+```
+
+Naming no `--lane` records `holds_no_lane` against this run. That is the honest answer even though
+this workflow writes the packet registry and the route declarations: packet identity is protected by
+the registry's own rules rather than by a lease, and neither file is contended by a concurrent writer.
+
+> **Why:** CHANGELOG.md 0.7.0 § *Lane supervision is reachable from any workflow, not only from the one that dispatches*
+</step>
+
 <step name="classify_environment">
 Run `forge-doctor`. Record verified and assumed facts separately.
+
+A greenfield project has no `.uproject` yet, so `engine_association` comes back an **unknown rather
+than a shortfall**, and nothing may be refused on it. Record it as an open decision — which engine
+version this game targets is a mandate question, and `resolve_mandate` is where it gets answered.
 </step>
 
 <step name="declare_routes">
@@ -67,8 +85,14 @@ tradeoffs in the decision ledger.
 </step>
 
 <step name="produce_inception_artifacts">
-Produce the compact GDD, decision ledger and acceptance spine. Link large lore, research and
-references as sources rather than worker payload.
+Produce the compact GDD with stable section IDs, the decision ledger, and the acceptance spine.
+
+The spine is registered, not narrated: write each suite into `.forge/acceptance/registry.json` with
+its `id` and `purpose`. Those IDs are what `forge-verify-work` grades a phase against later, and a
+criterion that lives only in the GDD is graded by nobody.
+
+Link large lore, research and references as sources rather than worker payload. A worker receives its
+objective, the relevant GDD IDs, its inputs and its acceptance — never the interview.
 </step>
 
 <step name="develop_visual_direction">
@@ -76,8 +100,16 @@ Develop the first visual pillars, negative references, character/world sheets an
 candidates on the resident host. Offload bounded alternatives to qualified workers; preserve prompt,
 model/source, licence and date.
 
-Obtain human approval for the primary visual direction, then create replacement-safe asset interfaces
-for scale, skeleton, sockets, collision, material slots, animation events and budgets.
+Obtain human approval for the primary visual direction — `primary-visual-direction` is in
+`human_gates` in `.forge/config.json` and this workflow cannot sign it.
+
+Then register replacement-safe asset interfaces in `asset_interfaces` in
+`.forge/visual/registry.json`: scale, pivot, skeleton, sockets, collision, material slots, animation
+events, LODs and budgets. Record prompt, model or source, licence and date under `provenance`.
+
+Registering them here is what makes `compile_workstreams` below possible at all — concurrent
+departments synchronise through registered interfaces, and an interface described only in the GDD
+synchronises nothing.
 </step>
 
 <step name="compile_workstreams">

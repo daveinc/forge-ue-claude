@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: doctor
-consumes: .forge/capabilities/, .forge/config.json, .uproject, host CLIs
+consumes: forge.py survey (runtime, modules, engine_association, content), .forge/capabilities/registry.json, .forge/capabilities/detected.json, .forge/config.json, <project>.uproject, host CLIs
 produces: capability contracts and optional proposals (read-only; nothing is installed)
 -->
 
@@ -23,12 +23,27 @@ From the repository root:
 ```powershell
 .\install.ps1 -Mode Survey -ProjectPath "<project>"
 ```
+
+Read the payload rather than treating the exit code as the answer. Four blocks carry the environment
+facts every step below is built on:
+
+| In the payload | What it settles |
+|---|---|
+| `runtime.detected_hosts` | Which host CLIs are present, and which holds the resident seat |
+| `modules[]` | The C++ module boundaries the `.uproject` declares, with each module's `type` and `loading_phase`. An empty list is a Blueprint-only project, not a defect |
+| `engine_association` | The engine this project expects. A source-build GUID rather than a version number is an unknown, not a shortfall — say which it is |
+| `content` | Per-folder `.uasset` and `.umap` counts, import sources, and the default map and game mode from `Config/` |
+
+`content.truncated` means the walk hit its scan limit and every count under it is a floor rather than
+a total. `content.not_opened` states what this report deliberately does not claim — no asset is
+opened, so nothing is asserted about an asset's class, LODs, Nanite setting, materials or skeleton.
+Quote it. A classification that omits its own ceiling reads as complete.
 </step>
 
 <step name="declare_no_lane">
 A doctor run reads and never writes, so it holds no lane. Say so rather than staying silent — a
 workflow that takes no lane and one that never considered the question are indistinguishable in the
-ledger, and thirty of the thirty-one workflows currently read as the second:
+ledger:
 
 ```powershell
 python <forge-plugin-root>\scripts\forge.py exec supervise --project "<project>" --holder forge-doctor --apply

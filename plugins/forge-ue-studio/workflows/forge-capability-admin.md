@@ -18,7 +18,24 @@ competence.
 
 <process>
 
-<step name="load_state" priority="first">
+<step name="declare_no_lane" priority="first">
+Qualifying a capability writes `.forge` control-plane state, never a game asset — with one exception
+that matters:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec supervise --project <project-root> --holder forge-capability-admin --apply
+```
+
+Naming no `--lane` records `holds_no_lane` against this run.
+
+**The exception is `evaluate`.** A probe that drives the live editor occupies the editor exactly as
+production work does, so that step declares its Unreal lane and reads the refusal as binding.
+Probing a lane another department is working in measures their state, not the route.
+
+> **Why:** CHANGELOG.md 0.7.0 § *Lane supervision is reachable from any workflow, not only from the one that dispatches*
+</step>
+
+<step name="load_state">
 Run `forge-doctor`, then load `.forge/capabilities/registry.json`,
 `.forge/capabilities/consent-ledger.json`, `.forge/capabilities/qualifications.json`, the phase
 activation policy at `.forge/context/activation-policy.json`, the dependency catalog and the route
@@ -45,11 +62,34 @@ allowing external writes.
 </step>
 
 <step name="evaluate">
-Run known-good and seeded-bad evaluations per task class and complexity tier. Compare each optional
-provider with the resident-host baseline, including briefing, verification, retry and contention
-cost.
+**Take the lane first when the probe drives Unreal.** A live-editor probe is exclusive with every
+other Unreal route through the project super-lock:
 
-Promote only the tested scope to `PARTIAL` or `QUALIFIED`. Keep failures and stale evidence visible.
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec supervise --project <project-root> --holder forge-capability-admin --lane ue-live-native-mcp --apply
+```
+
+Use `ue-live-python` or `ue-editor-closed-api` for those routes instead. A `blocked` answer is
+binding — wait, do not probe alongside a live writer.
+
+Run known-good **and seeded-bad** evaluations per task class and complexity tier. A route that accepts
+a deliberately bad input without complaint has not been shown to work; it has been shown to answer.
+
+Compare each optional provider with the resident-host baseline, including briefing, verification,
+retry and contention cost. A provider that is faster per attempt and needs two attempts and a
+verification pass is not cheaper.
+
+Promote only the tested scope to `PARTIAL` or `QUALIFIED` — the exact task class and complexity tier
+that was probed, and nothing adjacent. Keep failures and stale evidence visible.
+
+Record the host the evidence was gathered under. Qualification is host-scoped, and routing rejects an
+evaluation recorded under a different one.
+
+Release the lane when the probe ends, including when it failed:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec release --project <project-root> --work-order <id> --outcome passed|failed --apply
+```
 </step>
 
 <step name="activate">
