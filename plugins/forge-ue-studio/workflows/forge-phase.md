@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: phase
-consumes: ROADMAP.md, .forge/state/packet-registry.json, .forge/state/work-orders.json
+consumes: ROADMAP.md, .forge/state/packet-registry.json, forge.py exec status (blockers)
 produces: .forge/state/packet-registry.json (alias and derived_from records only)
 -->
 
@@ -35,8 +35,12 @@ rather than against memory.
 </step>
 
 <step name="refuse_edits_to_work_in_flight">
-Read `.forge/state/work-orders.json`. Refuse to remove or renumber a phase that has an order at
-`DISPATCHED` or `BLOCKED` against it.
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec status --project <project-root>
+```
+
+Refuse to remove or renumber a phase carrying an `order_dispatched` or `order_blocked` entry in
+`blockers`.
 
 A removed phase whose order is still in flight leaves a lease held for a phase that no longer exists,
 and nothing will release it — the release path needs the work order the removed phase carried.

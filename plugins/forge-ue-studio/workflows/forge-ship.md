@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: ship
-consumes: .planning/ verification results, .forge/acceptance/registry.json, .forge/state/work-orders.json, <project>.uproject
+consumes: .planning/ verification results, .forge/acceptance/registry.json, forge.py exec status (blockers), <project>.uproject
 produces: a PR (GSD's), and a packaged build recorded with its provenance and engine version
 -->
 
@@ -19,11 +19,15 @@ so it is the first step that can fail on content nothing else touched.
 <process>
 
 <step name="refuse_an_unverified_milestone" priority="first">
-Confirm every phase in the milestone passed verification, and read
-`.forge/state/work-orders.json` for orders that never closed. An order at `DISPATCHED` is work still
-in flight; an order at `BLOCKED` names a lane and a `human_action` still outstanding.
+Confirm every phase in the milestone passed verification, then read what is still outstanding:
 
-Refuse to ship over either. Shipping is the one operation that makes an unfinished order permanent.
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec status --project <project-root>
+```
+
+An `order_dispatched` blocker is work still in flight; an `order_blocked` blocker carries the
+`remedy` still outstanding. **Refuse to ship over either.** Shipping is the one operation that makes
+an unfinished order permanent.
 
 Check the acceptance suites in `.forge/acceptance/registry.json` have current evidence rather than
 evidence recorded before the last change.

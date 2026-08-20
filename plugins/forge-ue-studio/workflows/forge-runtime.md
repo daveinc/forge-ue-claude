@@ -1,7 +1,7 @@
 <!-- forge:workflow
 name: runtime
-consumes: plugins/forge-ue-studio/hosts/registry.json, .forge/agents/*.json, .forge/templates/
-produces: the host's project instruction file and agent directory, .planning/config.json (runtime key only)
+consumes: plugins/forge-ue-studio/hosts/registry.json, .forge/agents/*.json, .forge/directives.md, .forge/templates/, .forge/runtime.json, .forge/state/work-orders.json (through exec status)
+produces: the host's project instruction file and agent directory, .forge/runtime.json, .planning/config.json (runtime key only)
 -->
 
 # Forge Runtime — workflow
@@ -24,7 +24,32 @@ canon.
 
 <process>
 
-<step name="inspect" priority="first">
+<step name="check_nothing_is_in_flight" priority="first">
+A host swap invalidates every capability qualification and regenerates every rendered surface. Doing
+it while work is dispatched strands that work in a runtime it can no longer be verified under.
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec supervise --project <project-root> --holder forge-runtime --lane project-files --apply
+```
+
+An inspection-only run names no `--lane` and records `holds_no_lane`; a run that will apply
+`host set` takes `project-files`, because regenerating the instruction file and the agent directory
+writes tracked files.
+
+Then read the joined answer rather than opening the ledger by hand:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec status --project <project-root>
+```
+
+**Refuse a swap while `blockers` carries an `order_dispatched` entry.** That order's route decision
+was scored against routes qualified under the outgoing host, and after the swap `exec acquire` will
+refuse it as `route_decision_stale` with no session left that can re-record it.
+
+> **Why:** CHANGELOG.md 0.7.0 § *Lane supervision is reachable from any workflow, not only from the one that dispatches*
+</step>
+
+<step name="inspect">
 1. List hosts, prerequisites, and detected CLIs:
 
    ```powershell
@@ -67,10 +92,7 @@ canon.
 5. Start a fresh session in the new host and run `forge-next`. Never continue a swap in the session that performed it.
 6. Re-probe every offload route through `forge-capability-admin` before trusting it; routing rejects an evaluation recorded under a different host.
 
-> **Why:** CHANGELOG.md 0.2.0 § *Host-agnostic runtime*
-</step>
-
-## What a swap changes
+**What a swap changes**, and what it leaves alone:
 
 | | |
 |---|---|
@@ -79,6 +101,12 @@ canon.
 | Retired | The previous host's generated files. |
 | Re-pointed | GSD's `runtime` key in `.planning/config.json`, the only key Forge writes there. |
 | Invalidated | Provider qualification evidence and host context-cost measurements. |
+
+The invalidated row is the one that surprises people: nothing about the game changed, and every
+offload route is unqualified again. Announce that before applying a mid-phase swap.
+
+> **Why:** CHANGELOG.md 0.2.0 § *Host-agnostic runtime*
+</step>
 
 <step name="add_host">
 **Skip if:** the target host already has a profile.

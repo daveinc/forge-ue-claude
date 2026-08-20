@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: progress
-consumes: .planning/ (authoritative for phase status), .forge/state/work-orders.json, .forge/state/leases.json, .forge/capabilities/qualifications.json
+consumes: .planning/ (authoritative for phase status), forge.py exec status (orders, blockers, jobs, supervision), .forge/capabilities/qualifications.json
 produces: .forge/state/work-orders.json (the supervision log only) — never phase state
 -->
 
@@ -39,18 +39,32 @@ contradicts it.
 </step>
 
 <step name="report_execution_coverage">
-Add what `.planning` does not carry, read from `.forge/state/work-orders.json`:
+Add what `.planning` does not carry. One call answers all of it — do not open the ledger by hand:
 
-| In the ledger | Report it as |
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec status --project <project-root>
+```
+
+`blockers` is the report. Each entry names what holds, what it holds and the remedy that clears it:
+
+| `kind` | Report it as |
 |---|---|
-| An order resting at `DISPATCHED` | Still in flight, or abandoned by a session that never released — say which, from `supervision` |
-| An order at `BLOCKED` | Not finished and not failed. Name its lane and its `human_action` |
-| `ACCEPTED` / `REJECTED` | Closed. These are the only outcomes that mean work ended |
-| `lane_exit` on a closed order | What a next session must do with that lane before planning onto it |
+| `order_dispatched` | Admitted and never released. Still running, or abandoned — `supervision` says which |
+| `order_blocked` | Not finished and not failed. The entry's `remedy` is the order's own `human_action` |
+| `lane_held` | A live owner is working. Not a fault |
+| `renewal_overdue` | The owner is alive and past its TTL. Not a fault — do not disturb it |
+| `lane_quarantined` / `release_interrupted` | Work that will not finish on its own. `exec reconcile` is the exit |
+| `lane_breaker` | Entry into that lane has failed enough times running that Forge stopped offering it |
+
+An order at a `terminal_states` value — `ACCEPTED` or `REJECTED` — is finished and is deliberately not
+a blocker. `lane_exit` on such an order says what a next session must do with its lane.
+
+`jobs` lists every job folder on disk with whether its `brief`, `packet`, `result` and `context` are
+present. A folder with a brief and no result is work someone was handed and never returned.
 
 Then add the phases whose plans have no SUMMARY, from `.planning`.
 
-`BLOCKED` is deliberately non-terminal: report it as resumable work, never as a failure.
+`order_blocked` is deliberately non-terminal: report it as resumable work, never as a failure.
 
 > **Why:** CHANGELOG.md 0.7.0 § *An order that finished says so* — § *A failure inside a lane is a fact Forge holds*
 </step>

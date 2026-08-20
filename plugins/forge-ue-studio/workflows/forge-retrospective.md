@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: retrospective
-consumes: .forge/state/work-orders.json, .forge/state/leases.json, .forge/state/route-decisions.json, .forge/jobs/<work-order>/, .forge/capabilities/qualifications.json, .forge/reviews/registry.json, .forge/acceptance/registry.json, revision history
+consumes: forge.py exec status (orders, supervision, blockers, blocked_lanes, jobs), .forge/state/route-decisions.json, .forge/jobs/<work-order>/, .forge/capabilities/qualifications.json, .forge/reviews/registry.json, .forge/acceptance/registry.json, revision history
 produces: a forensic report, and quarantined entries in .forge/learnings/registry.json
 -->
 
@@ -37,25 +37,38 @@ shapes below.
 </step>
 
 <step name="read_the_state_not_the_story">
-Inspect read-only, each by name:
-
-| Source | What it answers |
-|---|---|
-| `.forge/state/work-orders.json` | What was dispatched, what state it rests at, its `supervision` log, its `lanes`, `lease_status` and `lane_exit`, and `blocked_lanes` |
-| `.forge/jobs/<work-order>/brief.md` and `context/` | What the worker was actually handed, as rendered at dispatch |
-| `.forge/jobs/<work-order>/result.json` | What came back. `result_source: release-observation` means the worker filed nothing |
-| `.forge/state/leases.json` | What was held, by whom, and what survived teardown under `unreleased` |
-| `.forge/state/route-decisions.json` | Which route the work was scored onto, and when |
-| `.forge/capabilities/qualifications.json` | Whether that route's evidence was current, and under which host |
-| `.forge/reviews/registry.json` | Whether a review had already raised this |
-| Revision history | What was written, and whether it stayed inside the packet's `write_scope` |
+Start with the joined answer rather than opening four files and correlating them by hand:
 
 ```powershell
 python <forge-plugin-root>/scripts/forge.py exec status --project <project-root>
 ```
 
-Read the ledger before reading anyone's summary of it. The summary is what the failing session
-believed; the ledger is what it did.
+| In the payload | What it answers |
+|---|---|
+| `orders` | What was dispatched, what state each rests at, its `lanes`, `lease_status` and `lane_exit` |
+| `supervision` | Every run that declared what it held — including the ones that declared `holds_no_lane` |
+| `blockers` | The join: each entry's `kind`, `lane`, `work_order`, `detail` and `remedy` |
+| `blocked_lanes` | Consecutive failed entries per lane, and which tripped the breaker |
+| `jobs` | Every job folder on disk with whether `brief`, `packet`, `result` and `context` are present — including a folder whose acquisition failed, which the ledger does not know about |
+| `active`, `quarantined`, `interrupted_release` | What was held, by whom, and what survived teardown |
+| `terminal_states` | Which statuses mean the work ended, so nothing else is read as finished |
+
+A job folder with a `brief` and no `result` is a worker that was handed something and returned
+nothing. That is the single most diagnostic row in the payload.
+
+Then open what only a file answers:
+
+| Source | What it answers |
+|---|---|
+| `.forge/jobs/<work-order>/brief.md` and `context/` | What the worker was actually handed, as rendered at dispatch |
+| `.forge/jobs/<work-order>/result.json` | What came back. `result_source: release-observation` means the release wrote what it observed because the worker filed nothing |
+| `.forge/state/route-decisions.json` | Which route the work was scored onto, and when |
+| `.forge/capabilities/qualifications.json` | Whether that route's evidence was current, and under which host |
+| `.forge/reviews/registry.json` | Whether a review had already raised this |
+| Revision history | What was written, and whether it stayed inside the packet's `write_scope` |
+
+Read all of it before reading anyone's summary. The summary is what the failing session believed; the
+ledger is what it did.
 </step>
 
 <step name="detect_the_known_shapes">
@@ -64,9 +77,9 @@ Look for each of these explicitly rather than waiting for one to be obvious:
 stuck loops · missing artifacts · partial-plan drift · abandoned work · interruption ·
 scope drift · undeclared writes · stale capability evidence · test regression · broken handoffs
 
-Three have a state file that proves them outright: an order resting at `DISPATCHED` with no live
-owner is abandoned work; a write outside `packet.json`'s `write_scope` is an undeclared write; a
-route whose qualification names a retired host is stale capability evidence.
+Three are proved outright by what `read_the_state_not_the_story` returned: an `order_dispatched`
+blocker with no matching `lane_held` is abandoned work; a write outside `packet.json`'s `write_scope`
+is an undeclared write; a route whose qualification names a retired host is stale capability evidence.
 </step>
 
 <step name="ground_every_anomaly">

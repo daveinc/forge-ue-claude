@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: plan-phase
-consumes: CONTEXT.md, plugins/forge-ue-studio/doctrine/procedures.json, .forge/state/packet-registry.json, .forge/visual/registry.json, .forge/state/leases.json
+consumes: CONTEXT.md, plugins/forge-ue-studio/doctrine/procedures.json, .forge/state/packet-registry.json, .forge/visual/registry.json, forge.py exec status (blockers, blocked_lanes)
 produces: PLAN.md carrying required_lanes and mutation_risk (GSD's), registered asset interfaces, derived_from packet records
 -->
 
@@ -19,6 +19,8 @@ gap in the catalogue, never a licence to invent steps inline.
 
 <process>
 
+## PRE — Forge
+
 <step name="declare_no_lane" priority="first">
 Planning writes planning state and no game asset. But it must know which lanes are currently
 unavailable, because a plan scheduled onto a quarantined lane is a plan that cannot run:
@@ -27,10 +29,18 @@ unavailable, because a plan scheduled onto a quarantined lane is a plan that can
 python <forge-plugin-root>/scripts/forge.py exec supervise --project <project-root> --holder forge-plan-phase --apply
 ```
 
-Naming no `--lane` records `holds_no_lane` against this run. Read `quarantined`,
-`interrupted_release` and `abandoned_workspaces` in the answer, and plan around those lanes rather
-than onto them — `blocked_lanes` in `.forge/state/work-orders.json` carries the same facts from
-earlier runs.
+Naming no `--lane` records `holds_no_lane` against this run.
+
+Then read which lanes are actually plannable, joined into one answer:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec status --project <project-root>
+```
+
+Plan around every lane named in `blockers` rather than onto it. `lane_quarantined` and
+`release_interrupted` need `exec reconcile` before anything can run there; `lane_breaker` means entry
+has failed enough times running that Forge stopped offering the lane, and planning onto it is how a
+retry loop starts.
 
 > **Why:** CHANGELOG.md 0.7.0 § *A failure inside a lane is a fact Forge holds*
 </step>
@@ -73,6 +83,10 @@ python <forge-plugin-root>/scripts/forge.py procedure --task-class <task-class>
 | `resolution.nearest` non-empty | The task class is misspelt. Fix the spelling — a typo resolves to no procedure and nothing refuses it |
 | `procedure` is `null` | No doctrine covers this shape. Plan without it and **record that the phase ran undoctrined** |
 
+**Hand GSD's planner the procedure's `steps` and `non_goals` as the request.** That is the whole of
+what crosses the boundary in this direction: it becomes GSD's plan, written by GSD. Nothing else in
+the answer is GSD's to see — lanes, capabilities and packet identity never leave Forge.
+
 `ik-retarget` is the worked case: five steps on the closed lane and two on the live one, so it plans
 as two packets. Planning it as one silently drops the root-motion check — the step whose absence fails
 no build.
@@ -88,6 +102,8 @@ A genuinely new packet carries `derived_from` naming its parent. An alternative 
 one is an `aliases` entry, not a second packet.
 </step>
 
+## CORE — GSD
+
 <step name="run_gsd_planner">
 Run GSD's planner with the procedure's `steps` and `non_goals` as the request. GSD owns PLAN.md, the
 task breakdown, the dependency analysis and the wave order.
@@ -95,6 +111,8 @@ task breakdown, the dependency analysis and the wave order.
 Require every returned plan to carry `required_lanes`, `mutation_risk`, and every asset interface it
 produces or consumes.
 </step>
+
+## POST — Forge
 
 <step name="reject_a_plan_that_names_no_lane">
 Grade each returned plan before it is allowed to reach execution:

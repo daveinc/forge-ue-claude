@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: undo
-consumes: the GSD phase manifest, .forge/state/packet-registry.json, .forge/state/leases.json, .forge/state/work-orders.json, .gitattributes
+consumes: the GSD phase manifest, .forge/state/packet-registry.json, forge.py exec status (blockers, jobs), .gitattributes
 produces: reverted commits, and a working copy proven to still open
 -->
 
@@ -54,8 +54,15 @@ Read `.forge/state/packet-registry.json`. Find every packet whose `derived_from`
 the range being reverted, and every alias pointing into it.
 
 Reverting a parent whose derived packets are already dispatched orphans them: their job folders still
-name inputs the revert removes. Read `.forge/state/work-orders.json` and refuse while any dependent
-order rests at `DISPATCHED` or `BLOCKED`.
+name inputs the revert removes.
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec status --project <project-root>
+```
+
+Refuse while any dependent packet appears in `blockers` as `order_dispatched` or `order_blocked`.
+`jobs` names the folders on disk whose `context/` would be left describing inputs that no longer
+exist.
 </step>
 
 <step name="run_gsd_undo">
