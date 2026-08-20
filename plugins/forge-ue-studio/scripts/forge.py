@@ -149,6 +149,7 @@ from forge_survey import (
 from forge_lifecycle import (
     BOOTSTRAP_CLOSABLE_VERDICTS,
     BOOTSTRAP_REPORT_FIELDS,
+    NEVER_BLOCKED_ACTIONS,
     bootstrap_is_complete,
     bootstrap_verdict,
     design_sources,
@@ -184,6 +185,7 @@ from forge_routing import (
     decision_freshness_minutes,
     engine_prerequisite_gaps,
     job_dir,
+    job_folders,
     jobs_retention,
     jobs_root,
     lane_exit_note,
@@ -195,6 +197,9 @@ from forge_routing import (
     procedures_path,
     record_blocked_lane,
     read_route_decisions,
+    read_work_orders,
+    reachability,
+    REACHABILITY_UNCHECKED,
     record_dispatch,
     record_release,
     record_route_decision,
@@ -212,6 +217,7 @@ from forge_routing import (
     route_policy,
     route_work,
     strictest_isolation,
+    work_blockers,
     work_orders_path,
     write_job,
     write_job_result,
@@ -511,8 +517,29 @@ def execute_supervise(project_value: str, holder: str, lanes: list[str] | None, 
 
 
 def execute_status(project_value: str) -> dict[str, Any]:
+    """Report what is held, what the order ledger says about it, and what is on disk.
+
+    Two workflows opened `.forge/state/work-orders.json` by hand because this
+    verb reported leases and nothing else, so the supervision log, the breaker
+    counts and the job tree were read by prose that nothing could check. They
+    are echoed here beside the leases they explain, already joined into the
+    blockers an action is weighed against.
+    """
     root, _ = project_root(project_value)
-    return executor.status(root)
+    report = reachability(root)
+    if not report["readable"]:
+        return executor.status(root)
+    return {
+        **report["execution"],
+        "orders": report["orders"],
+        "supervision": report["supervision"],
+        "blocked_lanes": report["blocked_lanes"],
+        "terminal_states": report["terminal_states"],
+        "work_orders_path": report["work_orders"],
+        "jobs": report["jobs"],
+        "blockers": report["blockers"],
+        "not_checked": report["not_checked"],
+    }
 
 
 def emit(data: dict[str, Any], output: str | None) -> None:

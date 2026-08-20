@@ -568,6 +568,177 @@ def lane_failure_counts(root: Path) -> dict[str, int]:
 WORK_ORDER_TERMINAL_STATES = ("ACCEPTED", "REJECTED")
 
 
+def read_work_orders(root: Path) -> dict[str, Any]:
+    """The order ledger as it stands, with an absent file reading as empty.
+
+    Two workflows opened `.forge/state/work-orders.json` by hand to answer what
+    `exec status` did not report, which is the pattern this release has been
+    removing: a state file read by prose is a read nothing can check.
+    """
+    path = work_orders_path(root)
+    document = load_json(path) if path.is_file() else {}
+    return {
+        "path": str(path),
+        "present": path.is_file(),
+        "terminal_states": [str(item) for item in document.get("terminal_states") or WORK_ORDER_TERMINAL_STATES],
+        "orders": [item for item in document.get("orders") or [] if isinstance(item, dict)],
+        "supervision": [item for item in document.get("supervision") or [] if isinstance(item, dict)],
+        "blocked_lanes": {str(lane): row for lane, row in (document.get("blocked_lanes") or {}).items()},
+    }
+
+
+def job_folders(root: Path) -> list[dict[str, Any]]:
+    """Every job folder on disk, whatever the ledger remembers about it.
+
+    `job_dir` composes the one canonical path, and resume composed it from each
+    order's work order, which is correct and depends on the ledger being
+    complete. A folder whose acquisition failed holds no order and is the record
+    of what was attempted; listing the tree is how it stays findable.
+    """
+    base = jobs_root(root)
+    if not base.is_dir():
+        return []
+    return [
+        {
+            "work_order": directory.name,
+            "path": str(directory),
+            "brief": (directory / "brief.md").is_file(),
+            "packet": (directory / "packet.json").is_file(),
+            "result": (directory / "result.json").is_file(),
+            "context": sorted(path.name for path in (directory / "context").glob("*.json")),
+        }
+        for directory in sorted(base.iterdir())
+        if directory.is_dir()
+    ]
+
+
+REACHABILITY_UNCHECKED = (
+    "Capability routes. An action Forge offers names no capability, so whether the route serving one is "
+    "bound is settled when a packet is compiled, by forge-route-work, and not here.",
+    "GSD phase logic. Which phase may run is GSD's answer and is never second-guessed by this join.",
+    "Abandoned workspaces. A dead worker's worktree leaves the lane free, so it is a human action to name "
+    "rather than a state that blocks an action.",
+)
+
+
+def work_blockers(execution: dict[str, Any], ledger: dict[str, Any], policy: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Every state standing between this project and admitting more work.
+
+    Each entry names what holds, what it holds, and the remedy that clears it,
+    so an action can be shown as unreachable with its blocking state rather than
+    silently dropped. A terminal order is not here: an order resting at ACCEPTED
+    or REJECTED is finished, not running.
+    """
+    limit = int(blocked_lane_policy(policy)["consecutive_failure_limit"])
+    blockers: list[dict[str, Any]] = []
+    for lease in execution.get("active") or []:
+        blockers.append({
+            "kind": "lane_held",
+            "lane": lease.get("lane"),
+            "work_order": lease.get("work_order"),
+            "detail": f"{lease.get('owner')} holds {lease.get('lane')} until {lease.get('expires_at')}",
+            "remedy": "wait for the holder to release it, or resume the work it is doing",
+        })
+    for lease in execution.get("renewal_overdue") or []:
+        blockers.append({
+            "kind": "renewal_overdue",
+            "lane": lease.get("lane"),
+            "work_order": lease.get("work_order"),
+            "detail": f"the owner of {lease.get('lane')} is alive and past its TTL: {lease.get('detail')}",
+            "remedy": "leave it alone; work is running, and nothing may contend with it",
+        })
+    for row in execution.get("quarantined") or []:
+        blockers.append({
+            "kind": "lane_quarantined",
+            "lane": row.get("lane"),
+            "work_order": row.get("work_order"),
+            "detail": f"{len(row.get('unreleased') or [])} external resource(s) survived a release on {row.get('lane')}",
+            "remedy": str(row.get("remedy") or "run `exec reconcile --apply` through forge-route-work"),
+        })
+    for lease_id in execution.get("interrupted_release") or []:
+        blockers.append({
+            "kind": "release_interrupted",
+            "lane": None,
+            "work_order": None,
+            "detail": f"lease {lease_id} died mid-release",
+            "remedy": "run `exec reconcile --apply` through forge-route-work",
+        })
+    terminal = set(ledger.get("terminal_states") or WORK_ORDER_TERMINAL_STATES)
+    for order in ledger.get("orders") or []:
+        status = str(order.get("status", ""))
+        if status in terminal:
+            continue
+        if status == "DISPATCHED":
+            blockers.append({
+                "kind": "order_dispatched",
+                "lane": None,
+                "work_order": order.get("work_order"),
+                "detail": f"order {order.get('work_order')} was admitted and never released",
+                "remedy": "finish or resume it through forge-resume-work before opening more work",
+            })
+        elif status == "BLOCKED":
+            blockers.append({
+                "kind": "order_blocked",
+                "lane": None,
+                "work_order": order.get("work_order"),
+                "detail": f"order {order.get('work_order')} was refused admission",
+                "remedy": str(order.get("human_action") or "read the order's human_action and act on it"),
+            })
+    for lane, row in sorted((ledger.get("blocked_lanes") or {}).items()):
+        consecutive = int(row.get("consecutive", 0)) if isinstance(row, dict) else 0
+        if consecutive >= limit:
+            blockers.append({
+                "kind": "lane_breaker",
+                "lane": lane,
+                "work_order": None,
+                "detail": f"{consecutive} consecutive failed entries into {lane}, at a limit of {limit}",
+                "remedy": "clear what makes entry fail; offering the lane again is how a loop starts",
+            })
+    return blockers
+
+
+def reachability(root: Path) -> dict[str, Any]:
+    """Join the lease ledger, the order ledger and the job tree into one answer.
+
+    `forge-next` hand-joined `exec status`, `route-status` and a raw read of
+    `work-orders.json` to decide whether an action it was about to offer could
+    run, which made reachability a step an agent could skip and still reach the
+    dispatch below it. Joined here it is data an action arrives carrying.
+    """
+    try:
+        execution = executor.status(root)
+    except executor.ExecutorError as exc:
+        return {
+            "readable": False,
+            "detail": str(exc),
+            "execution": None,
+            "orders": [],
+            "supervision": [],
+            "blocked_lanes": {},
+            "terminal_states": list(WORK_ORDER_TERMINAL_STATES),
+            "work_orders": str(work_orders_path(root)),
+            "jobs": [],
+            "blockers": [],
+            "sources": [str(executor.lease_state_path(root)), str(work_orders_path(root))],
+            "not_checked": list(REACHABILITY_UNCHECKED),
+        }
+    ledger = read_work_orders(root)
+    return {
+        "readable": True,
+        "detail": "",
+        "execution": execution,
+        "orders": ledger["orders"],
+        "supervision": ledger["supervision"],
+        "blocked_lanes": ledger["blocked_lanes"],
+        "terminal_states": ledger["terminal_states"],
+        "work_orders": ledger["path"],
+        "jobs": job_folders(root),
+        "blockers": work_blockers(execution, ledger),
+        "sources": [str(executor.lease_state_path(root)), ledger["path"]],
+        "not_checked": list(REACHABILITY_UNCHECKED),
+    }
+
+
 def _write_orders(root: Path, mutate) -> dict[str, Any]:
     path = work_orders_path(root)
     with executor.StateMutex(root, state_path=path) as _mutex:

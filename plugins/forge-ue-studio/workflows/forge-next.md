@@ -29,7 +29,8 @@ held lane by colliding with it.
    ```
 
 3. Parse the `forge.smart-entry/v1` result. `situation`, `actions`, `signals`, `execution_coverage`,
-   `warnings` and `suppressed_actions` are the whole input to every step below.
+   `reachability`, `warnings` and `suppressed_actions` are the whole input to every step below. Every
+   entry in `actions` already carries `reachable` and `blocked_by`; nothing below re-derives them.
 4. Treat `.planning` and the GSD snapshot as authoritative for phase status. Never use
    `.forge/state/lifecycle.json` to override GSD, and never mutate it.
 5. Present commands from `actions` verbatim; they are already spelled for the assigned host.
@@ -89,30 +90,40 @@ What comes back is an input to `check_reachability`, not a report to skip past:
 </step>
 
 <step name="check_reachability">
-Check every candidate action against state before it reaches the user. This is a Forge-side check on
-lanes, leases and routes; it never second-guesses GSD's phase logic, which stays authoritative.
+The detector already checked. `reachability.blockers` is the join of the lease ledger and the order
+ledger that this step used to perform by hand, and each action carries the subset of it that applies
+to that action as `blocked_by`. Read them; do not re-derive them, and do not open
+`.forge/state/work-orders.json` to second-guess them.
 
-```powershell
-python <forge-plugin-root>/scripts/forge.py exec status --project <project-root>
-```
+| `blocked_by[].kind` | What holds | The remedy the entry names |
+|---|---|---|
+| `lane_held` | A live lease holds that lane right now | Wait, or resume the work the holder is doing |
+| `renewal_overdue` | The owner is alive and past its TTL | Work is running. Offer nothing that contends with it |
+| `lane_quarantined` | A holder exited without freeing an external resource | `exec reconcile --work-order <id> --apply`, which is `forge-route-work`'s to run |
+| `release_interrupted` | A session died mid-release | Same remedy, same owner |
+| `order_dispatched` | An order was admitted and never released | Finish or resume it before opening more work |
+| `order_blocked` | Admission was refused | The order's own `human_action`, carried in `remedy` |
+| `lane_breaker` | The breaker counted repeated failed entries into a lane | Clear what makes entry fail; offering it again is how a loop starts |
+
+An order at `ACCEPTED` or `REJECTED` never appears here: those are the terminal states the ledger
+declares, and an order resting in one is finished, not running.
+
+`reachability.not_checked` names what this join deliberately does not answer, and the first entry is
+the one that costs something. A Forge action names no capability, so route binding is settled when a
+packet is compiled rather than here. Where the step ahead is Unreal work, that check is still yours:
 
 ```powershell
 python <forge-plugin-root>/scripts/forge.py route-status --project <project-root>
 ```
 
-Then read `.forge/state/work-orders.json` directly for what neither command reports:
+`reachability.readable` reading `false` means the lease ledger could not be read at all, and `detail`
+says why. Route that to `forge-bootstrap` and **stop** — no reachability answer below it is worth
+anything.
 
-| Read | Makes an action unreachable when |
-|---|---|
-| `exec status` → `active`, `lane_groups` | The action's lane, or any lane in its exclusive group, is held right now |
-| `exec status` → `quarantined` | An external resource survived a release on that lane. `exec reconcile --work-order <id> --apply` is the only way out, and it is `forge-route-work`'s to run |
-| `route-status` → `routes[].status`, `routes[].capabilities` | A capability the action needs resolves to no bound route and the row names no fallback |
-| `work-orders.json` → `orders[]` at `DISPATCHED` | Work is in flight on that order. Finishing or unblocking it comes before opening more |
-| `work-orders.json` → `orders[]` at `BLOCKED` | The order carries a `human_action`. Present that, not the action that would fail again |
-| `work-orders.json` → `blocked_lanes[<lane>].consecutive` | The breaker has counted repeated failed entries into that lane. Offering it again is how a loop starts |
-| `work-orders.json` → `orders[]` at `ACCEPTED` or `REJECTED` | Nothing — these are the terminal states, and an order resting here is finished, not running |
+`reachability.never_blocked` lists the action ids lane state never blocks: diagnosis and control-plane
+repair stay offerable when everything else is held, because they are how the holding gets cleared.
 
-An action that fails any of these is still shown, and shown as unreachable, with the state that
+An action whose `reachable` is `false` is still shown, and shown as unreachable, with the state that
 blocks it and the remedy named. Never present it as a choice, and never silently drop it — a
 disappeared action reads as work that was never needed.
 
@@ -125,10 +136,11 @@ whole answer.
 
 Order what remains by what this game needs next, not by what the detector happened to list first:
 
-1. **Drain what is in flight.** A `DISPATCHED` order or a live lease is work someone started. Finish
-   or unblock it before opening avoidable new work.
-2. **Clear what is blocked.** A `BLOCKED` order's `human_action`, a quarantined lane, an abandoned
-   workspace. These do not clear themselves and they block everything routed onto that lane.
+1. **Drain what is in flight.** An `order_dispatched` or `lane_held` blocker is work someone started.
+   Finish or unblock it before opening avoidable new work.
+2. **Clear what is blocked.** An `order_blocked` blocker's remedy, a `lane_quarantined` or
+   `release_interrupted` lane, a `lane_breaker` count. These do not clear themselves, and each one
+   blocks everything routed onto that lane.
 3. **Finish the partially executed phase.** `execution_coverage` names each phase whose plans lack
    summaries, and GSD does not block completion on it. A phase at `partial` is the strongest
    candidate for the next step, and it is put to the user as a question.
@@ -146,9 +158,10 @@ Where the step ahead is Unreal work, name what it will take before offering it:
 python <forge-plugin-root>/scripts/forge.py procedure --task-class <task-class>
 ```
 
-`lanes` and `packets` say whether that step is one packet or two, and `capabilities` is what
-`check_reachability` weighed the routes against. A `null` procedure means no doctrine covers the
-shape — offer it, and say it will be planned unprocedured.
+`lanes` and `packets` say whether that step is one packet or two, and `capabilities` is what to weigh
+the `route-status` rows against — the check `reachability.not_checked` says the detector left to you.
+A `null` procedure means no doctrine covers the shape — offer it, and say it will be planned
+unprocedured.
 
 > **Why:** [build doctrine](../../../docs/explanation/build-doctrine.md) § *The procedure layer*
 </step>
@@ -165,8 +178,8 @@ shape — offer it, and say it will be planned unprocedured.
 6. Never perform the routed work here, and never chain a second command.
 7. Run a GSD command directly when the user asks for one, after naming what the Forge route would
    have added.
-8. Refuse to dispatch an action `check_reachability` marked unreachable, including under `--auto`.
-   Present its remedy instead and stop.
+8. Refuse to dispatch an action whose `reachable` is `false`, including under `--auto`. Present the
+   remedies its `blocked_by` entries name instead, and stop.
 </step>
 
 <step name="forge_init_integration" priority="last">

@@ -8,6 +8,7 @@ from typing import Any
 from forge_core import ERROR_REASON, EXIT_USAGE, ForgeExit, fail, load_json, project_root
 from forge_gsd import dropped_gsd_verbs, forge_action, gsd_command_name, gsd_smart_entry
 from forge_hosts import active_profile, host_command, read_runtime, rendered_surfaces
+from forge_routing import reachability
 
 
 def design_sources(root: Path) -> list[str]:
@@ -21,6 +22,9 @@ def design_sources(root: Path) -> list[str]:
             found.append(resolved)
             seen.add(key)
     return found
+
+
+NEVER_BLOCKED_ACTIONS = frozenset({"doctor", "bootstrap", "bootstrap-resume", "host-render"})
 
 
 BOOTSTRAP_REPORT_FIELDS = {
@@ -323,6 +327,12 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
             forge_action("doctor", "Inspect the environment", "forge-doctor", False, "Read-only capability diagnosis before committing to inception.", profile),
         ]
 
+    reach = reachability(root)
+    for action in actions:
+        blocking = [] if action["id"] in NEVER_BLOCKED_ACTIONS else reach["blockers"]
+        action["reachable"] = not blocking
+        action["blocked_by"] = blocking
+
     recommended = next((action["id"] for action in actions if action["recommended"]), actions[0]["id"] if actions else None)
     return {
         "schema": "forge.smart-entry/v1",
@@ -342,6 +352,14 @@ def forge_next(project_value: str, gsd_result: dict[str, Any] | None = None, hos
             "assigned": bool(runtime),
             "surfaces_current": bool(surfaces_current),
             "swappable": True,
+        },
+        "reachability": {
+            "readable": reach["readable"],
+            "detail": reach["detail"],
+            "blockers": reach["blockers"],
+            "sources": reach["sources"],
+            "not_checked": reach["not_checked"],
+            "never_blocked": sorted(NEVER_BLOCKED_ACTIONS),
         },
         "gsd_snapshot": snapshot,
         "gsd_error": "" if gsd.get("ok") else str(gsd.get("error", "")),

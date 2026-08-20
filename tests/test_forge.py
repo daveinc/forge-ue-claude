@@ -4836,5 +4836,236 @@ class ProjectSurveyTests(unittest.TestCase):
         self.assertIn("settled_by", step)
 
 
+class ReachabilityTests(unittest.TestCase):
+
+    NEXT = ROOT / "plugins" / "forge-ue-studio" / "workflows" / "forge-next.md"
+    RESUME = ROOT / "plugins" / "forge-ue-studio" / "workflows" / "forge-resume-work.md"
+
+    canonical_jobs = ForgeInstallerTests.canonical_jobs
+    complete_bootstrap = ForgeInstallerTests.complete_bootstrap
+
+    @contextmanager
+    def adopted(self):
+        with workspace_tempdir() as temp:
+            root = temp / "MyGame"
+            root.mkdir()
+            forge.install_overlay(str(root), apply=True)
+            yield root
+
+    def seed_orders(self, root, **document):
+        path = forge.work_orders_path(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"schema": forge.WORK_ORDERS_SCHEMA, "orders": [], **document}),
+            encoding="utf-8",
+        )
+
+    def strand(self, root, lane="generated-assets"):
+        path = forge.executor.lease_state_path(root)
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["leases"].append({
+            "lease_id": "lease-quarantined", "lane": lane, "owner": "gone", "work_order": "WO-DEAD",
+            "write_scope": ["WO-DEAD"], "acquired_at": forge.executor.utc_now(),
+            "expires_at": forge.executor.utc_now(), "status": forge.executor.ORPHANED,
+            "unreleased": [{"kind": "lfs-lock", "target": "Content/A.umap", "detail": "server unreachable"}],
+            "isolation": {"mode": "read-only", "base_revision": "HEAD", "lock_targets": []},
+        })
+        forge.executor.write_state_atomically(path, document)
+
+    def kinds(self, blockers):
+        return sorted(item["kind"] for item in blockers)
+
+    def test_a_clean_control_plane_reports_no_blocker(self):
+        with self.adopted() as root:
+            report = forge.reachability(root)
+            self.assertEqual(report["readable"], True)
+            self.assertEqual(report["blockers"], [])
+            self.assertEqual(report["orders"], [])
+
+    def test_an_unwritten_lease_ledger_is_unreadable_rather_than_silently_clear(self):
+        with workspace_tempdir() as temp:
+            report = forge.reachability(temp)
+            self.assertEqual(report["readable"], False)
+            self.assertIn("leases.json", report["detail"])
+            self.assertEqual(report["blockers"], [])
+
+    def test_an_in_flight_order_blocks_and_names_where_to_finish_it(self):
+        with self.adopted() as root:
+            self.seed_orders(root, orders=[{"work_order": "WO-LIVE", "status": "DISPATCHED"}])
+            blockers = forge.reachability(root)["blockers"]
+            self.assertEqual(self.kinds(blockers), ["order_dispatched"])
+            self.assertEqual(blockers[0]["work_order"], "WO-LIVE")
+            self.assertIn("forge-resume-work", blockers[0]["remedy"])
+
+    def test_a_blocked_order_carries_its_own_human_action_as_the_remedy(self):
+        with self.adopted() as root:
+            self.seed_orders(root, orders=[
+                {"work_order": "WO-STOP", "status": "BLOCKED", "human_action": "close the editor by hand"},
+            ])
+            blockers = forge.reachability(root)["blockers"]
+            self.assertEqual(self.kinds(blockers), ["order_blocked"])
+            self.assertEqual(blockers[0]["remedy"], "close the editor by hand")
+
+    def test_a_terminal_order_is_not_a_blocker(self):
+        with self.adopted() as root:
+            self.seed_orders(root, orders=[
+                {"work_order": f"WO-{state}", "status": state} for state in forge.WORK_ORDER_TERMINAL_STATES
+            ])
+            self.assertEqual(forge.reachability(root)["blockers"], [])
+
+    def test_the_ledger_declares_which_states_are_terminal_rather_than_the_reader(self):
+        with self.adopted() as root:
+            self.seed_orders(
+                root,
+                terminal_states=["FILED"],
+                orders=[{"work_order": "WO-FILED", "status": "FILED"},
+                        {"work_order": "WO-DONE", "status": "ACCEPTED"}],
+            )
+            report = forge.reachability(root)
+            self.assertEqual(report["terminal_states"], ["FILED"])
+            self.assertEqual(report["blockers"], [])
+
+    def test_a_quarantined_lane_blocks_and_names_reconcile(self):
+        with self.adopted() as root:
+            self.strand(root)
+            blockers = forge.reachability(root)["blockers"]
+            self.assertEqual(self.kinds(blockers), ["lane_quarantined"])
+            self.assertEqual(blockers[0]["lane"], "generated-assets")
+            self.assertIn("reconcile", blockers[0]["remedy"])
+
+    def test_a_lane_at_the_breaker_limit_blocks_and_one_below_it_does_not(self):
+        with self.adopted() as root:
+            limit = int(forge.blocked_lane_policy()["consecutive_failure_limit"])
+            self.seed_orders(root, blocked_lanes={"lane.ue-editor": {"consecutive": limit - 1}})
+            self.assertEqual(forge.reachability(root)["blockers"], [])
+            self.seed_orders(root, blocked_lanes={"lane.ue-editor": {"consecutive": limit}})
+            blockers = forge.reachability(root)["blockers"]
+            self.assertEqual(self.kinds(blockers), ["lane_breaker"])
+            self.assertEqual(blockers[0]["lane"], "lane.ue-editor")
+
+    def test_every_blocker_names_what_holds_and_how_it_clears(self):
+        with self.adopted() as root:
+            self.strand(root)
+            self.seed_orders(
+                root,
+                orders=[{"work_order": "WO-LIVE", "status": "DISPATCHED"}],
+                blocked_lanes={"lane.ue-editor": {"consecutive": 9}},
+            )
+            blockers = forge.reachability(root)["blockers"]
+            self.assertEqual(self.kinds(blockers), ["lane_breaker", "lane_quarantined", "order_dispatched"])
+            self.assertEqual([item for item in blockers if not item["detail"] or not item["remedy"]], [])
+
+    def test_exec_status_echoes_the_supervision_log_and_the_breaker_counts(self):
+        with self.adopted() as root:
+            forge.execute_supervise(str(root), "forge-next", None, apply=True)
+            self.seed_orders(root, blocked_lanes={"lane.ue-editor": {"consecutive": 1}})
+            report = forge.execute_status(str(root))
+            self.assertEqual(report["blocked_lanes"], {"lane.ue-editor": {"consecutive": 1}})
+            self.assertEqual(report["work_orders_path"], str(forge.work_orders_path(root)))
+            self.assertEqual(report["terminal_states"], list(forge.WORK_ORDER_TERMINAL_STATES))
+
+    def test_exec_status_echoes_a_supervision_entry_that_declared_no_lane(self):
+        with self.adopted() as root:
+            forge.execute_supervise(str(root), "forge-resume-work", None, apply=True)
+            supervision = forge.execute_status(str(root))["supervision"]
+            self.assertEqual([item["holder"] for item in supervision], ["forge-resume-work"])
+            self.assertEqual(supervision[0]["holds_no_lane"], True)
+
+    def test_exec_status_still_reports_the_leases_it_always_did(self):
+        with self.adopted() as root:
+            report = forge.execute_status(str(root))
+            self.assertEqual(report["schema"], "forge.execution-status/v1")
+            self.assertEqual(report["active"], [])
+            self.assertNotIn("ok", report)
+
+    def test_exec_status_lists_the_job_folders_on_disk(self):
+        with self.adopted() as root:
+            folder = forge.job_dir(root, "WO-ORPHANED-FOLDER")
+            (folder / "context").mkdir(parents=True)
+            (folder / "brief.md").write_text("brief", encoding="utf-8")
+            (folder / "context" / "referral.json").write_text("{}", encoding="utf-8")
+            jobs = forge.execute_status(str(root))["jobs"]
+            self.assertEqual([item["work_order"] for item in jobs], ["WO-ORPHANED-FOLDER"])
+            self.assertEqual(jobs[0]["brief"], True)
+            self.assertEqual(jobs[0]["packet"], False)
+            self.assertEqual(jobs[0]["result"], False)
+            self.assertEqual(jobs[0]["context"], ["referral.json"])
+
+    def test_a_job_folder_the_ledger_never_mentions_is_still_listed(self):
+        with self.adopted() as root:
+            forge.job_dir(root, "WO-UNRECORDED").mkdir(parents=True)
+            report = forge.execute_status(str(root))
+            self.assertEqual(report["orders"], [])
+            self.assertEqual([item["work_order"] for item in report["jobs"]], ["WO-UNRECORDED"])
+
+    def test_every_emitted_action_says_whether_it_can_run(self):
+        with self.adopted() as root:
+            payload = forge.forge_next(str(root))
+            self.assertNotEqual(payload["actions"], [])
+            self.assertEqual([item for item in payload["actions"] if "reachable" not in item], [])
+            self.assertEqual([item for item in payload["actions"] if "blocked_by" not in item], [])
+
+    def test_a_blocking_state_reaches_the_action_that_would_collide_with_it(self):
+        with self.adopted() as root:
+            self.complete_bootstrap(root)
+            (root / ".planning").mkdir()
+            self.seed_orders(root, orders=[{"work_order": "WO-LIVE", "status": "DISPATCHED"}])
+            payload = forge.forge_next(str(root), gsd_result={"ok": True, "snapshot": {
+                "situation": "phase-ready",
+                "summary": "a phase is ready",
+                "actions": [{"id": "plan", "label": "Plan the phase", "command": "gsd-plan-phase", "recommended": True}],
+            }})
+            planned = next(item for item in payload["actions"] if item["id"] == "plan")
+            self.assertEqual(planned["reachable"], False)
+            self.assertEqual([item["kind"] for item in planned["blocked_by"]], ["order_dispatched"])
+
+    def test_diagnosis_and_control_plane_repair_stay_offerable_while_a_lane_is_held(self):
+        with self.adopted() as root:
+            self.strand(root)
+            payload = forge.forge_next(str(root))
+            offered = {item["id"]: item["reachable"] for item in payload["actions"]}
+            self.assertNotEqual(sorted(set(offered) & forge.NEVER_BLOCKED_ACTIONS), [])
+            self.assertEqual(
+                [name for name, reachable in offered.items() if name in forge.NEVER_BLOCKED_ACTIONS and not reachable],
+                [],
+            )
+
+    def test_the_detector_says_what_its_reachability_answer_leaves_unchecked(self):
+        with self.adopted() as root:
+            stated = " ".join(forge.forge_next(str(root))["reachability"]["not_checked"])
+            self.assertIn("Capability routes", stated)
+            self.assertIn("forge-route-work", stated)
+            self.assertIn("GSD phase logic", stated)
+
+    def test_an_unadopted_project_reports_the_unreadable_ledger_rather_than_claiming_clear(self):
+        with workspace_tempdir() as temp:
+            payload = forge.forge_next(str(temp))
+            self.assertEqual(payload["reachability"]["readable"], False)
+            self.assertEqual(payload["reachability"]["blockers"], [])
+
+    def test_next_reads_the_reachability_the_detector_computed_instead_of_the_state_file(self):
+        text = self.NEXT.read_text(encoding="utf-8")
+        step = text.split('<step name="check_reachability">')[1].split("</step>")[0]
+        self.assertIn("blocked_by", step)
+        self.assertIn("reachability.not_checked", step)
+        self.assertIn("do not re-derive them", step)
+        self.assertNotIn("Read `.forge/state/work-orders.json` directly", step)
+        for kind in ("lane_held", "lane_quarantined", "order_dispatched", "order_blocked", "lane_breaker"):
+            self.assertIn(kind, step)
+
+    def test_resume_finds_the_interruption_through_exec_status(self):
+        text = self.RESUME.read_text(encoding="utf-8")
+        step = text.split('<step name="find_the_interruption">')[1].split("</step>")[0]
+        self.assertIn("forge.py exec status", step)
+        for key in ("supervision", "blocked_lanes", "blockers", "terminal_states"):
+            self.assertIn(key, step)
+
+    def test_resume_opens_the_job_folders_exec_status_listed(self):
+        text = self.RESUME.read_text(encoding="utf-8")
+        step = text.split('<step name="reopen_the_job">')[1].split("</step>")[0]
+        self.assertIn("`jobs`", step)
+        self.assertIn("work_order", step)
+
+
 if __name__ == "__main__":
     unittest.main()

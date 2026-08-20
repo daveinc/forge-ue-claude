@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: resume-work
-consumes: .forge/jobs/<work-order>/, .forge/state/work-orders.json, .forge/state/leases.json, .forge/runtime.json, doctrine/procedures.json
+consumes: forge.py exec status (.forge/state/work-orders.json, .forge/state/leases.json, .forge/jobs/), .forge/jobs/<work-order>/, .forge/runtime.json, doctrine/procedures.json
 produces: recovered lane leases, a supervision entry in .forge/state/work-orders.json, and the reopened job folder handed to whoever continues
 never-reads: .forge/state/lifecycle.json (deprecated history)
 -->
@@ -59,8 +59,15 @@ first.
 </step>
 
 <step name="find_the_interruption">
-`.forge/state/work-orders.json` says what was happening when the session ended. Read it by status —
-the file declares its own `terminal_states`, and everything else is unfinished:
+One command says what was happening when the session ended, and it reports the order ledger beside
+the leases that ledger explains:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py exec status --project <project-root>
+```
+
+Read `orders` by status. `terminal_states` comes back with them, declared by the ledger itself, and
+everything outside it is unfinished:
 
 | Status | What it means | What resume does with it |
 |---|---|---|
@@ -68,12 +75,16 @@ the file declares its own `terminal_states`, and everything else is unfinished:
 | `BLOCKED` | Admission refused on a lane whose ownership could not be settled | Present its `human_action`. Never re-attempt the same entry to see if it works this time |
 | `ACCEPTED`, `REJECTED` | Terminal. The order finished and said so | Carry it forward as history. Read `lane_exit` for what it left the lane in |
 
-Then read two more keys in the same file:
+Three more keys in the same answer, and none of them is a hand-read of a state file:
 
 - `supervision` — the last entries name which workflow declared what, including a run that declared
   `holds_no_lane`. This is where the previous session's intent is recorded rather than remembered.
 - `blocked_lanes` — a `consecutive` count against a lane means repeated failed entries. Resuming
   into it is how a loop restarts.
+- `blockers` — the two ledgers already joined: every `order_dispatched`, `order_blocked`,
+  `lane_held`, `lane_quarantined`, `release_interrupted` and `lane_breaker` entry, each carrying the
+  remedy that clears it. This is the same join `forge-next` weighs its actions against, so what
+  resume finds here and what the detector refuses to offer cannot disagree.
 
 An order at `DISPATCHED` whose worker died leaves no `result.json` and no release. That is the case
 this workflow exists for; a clean `ACCEPTED` order needs no resuming.
@@ -82,8 +93,17 @@ this workflow exists for; a clean `ACCEPTED` order needs no resuming.
 </step>
 
 <step name="reopen_the_job">
-Open `.forge/jobs/<work-order>/` for every order `find_the_interruption` returned. It is keyed on the
-canonical work order and nothing above it, so one order has exactly one folder.
+The `jobs` array from the same `exec status` answer lists every folder on disk, so this step opens
+what is there rather than composing a path from the ledger and trusting the ledger to be complete.
+Each entry names its `work_order`, its `path`, whether `brief`, `packet` and `result` are present,
+and every file under `context`.
+
+Open the folder for each order `find_the_interruption` returned. It is keyed on the canonical work
+order and nothing above it, so one order has exactly one folder.
+
+A `jobs` entry no order in `orders` names is a dispatch whose acquisition failed after the folder was
+written. It is the record of what was attempted, it grants nothing, and it is a finding to report
+rather than a folder to resume from.
 
 | File | What it restores |
 |---|---|
@@ -200,8 +220,9 @@ that resumes.
 python <forge-plugin-root>/scripts/forge.py exec status --project <project-root>
 ```
 
-Nothing may remain `quarantined`, and no lease may be held by this run. Then take the next action
-from the detector rather than from this workflow's own reasoning:
+Nothing may remain `quarantined`, no lease may be held by this run, and no `blockers` entry may name
+a lane this run touched. Then take the next action from the detector rather than from this workflow's
+own reasoning:
 
 ```powershell
 python <forge-plugin-root>/scripts/forge.py next --project <project-root>
