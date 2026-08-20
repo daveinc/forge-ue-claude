@@ -697,6 +697,86 @@ def main() -> int:
             if not procedure.get(field):
                 fail(f"Procedure {task_class!r} declares no {field}, so a packet cannot be checked against it", failures)
 
+    spine_path = PLUGIN / "doctrine" / "spine.json"
+    spine_document = parsed.get(spine_path, {})
+    if spine_document.get("schema") != "forge.spine/v1":
+        fail("Spine doctrine must declare schema forge.spine/v1", failures)
+    spine_steps = spine_document.get("steps", [])
+    spine_gaps = spine_document.get("gaps", {})
+    step_ids = [step.get("id") for step in spine_steps]
+    if step_ids != list(range(1, 9)):
+        fail(f"The production spine has eight ordered steps; spine.json declares {step_ids}", failures)
+    workflow_names = {path.stem for path in workflow_files}
+    covered_by_step = {step.get("id"): list(step.get("covered_by", [])) for step in spine_steps}
+    raised_gaps: set[str] = set()
+    for step in spine_steps:
+        label = step.get("name") or step.get("id")
+        raised_gaps |= {str(item) for item in step.get("gaps", [])}
+        if not step.get("covered_by") and not step.get("gaps"):
+            fail(
+                f"Spine step {label!r} names no covering task class and records no gap, so a step of the "
+                "production spine is silently unmapped. Name the task class that covers it, or the gap that "
+                "does not — a gap counted is the answer; an invented procedure is worse than the gap",
+                failures,
+            )
+        for field in ("establishes", "note", "order", "workflows"):
+            if not step.get(field):
+                fail(f"Spine step {label!r} declares no {field}", failures)
+        if step.get("order") not in {"dependency", "preference", "recurring"}:
+            fail(f"Spine step {label!r} declares unknown order kind {step.get('order')!r}", failures)
+        for task_class in [*step.get("covered_by", []), *step.get("verified_by", [])]:
+            if task_class not in declared_procedures:
+                fail(
+                    f"Spine step {label!r} names task class {task_class!r}, which procedures.json does not "
+                    "declare; the map would claim coverage no procedure supplies",
+                    failures,
+                )
+        for workflow in step.get("workflows", []):
+            if workflow not in workflow_names:
+                fail(f"Spine step {label!r} names workflow {workflow!r}, which ships no workflow file", failures)
+
+    skeletons = set(spine_document.get("source", {}).get("skeletons", []))
+    for genre, rows in sorted(spine_document.get("genres", {}).items()):
+        if f"{genre}.md" not in skeletons:
+            fail(f"Spine index carries genre {genre!r} that source.skeletons does not name, so its provenance is unrecorded", failures)
+        if [row.get("step") for row in rows] != step_ids:
+            fail(
+                f"Genre skeleton {genre!r} declares rows for {[row.get('step') for row in rows]} rather than one "
+                "per spine step; a skeleton adds within steps and never skips one",
+                failures,
+            )
+        for row in rows:
+            raised_gaps |= {str(item) for item in row.get("gaps", [])}
+            if not row.get("adds"):
+                fail(f"Genre skeleton {genre!r} declares a row for step {row.get('step')} that adds nothing", failures)
+            if not row.get("gaps") and not covered_by_step.get(row.get("step")):
+                fail(
+                    f"Genre skeleton {genre!r} step {row.get('step')} records no gap and its spine step names no "
+                    "covering task class, so a genre's additions are silently unmapped",
+                    failures,
+                )
+
+    for gap in sorted(raised_gaps - set(spine_gaps)):
+        fail(f"Spine raises gap {gap!r}, which spine.json declares nothing about", failures)
+    for gap in sorted(set(spine_gaps) - raised_gaps):
+        fail(f"Spine gap {gap!r} is declared and no step or genre row raises it, so nothing counts it", failures)
+    for gap, body in sorted(spine_gaps.items()):
+        if body.get("blocked_on") not in {"doctrine", "route"}:
+            fail(f"Spine gap {gap!r} declares unknown blocked_on {body.get('blocked_on')!r}", failures)
+        for field in ("title", "why_no_procedure", "closes_when"):
+            if not body.get(field):
+                fail(f"Spine gap {gap!r} declares no {field}, so what would close it is not written down", failures)
+        request = body.get("research_request") or {}
+        for field in ("question", "prefer", "returns"):
+            if not request.get(field):
+                fail(
+                    f"Spine gap {gap!r} raises no research request with a {field}; an uncovered spine step must "
+                    "reach forge-research rather than stay silent, which is what makes the catalogue grow",
+                    failures,
+                )
+        if gap in declared_procedures:
+            fail(f"Spine gap {gap!r} is also a declared procedure; it is covered and is not a gap", failures)
+
     try:
         from api_index import procedure_symbol_failures
 
@@ -710,15 +790,13 @@ def main() -> int:
             failures,
         )
 
-    procedure_readers = sorted(
-        name for name, text in module_sources.items() if procedures_path.name in text
-    )
-    if not procedure_readers:
-        fail(
-            f"{procedures_path.relative_to(ROOT)} is read by no module under plugins/forge-ue-studio/scripts/; "
-            "doctrine nothing loads is prose, and this repository has shipped that twice already",
-            failures,
-        )
+    for doctrine_path in (procedures_path, spine_path):
+        if not any(doctrine_path.name in text for text in module_sources.values()):
+            fail(
+                f"{doctrine_path.relative_to(ROOT)} is read by no module under plugins/forge-ue-studio/scripts/; "
+                "doctrine nothing loads is prose, and this repository has shipped that twice already",
+                failures,
+            )
 
     for function, writer, consequence in (
         (

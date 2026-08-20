@@ -174,6 +174,7 @@ from forge_routing import (
     JOBS_RETENTION_DEFAULT,
     PROCEDURE_SCHEMA,
     ROUTE_DECISIONS_SCHEMA,
+    SPINE_SCHEMA,
     WORK_ORDERS_SCHEMA,
     blocked_lane_policy,
     canonical_order,
@@ -216,6 +217,11 @@ from forge_routing import (
     route_drift,
     route_policy,
     route_work,
+    spine,
+    spine_coverage,
+    spine_gaps_raised,
+    spine_path,
+    spine_research_requests,
     strictest_isolation,
     work_blockers,
     work_orders_path,
@@ -287,6 +293,10 @@ def procedure_brief(task_class: str) -> dict[str, Any]:
         "resolution": procedure_resolution(task_class),
         "declared": sorted(procedures()),
     }
+
+
+def spine_brief() -> dict[str, Any]:
+    return {**spine_coverage(), "source_file": str(spine_path()), "catalogue": sorted(procedures())}
 
 
 def dispatch_work(
@@ -620,6 +630,8 @@ def build_parser() -> argparse.ArgumentParser:
     procedure = sub.add_parser("procedure", help="Report the build procedure a task class carries: steps, lanes, acceptance, verification, evidence")
     procedure.add_argument("--task-class", dest="task_class", required=True)
     procedure.add_argument("--output")
+    spine_parser = sub.add_parser("spine", help="Report the production spine against the catalogue: which step each task class serves, which steps no procedure covers, and the research request each gap raises")
+    spine_parser.add_argument("--output")
     validate = sub.add_parser("validate")
     validate.add_argument("--kind", required=True, choices=sorted(SCHEMA_FILES))
     validate.add_argument("--input", required=True)
@@ -765,6 +777,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "procedure":
             result = procedure_brief(args.task_class)
+        elif args.command == "spine":
+            result = spine_brief()
         elif args.command == "lifecycle":
             result = lifecycle_state(args.project, args.event)
         else:

@@ -1,6 +1,6 @@
-﻿[CmdletBinding(SupportsShouldProcess = $true)]
+[CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'RouteStatus', 'Dispatch', 'Exec', 'Lifecycle', 'Procedure', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
+    [ValidateSet('Plugin', 'GSD', 'Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'RouteStatus', 'Dispatch', 'Exec', 'Lifecycle', 'Procedure', 'Spine', 'Validate', 'Host', 'Mcp', 'McpStatus', 'GsdSync')]
     [string]$Mode = 'Plugin',
     [ArgumentCompleter({
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -318,7 +318,7 @@ if ($Mode -eq 'Validate') {
         throw '-TaskClass is required for Procedure mode.'
     }
     $arguments += @('--task-class', $TaskClass)
-} else {
+} elseif ($Mode -ne 'Spine') {
     $arguments += @('--project', $ProjectPath)
 }
 if ($Mode -in @('Survey', 'Install', 'Verify', 'Profile', 'Next', 'BootstrapCheck', 'Route', 'McpStatus', 'RouteStatus', 'GsdSync') -and $PSBoundParameters.ContainsKey('RuntimeHost')) {

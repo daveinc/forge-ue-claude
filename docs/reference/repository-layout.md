@@ -13,6 +13,8 @@ plugins/forge-ue-studio/               installable plugin
   references/delegation-contract.md    the PRE / CORE / POST shape every delegating verb follows
   skills/                              one launcher per verb: invocation, flags, what to load
   workflows/                           one procedure per verb, loaded by its launcher
+  doctrine/procedures.json             what a phase of each task class consists of
+  doctrine/spine.json                  the production spine, and which task class reaches each step
   dependencies/catalog.json            capability and route declarations
   dependencies/route-registry.json     typed routes: mcp servers and process commands alike
   dependencies/route-policy.json       resident default and offload scoring

@@ -1,6 +1,6 @@
 <!-- forge:workflow
 name: plan-phase
-consumes: CONTEXT.md, plugins/forge-ue-studio/doctrine/procedures.json, .forge/state/packet-registry.json, .forge/visual/registry.json, forge.py exec status (blockers, blocked_lanes)
+consumes: CONTEXT.md, plugins/forge-ue-studio/doctrine/procedures.json, plugins/forge-ue-studio/doctrine/spine.json, .forge/state/packet-registry.json, .forge/visual/registry.json, forge.py exec status (blockers, blocked_lanes)
 produces: PLAN.md carrying required_lanes and mutation_risk (GSD's), registered asset interfaces, derived_from packet records
 -->
 
@@ -62,6 +62,36 @@ list — `ik-retarget`, `world-blockout`, `batch-import`, `lod-generation`, `ass
 request that resolves to none of them as an undoctrined gap rather than naming a new class here.
 
 > **Why:** [build doctrine](../../../docs/explanation/build-doctrine.md) § *Forge is the game planner*
+</step>
+
+<step name="place_the_request_on_the_spine">
+Most of a game is not in the catalogue, and this is the step that says so out loud rather than
+letting a phase discover it in execution:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py spine
+```
+
+Find the spine step this request sits on. Steps 1–6 are a dependency order — a request that belongs
+to step 3 while step 2 is unbuilt is scheduled too early whatever the catalogue says about it.
+
+| What the answer says about that step | What this phase does |
+|---|---|
+| `coverage: covered` | Plan it from the procedures alone |
+| `coverage: partial` | Plan the covered half from its procedures and carry every `gaps` entry into the phase as a named open risk |
+| `coverage: uncovered` | The phase is authored without doctrine. Carry every `gaps` entry, and **raise its research request** |
+| `coverage: unmapped` | A step nothing has been said about. Stop and report it — the spine index is wrong, not the request |
+
+**Raising a request is one act, not a note.** Take the entry in `research_requests` whose `gap`
+matches, and hand `question`, `prefer`, `returns`, `blocked_on` and `closes_when` to `forge-research`
+as its brief. It comes back as a procedure entry in the catalogue, and the next phase of that shape
+is planned from doctrine rather than from whoever is holding the request. A gap named and passed on
+is the mechanism; a gap mentioned in a plan and nowhere else is the silence it replaces.
+
+Never write the missing procedure here. A procedure that exists will be followed, and one invented
+inside a plan is followed without ever having been reviewed.
+
+> **Why:** [build doctrine](../../../docs/explanation/build-doctrine.md) § *The spine, and what it does not reach*
 </step>
 
 <step name="read_the_procedure_for_each">

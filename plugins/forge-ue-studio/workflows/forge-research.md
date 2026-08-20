@@ -1,7 +1,7 @@
 <!-- forge:workflow
 name: research
-consumes: candidate sources, .forge/research/index.json, .forge/capabilities/registry.json, plugins/forge-ue-studio/doctrine/procedures.json
-produces: a capability or research contract, .forge/research/index.json
+consumes: candidate sources, .forge/research/index.json, .forge/capabilities/registry.json, plugins/forge-ue-studio/doctrine/procedures.json, plugins/forge-ue-studio/doctrine/spine.json
+produces: a capability or research contract, .forge/research/index.json, the procedure or route entry that closes a spine gap
 -->
 
 # Forge Research — workflow
@@ -28,6 +28,31 @@ python <forge-plugin-root>/scripts/forge.py exec supervise --project <project-ro
 Naming no `--lane` records `holds_no_lane` against this run. Probing an Unreal route is the one
 exception: a probe that drives the live editor takes `--lane ue-live-native-mcp` like any other
 writer, because it occupies the same editor.
+</step>
+
+<step name="take_the_standing_queue">
+Research is not only asked for. Every step of the production spine that no procedure covers has
+already raised a request, and it is waiting here:
+
+```powershell
+python <forge-plugin-root>/scripts/forge.py spine
+```
+
+`research_requests` is that queue. Each entry carries the `question` to answer, `prefer` in the order
+this workflow's next step insists on, `returns` — what closes it — and `blocked_on`, which decides
+whether the answer is doctrine's or a route's:
+
+| `blocked_on` | What closing it means |
+|---|---|
+| `doctrine` | A route already serves the capabilities the work needs and no one has written the pass. The answer is a procedure entry in `doctrine/procedures.json`, and every Unreal call it names must be present in the shipped API index |
+| `route` | No route serves this at all, so a procedure naming one would fail its own capability check. The answer is a route provider entry first, and a procedure only after it |
+
+`spine_steps` and `genres` say how much of the spine one answer unblocks. Take the request that
+unblocks the most, or the one the phase in front of you is stalled on, and scope this round to it.
+**Never close a request by writing the procedure without the evidence** — a procedure that exists
+will be followed, so an invented one is worse than the gap it replaced.
+
+> **Why:** [build doctrine](../../../docs/explanation/build-doctrine.md) § *The spine, and what it does not reach*
 </step>
 
 <step name="discover_without_importing">
@@ -73,6 +98,13 @@ Block the destination contract until the human owner resolves a material contrad
 Create the capability or research contract described in
 [absorption-contract.md](../skills/forge-research/references/absorption-contract.md), and register it
 in `.forge/research/index.json` with its source, version, licence and date.
+
+A round opened from the standing queue closes on `returns` and nothing less. `classification` names
+the task class the catalogue would gain, so the request and the answer can be matched later, and the
+procedure entry itself is written against `doctrine/procedures.json` — with its steps, non-goals,
+acceptance, verification and evidence — only once the contract can show which call serves each step.
+A question the sources could not answer is recorded as answered-negatively, which is a result: it
+moves the gap from `doctrine` to `route` and says what would have to exist first.
 </step>
 
 <step name="probe_before_believing">

@@ -1,0 +1,223 @@
+{
+  "schema": "forge.spine/v1",
+  "note": "The production spine every genre skeleton fills in, mapped to the task classes procedures.json actually covers. Steps 1-6 are a dependency order no genre may reorder, step 7 is a preference order because art never gates production, and step 8 is entered at every phase gate and closed once. A step resolves to a covering task class or to a named gap, and a gap carries the research request that would close it. Nothing here invents a procedure to make the map look complete: a step whose work no procedure covers says so, and the count says how many.",
+  "source": {
+    "library": "the studio's genre-skeleton library, authored outside this repository and edited there",
+    "spine": "_shared-spine.md",
+    "rules": "_library-rules.md",
+    "skeletons": ["fps.md", "rpg.md", "side-scroller-2.5d.md", "souls-like.md"],
+    "derivation": "Structure only: step identity, order kind, and one line per genre addition. No prose is copied, so an edit to the library's reasoning leaves this index correct; an edit to its step list, its order, or a genre's systems makes it stale, and re-deriving is what fixes it. The library stays authoritative and Forge never writes to it.",
+    "authority": "library"
+  },
+  "steps": [
+    {
+      "id": 1,
+      "name": "core-verbs",
+      "establishes": "Input, camera, locomotion, base animation — the player can move and look, and nothing later can be judged before that.",
+      "order": "dependency",
+      "covered_by": ["batch-import", "ik-retarget"],
+      "verified_by": ["pie-verification"],
+      "gaps": ["gameplay-class-authoring", "animation-graph-authoring"],
+      "workflows": ["forge-plan-phase", "forge-route-work", "forge-verify-work"],
+      "note": "Only the asset supply is covered. `batch-import` brings the character mesh and its sequences in against a declared skeleton, and `ik-retarget` puts existing animation onto that skeleton and re-points the Animation Blueprint. The pawn, the controller, the input mapping context, the camera and the movement tuning are authored by nothing in the catalogue."
+    },
+    {
+      "id": 2,
+      "name": "primary-mechanic",
+      "establishes": "The genre's defining verb, built deep — the step where the game is fun or is not.",
+      "order": "dependency",
+      "covered_by": [],
+      "verified_by": ["pie-verification"],
+      "gaps": ["gameplay-class-authoring", "animation-graph-authoring"],
+      "workflows": ["forge-plan-phase", "forge-route-work", "forge-gameplay-gauntlet", "forge-verify-work"],
+      "note": "No task class produces a verb. `forge-gameplay-gauntlet` decides which of several alternatives feels better, but its first refusal is a round with no runnable loop, so it presupposes the thing this step builds rather than building it."
+    },
+    {
+      "id": 3,
+      "name": "antagonist-and-damage-loop",
+      "establishes": "Enemy, AI, health in both directions, hit feedback — the first real loop.",
+      "order": "dependency",
+      "covered_by": [],
+      "verified_by": ["pie-verification"],
+      "gaps": ["gameplay-class-authoring", "ai-behaviour-authoring", "animation-graph-authoring"],
+      "workflows": ["forge-plan-phase", "forge-route-work", "forge-verify-work"],
+      "note": "Three different kinds of authoring meet here and the catalogue covers none of them: the health and damage components, the behaviour tree and the nav mesh that lets it path, and the hit reactions and telegraphs that make the exchange readable."
+    },
+    {
+      "id": 4,
+      "name": "economy-and-world-items",
+      "establishes": "Pickups, resources, interaction — what the loop of step 3 is played for.",
+      "order": "dependency",
+      "covered_by": [],
+      "verified_by": ["pie-verification"],
+      "gaps": ["gameplay-class-authoring", "data-asset-authoring", "umg-authoring"],
+      "workflows": ["forge-plan-phase", "forge-route-work", "forge-verify-work"],
+      "note": "The library binds every tunable to a DataTable, DataAsset or CurveTable rather than a graph literal, and no procedure creates one. `batch-import` is the nearest thing — a row source resolving to one destination asset is exactly its manifest shape — but it declares import settings for meshes and textures and asks nothing about the row struct a table needs, so claiming it here would be claiming a pass nobody has run."
+    },
+    {
+      "id": 5,
+      "name": "level",
+      "establishes": "Blockout first, metrics first — the level grammar derived from the verbs.",
+      "order": "dependency",
+      "covered_by": ["world-blockout"],
+      "verified_by": ["pie-verification"],
+      "gaps": ["gameplay-class-authoring"],
+      "workflows": ["forge-plan-phase", "forge-route-work", "forge-verify-work"],
+      "note": "The best-covered step in the spine. `world-blockout` runs end to end — bounds, grid, archetype Blueprints, placement, a PIE readback and a capture of the whole map — and stops exactly where the metrics half begins. Jump arc, gap width, ledge tolerance, hazards, checkpoints and traversal actors are movement and gameplay work, and this step cannot be called finished on the blockout alone."
+    },
+    {
+      "id": 6,
+      "name": "game-frame",
+      "establishes": "Game mode, win and lose, menus, the session loop — the wrapper around a thing that already exists.",
+      "order": "dependency",
+      "covered_by": [],
+      "verified_by": ["pie-verification"],
+      "gaps": ["gameplay-class-authoring", "umg-authoring"],
+      "workflows": ["forge-plan-phase", "forge-route-work", "forge-verify-work"],
+      "note": "Persistence is the part that hurts to retrofit: a game instance carrying state across a level transition, and a save that survives one. Nothing in the catalogue authors either, and `pie-verification` can only check a single session, so a persistence claim is the one this step's evidence cannot currently make."
+    },
+    {
+      "id": 7,
+      "name": "presentation",
+      "establishes": "UI, SFX, VFX and the feel passes over them.",
+      "order": "preference",
+      "covered_by": [],
+      "verified_by": ["pie-verification"],
+      "gaps": ["umg-authoring", "audio-vfx-authoring"],
+      "workflows": ["forge-visual-production", "forge-gameplay-gauntlet", "forge-route-work", "forge-verify-work"],
+      "note": "`lod-generation` and `bulk-property-edit` run over art that already exists — a Nanite-or-LOD decision per mesh, one property across a selected set — and author no widget, sound, particle system or feel change, so neither covers this step. `forge-visual-production` drives the art end to end with no procedure behind it, which is why this step has a workflow and no task class. Ordered late by preference: a blocked presentation layer never stalls the spine."
+    },
+    {
+      "id": 8,
+      "name": "ship",
+      "establishes": "Level bounds, package, cook, install, boot smoke — entered at every phase gate, closed here.",
+      "order": "recurring",
+      "covered_by": ["cook-and-build-preparation"],
+      "verified_by": [],
+      "gaps": ["package-build"],
+      "workflows": ["forge-ship", "forge-route-work", "forge-quality-gate"],
+      "note": "The preparation is covered end to end — platforms, maps and plugins fixed, redirectors resolved, data validation counted, cooked path lengths measured, a sample cooked. The build itself is not, and the procedure says so in its own result rather than letting a green preparation read as a green build."
+    }
+  ],
+  "genres": {
+    "fps": [
+      {"step": 1, "adds": "Input map, look, jump, base player animation, sprint.", "gaps": ["gameplay-class-authoring", "animation-graph-authoring"]},
+      {"step": 2, "adds": "A data-driven weapon framework proven by three variants: hitscan, recoil, ammo, reload, ADS, swap, impacts, camera shake.", "gaps": ["gameplay-class-authoring", "data-asset-authoring", "animation-graph-authoring", "audio-vfx-authoring"]},
+      {"step": 3, "adds": "Chase-and-attack enemy AI, hit react, damage intake, player health, hurt screen, hearing, locational damage.", "gaps": ["gameplay-class-authoring", "ai-behaviour-authoring", "animation-graph-authoring", "umg-authoring"]},
+      {"step": 4, "adds": "Explosive barrel, health pack, ammo pickups per type, enemy loot drops, an interaction HUD.", "gaps": ["gameplay-class-authoring", "data-asset-authoring", "umg-authoring"]},
+      {"step": 5, "adds": "A themed blockout and a collision pass.", "gaps": []},
+      {"step": 6, "adds": "Game mode, objective counter, win and game-over screens, main menu.", "gaps": ["gameplay-class-authoring", "umg-authoring"]},
+      {"step": 7, "adds": "A UI pass, SFX, reload polish, a documented weapon-authoring route, custom font, lighting, enemy readability.", "gaps": ["umg-authoring", "audio-vfx-authoring"]},
+      {"step": 8, "adds": "A level-bounds volume, then export.", "gaps": ["package-build"]}
+    ],
+    "rpg": [
+      {"step": 1, "adds": "Project and module skeleton, a character rigged for equipment-driven visual swaps, locomotion, spring-arm camera, base Animation Blueprint, test level.", "gaps": ["gameplay-class-authoring", "animation-graph-authoring"]},
+      {"step": 2, "adds": "A build-agnostic execution framework: gameplay tags and an action state machine, combos with an input buffer, block and parry, dodge with invulnerability frames, stamina, target lock, poise, the ranged and magic verbs, and a generic ability slot.", "gaps": ["gameplay-class-authoring", "animation-graph-authoring", "data-asset-authoring"]},
+      {"step": 3, "adds": "Broadcasting health, damage volumes, enemy base and behaviour tree, damage types and elemental resolution, status effects, telegraphs, EQS, threat, enemy variety, attack-token coordination.", "gaps": ["gameplay-class-authoring", "ai-behaviour-authoring", "animation-graph-authoring", "data-asset-authoring"]},
+      {"step": 4, "adds": "Inventory, equipment slots with visual swap, item stats, currency, weight, attributes, crafting and upgrading, consumables, quickslots, vendors and trainers, loot, doors and lifts, dialogue.", "gaps": ["gameplay-class-authoring", "data-asset-authoring", "umg-authoring"]},
+      {"step": 5, "adds": "Traversal, environmental puzzles, rest points and waypoints, resource nodes placed in the world, dungeon and boss arena.", "gaps": ["gameplay-class-authoring"]},
+      {"step": 6, "adds": "Game instance, save and load, world-state persistence, quest tracking keyed off dialogue outcomes, menus, a boss phase framework.", "gaps": ["gameplay-class-authoring", "umg-authoring"]},
+      {"step": 7, "adds": "Health, stamina, mana, currency and inventory UI with rarity and tooltips, combat and spell SFX and VFX, camera shake, lighting, a feel pass on the build's combat expression.", "gaps": ["umg-authoring", "audio-vfx-authoring"]},
+      {"step": 8, "adds": "Level bounds, then package, cook, install and boot smoke.", "gaps": ["package-build"]}
+    ],
+    "side-scroller-2.5d": [
+      {"step": 1, "adds": "A shared character base before anything derives from it, a 2D animation state machine, plane-constrained movement, jump, facing flip, a fixed or rail-follow camera.", "gaps": ["gameplay-class-authoring", "animation-graph-authoring"]},
+      {"step": 2, "adds": "Melee through an attack volume, attack and movement lockout windows, a combo counter with a reset rule, hit flash, timing tuned against the animation state machine.", "gaps": ["gameplay-class-authoring", "animation-graph-authoring"]},
+      {"step": 3, "adds": "Health as a broadcasting component, the two-volume damage model, an enemy sharing the character base, contact damage, chase AI, hit reaction and death, knockback.", "gaps": ["gameplay-class-authoring", "ai-behaviour-authoring", "animation-graph-authoring"]},
+      {"step": 4, "adds": "Pickups, consumables, collectibles and score, a simple inventory where the design needs one.", "gaps": ["gameplay-class-authoring", "data-asset-authoring", "umg-authoring"]},
+      {"step": 5, "adds": "Blockout on the constrained plane, platforming metrics — jump arc, gap width, ledge tolerance — hazards, checkpoints, parallax and depth layers.", "gaps": ["gameplay-class-authoring"]},
+      {"step": 6, "adds": "Game instance for persistence, level progression, death and restart, main menu and pause.", "gaps": ["gameplay-class-authoring", "umg-authoring"]},
+      {"step": 7, "adds": "HUD for health and collectibles, SFX, hit and death VFX, lighting tuned for silhouette readability, animation polish.", "gaps": ["umg-authoring", "audio-vfx-authoring", "animation-graph-authoring"]},
+      {"step": 8, "adds": "Level bounds, then package, cook, install and boot smoke.", "gaps": ["package-build"]}
+    ],
+    "souls-like": [
+      {"step": 1, "adds": "Project and module skeleton, game mode, controller and character, locomotion, a control-rotation-driven spring-arm camera, test level.", "gaps": ["gameplay-class-authoring", "animation-graph-authoring"]},
+      {"step": 2, "adds": "The exchange built deep before anything widens: light and heavy attack, commitment and recovery windows, a combo buffer, dodge with invulnerability frames, stamina as the cost of every verb, lock-on, block, parry and guard break, poise and stagger.", "gaps": ["gameplay-class-authoring", "animation-graph-authoring"]},
+      {"step": 3, "adds": "Broadcasting health, damage-out and damage-in volumes, enemy base, behaviour-tree melee AI, aggro and threat, telegraphs and windup, and the death loop: respawn, checkpoint, world reset.", "gaps": ["gameplay-class-authoring", "ai-behaviour-authoring", "animation-graph-authoring"]},
+      {"step": 4, "adds": "Pickups, currency dropped on death and recoverable, heal charges, equipment and stat effects, an upgrade sink, inventory.", "gaps": ["gameplay-class-authoring", "data-asset-authoring", "umg-authoring"]},
+      {"step": 5, "adds": "Blockout and metrics first, traversal, shortcut loops back to the checkpoint, ambush and sightline placement, boss arena.", "gaps": ["gameplay-class-authoring"]},
+      {"step": 6, "adds": "Game instance for cross-level state, save and load, the respawn flow, menus and settings, boss phases and arena gates.", "gaps": ["gameplay-class-authoring", "umg-authoring"]},
+      {"step": 7, "adds": "Health, stamina, currency and target-indicator UI, hit and death SFX, impact VFX, camera shake on impact, lighting and readability, a feel pass on the exchange.", "gaps": ["umg-authoring", "audio-vfx-authoring"]},
+      {"step": 8, "adds": "Level bounds, then package, cook, install and boot smoke.", "gaps": ["package-build"]}
+    ]
+  },
+  "gaps": {
+    "gameplay-class-authoring": {
+      "title": "Authoring and compiling the classes a verb lives in",
+      "blocked_on": "doctrine",
+      "why_no_procedure": "Every procedure in the catalogue moves, measures or checks assets that already exist. None creates a GameMode, a PlayerController, a Character, an ActorComponent or an input mapping context, and none says how the logic inside one is authored. `world-blockout` is the closest: it mints Blueprint actors and compiles them, but they are geometry archetypes with an explicit non-goal of gameplay logic inside them. The capabilities to create and compile an asset exist on both Unreal lanes; what does not exist is a written pass saying which calls author a graph, what proves a verb correct beyond compiling, and what evidence closes the step.",
+      "closes_when": "A procedure whose steps name only capabilities route-registry.json already serves, whose acceptance is a compiled class with its bindings read back in a process that did not write them, and whose evidence is a PIE readback of the verb executing rather than a successful compile.",
+      "research_request": {
+        "question": "Which shipped calls author and edit a Blueprint's graph and its class defaults, on which lane, and what can be read back afterwards to prove a verb does what it claims rather than merely compiling?",
+        "prefer": ["the shipped Unreal API index", "the shipped tool catalogue", "the editor's own schema discovery on the live route"],
+        "returns": "A procedure entry for one task class covering one verb end to end, with the calls it names present in the API index, plus the recorded finding for every call the index does not carry."
+      }
+    },
+    "animation-graph-authoring": {
+      "title": "Authoring the animation graph a verb is expressed in",
+      "blocked_on": "doctrine",
+      "why_no_procedure": "`ik-retarget` re-points an Animation Blueprint at a target skeleton and rebinds its sequence references, and names authoring new animation content as a non-goal in the same breath. State machines, blend spaces, montages with their slots, notifies and the sockets a verb spawns from are what every skeleton actually asks for at steps 1 through 3, and no procedure authors any of them. The 2.5D skeleton makes the dependency explicit: attack timing is tuned against the animation state machine, so numbers tuned before it exists are discarded.",
+      "closes_when": "A procedure covering the montage-and-notify path at minimum — the DefaultSlot the library names as the gate on rolls, combos and montage attacks — with acceptance read off a reloaded asset and evidence taken from a running session rather than from the graph.",
+      "research_request": {
+        "question": "Which shipped calls create and edit an Animation Blueprint's state machine, blend spaces, montage slots and notifies, and what can be read back off a saved asset to show a notify fires at the frame it was authored on?",
+        "prefer": ["the shipped Unreal API index", "the shipped tool catalogue"],
+        "returns": "A procedure entry for the montage-and-notify path, and a recorded finding naming which of the graph-authoring surfaces the index does not carry."
+      }
+    },
+    "ai-behaviour-authoring": {
+      "title": "Authoring an enemy's behaviour and the navigation it depends on",
+      "blocked_on": "doctrine",
+      "why_no_procedure": "Step 3 is the first step that makes a game rather than a toy, and it needs a behaviour tree, a blackboard, a perception service and a nav mesh volume that has actually been built. No procedure creates any of them. The check is also unlike every check the catalogue currently makes: a nav mesh that exists proves nothing, and only an agent observed pathing across it does.",
+      "closes_when": "A procedure whose acceptance is an agent reaching a declared destination in a running session, and whose evidence is that traversal rather than the presence of the assets that were supposed to produce it.",
+      "research_request": {
+        "question": "Which shipped calls create a behaviour tree, its blackboard and a nav mesh bounds volume, how is the nav mesh build triggered and its completion observed, and what readback shows an agent pathing rather than merely spawned?",
+        "prefer": ["the shipped Unreal API index", "the shipped tool catalogue", "the editor's own schema discovery on the live route"],
+        "returns": "A procedure entry for one readable enemy, with the traversal readback named as its evidence."
+      }
+    },
+    "data-asset-authoring": {
+      "title": "Creating the tables and data assets every tunable is supposed to live in",
+      "blocked_on": "doctrine",
+      "why_no_procedure": "The library binds tunables to DataTables, DataAssets and CurveTables and forbids graph literals, and every genre's step 2 and step 4 rest on that. `bulk-property-edit` changes a property across assets that exist; `batch-import` brings a source file in against per-type settings that say nothing about a row struct. Neither creates a table, and nothing validates that the rows a table holds are the rows the design asked for.",
+      "closes_when": "A procedure that mints the table against a declared row struct, fills it from a manifest, and reads every row back in a process that did not write it — the same second-process check `bulk-property-edit` already relies on.",
+      "research_request": {
+        "question": "Which shipped calls create a DataTable, DataAsset or CurveTable against a named row struct and write and read its rows, and can a row struct itself be authored from a script or must it come from a module?",
+        "prefer": ["the shipped Unreal API index", "the shipped tool catalogue"],
+        "returns": "A procedure entry for the tunable path, and an explicit statement of which half — the struct or the table — cannot be authored from a script."
+      }
+    },
+    "umg-authoring": {
+      "title": "Authoring widgets and binding them to the game they display",
+      "blocked_on": "doctrine",
+      "why_no_procedure": "Every genre reaches step 6 and step 7 needing a HUD, menus and prompts, and several need one earlier: an FPS hurt screen and interaction HUD are step 3 and step 4 work, and an RPG's dialogue and inventory are step 4. No procedure authors a widget. The hard half is not the widget but the binding — a health bar that renders and does not track health is exactly the failure a compile does not catch.",
+      "closes_when": "A procedure whose acceptance is a widget bound to a live value and whose evidence is a viewport capture taken while that value changes, rather than a widget that opens.",
+      "research_request": {
+        "question": "Which shipped calls create a widget Blueprint and its bindings, and what evidence short of a human looking at it shows a bound value tracking the gameplay state it claims to display?",
+        "prefer": ["the shipped Unreal API index", "the shipped tool catalogue", "the editor's own schema discovery on the live route"],
+        "returns": "A procedure entry for one bound HUD element, with the binding readback named as its acceptance."
+      }
+    },
+    "audio-vfx-authoring": {
+      "title": "Authoring the effects and audio a hit is read through",
+      "blocked_on": "doctrine",
+      "why_no_procedure": "Build doctrine's own worked example — a red magic spell — decomposes into Niagara systems for the cast, the projectile and the impact, audio cues, and a material treatment that still reads at gameplay distance. Not one of those is a task class today. `forge-visual-production` drives this work as a workflow and has no procedure to compile a packet from, which is the one place in Forge where a whole department runs undoctrined.",
+      "closes_when": "A procedure per authoring route the project actually has, since the visual routes are qualified separately and none may be inferred from another, with evidence captured at gameplay distance rather than in an asset editor.",
+      "research_request": {
+        "question": "Which shipped calls create and parameterise a Niagara system, a sound cue and a camera shake, which of them the live and the editor-closed lane each serve, and what capture shows an effect reading at gameplay distance?",
+        "prefer": ["the shipped tool catalogue", "the shipped Unreal API index", "the visual registry's own asset interfaces"],
+        "returns": "A procedure entry for one impact effect end to end, and the recorded reason for every effect surface that cannot be reached from a script."
+      }
+    },
+    "package-build": {
+      "title": "Running the cook and the package, not merely preparing them",
+      "blocked_on": "route",
+      "why_no_procedure": "`cook-and-build-preparation` is deliberately short of this line and says so: the cook is a separate engine process the shipped tool catalogue does not name, and `CookFunctionLibrary.cook_asset` is experimental and documented as not exactly matching the cook commandlet. This is the one gap that is not doctrine's to close first — no route serves the build, so a procedure naming one would fail its own capability check.",
+      "closes_when": "A route in route-registry.json that runs the engine's build process, with its lane, isolation and lease declared, and only then a procedure taking the packaged artefact and its boot smoke as evidence.",
+      "research_request": {
+        "question": "What invokes the cook and the package as a process Forge can hold a lease around, what does it emit that is authoritative about success, and does it belong on the editor-closed lane or on a lane of its own?",
+        "prefer": ["the engine's own build tooling on this machine", "the shipped tool catalogue", "the host runtime documentation"],
+        "returns": "A route provider entry and a procedure whose evidence is a booted package, or a recorded finding that the build must stay outside Forge's lane system and why."
+      }
+    }
+  }
+}

@@ -49,6 +49,96 @@ def procedures() -> dict[str, Any]:
     return body if isinstance(body, dict) else {}
 
 
+SPINE_SCHEMA = "forge.spine/v1"
+
+
+def spine_path() -> Path:
+    return plugin_root() / "doctrine" / "spine.json"
+
+
+def spine() -> dict[str, Any]:
+    return load_json(spine_path())
+
+
+def spine_coverage() -> dict[str, Any]:
+    """The production spine, each step resolved against the catalogue that ships.
+
+    A step that names a covering task class and no gap is `covered`; one that
+    names both is `partial`; one that names only gaps is `uncovered`. A step
+    that names neither is `unmapped`, and it is reported under that word rather
+    than counted as a gap, because a step nothing has been said about is a
+    different failure from one whose gap is written down.
+    """
+    document = spine()
+    declared = set(procedures())
+    steps = []
+    for step in document.get("steps", []):
+        covered = [item for item in step.get("covered_by", []) if item in declared]
+        gaps = list(step.get("gaps", []))
+        steps.append({
+            **step,
+            "covered_by": covered,
+            "undeclared_task_classes": sorted(set(step.get("covered_by", [])) - declared),
+            "coverage": "covered" if covered and not gaps else "partial" if covered else "uncovered" if gaps else "unmapped",
+        })
+    tally = [item["coverage"] for item in steps]
+    return {
+        "schema": SPINE_SCHEMA,
+        "source": document.get("source", {}),
+        "steps": steps,
+        "genres": document.get("genres", {}),
+        "coverage": {
+            "steps": len(steps),
+            "task_classes": len(declared),
+            **{state: tally.count(state) for state in ("covered", "partial", "uncovered", "unmapped")},
+            "gaps": len(spine_gaps_raised(document)),
+        },
+        "research_requests": spine_research_requests(document),
+    }
+
+
+def spine_gaps_raised(document: dict[str, Any] | None = None) -> list[str]:
+    """Every gap id some spine step or genre row actually raises."""
+    body = document if document is not None else spine()
+    raised = {str(gap) for step in body.get("steps", []) for gap in step.get("gaps", [])}
+    raised |= {
+        str(gap)
+        for rows in body.get("genres", {}).values()
+        for row in rows
+        for gap in row.get("gaps", [])
+    }
+    return sorted(raised)
+
+
+def spine_research_requests(document: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """One research request per raised gap, so an uncovered step is never silent.
+
+    What Forge cannot do goes to `forge-research` and comes back as doctrine.
+    The request carries the steps and genres that raise it, so the department
+    can see how much of the spine one answer would unblock.
+    """
+    body = document if document is not None else spine()
+    gaps = body.get("gaps", {})
+    return [
+        {
+            "gap": name,
+            "title": gaps.get(name, {}).get("title"),
+            "blocked_on": gaps.get(name, {}).get("blocked_on"),
+            "spine_steps": [
+                step.get("id") for step in body.get("steps", []) if name in step.get("gaps", [])
+            ],
+            "genres": sorted(
+                genre
+                for genre, rows in body.get("genres", {}).items()
+                if any(name in row.get("gaps", []) for row in rows)
+            ),
+            "closes_when": gaps.get(name, {}).get("closes_when"),
+            **(gaps.get(name, {}).get("research_request") or {}),
+        }
+        for name in spine_gaps_raised(body)
+    ]
+
+
 def capability_lanes(capabilities: list[str]) -> dict[str, str]:
     index = mcp_capability_index()
     return {

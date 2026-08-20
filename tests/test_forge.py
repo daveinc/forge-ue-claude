@@ -3599,6 +3599,7 @@ class CommandSurfaceTests(unittest.TestCase):
             "route-status": ["route-status", *project],
             "lifecycle": ["lifecycle", *project],
             "procedure": ["procedure", "--task-class", "ik-retarget"],
+            "spine": ["spine"],
             "route": ["route", *project, "--request", str(root / "request.json")],
             "dispatch": ["dispatch", *project, "--packet", str(root / "dispatch-packet.json")],
             "validate": ["validate", "--kind", "lane-lease", "--input", str(root / ".forge" / "state" / "leases.json")],
@@ -4668,6 +4669,121 @@ class ProcedureDoctrineTests(unittest.TestCase):
             self.assertIn(field, bodies[reads])
             self.assertIn(field, bodies[hands], f"the step that runs GSD does not name {field} as what it hands over")
         self.assertLess(order.index(reads), order.index(hands))
+
+
+class SpineDoctrineTests(unittest.TestCase):
+
+    WORKFLOWS = ROOT / "plugins" / "forge-ue-studio" / "workflows"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.answer = forge.spine_coverage()
+
+    def test_every_spine_step_resolves_to_a_task_class_or_to_a_counted_gap(self):
+        for step in self.answer["steps"]:
+            with self.subTest(step=step["id"]):
+                self.assertNotEqual(
+                    step["coverage"], "unmapped",
+                    f"spine step {step['name']!r} names neither a covering task class nor a gap",
+                )
+                self.assertTrue(
+                    step["covered_by"] or step["gaps"],
+                    f"spine step {step['name']!r} resolves to nothing at all",
+                )
+
+    def test_the_coverage_states_are_derived_from_what_each_step_names(self):
+        states = {step["id"]: step["coverage"] for step in self.answer["steps"]}
+        for step in self.answer["steps"]:
+            expected = "covered" if step["covered_by"] and not step["gaps"] else "partial" if step["covered_by"] else "uncovered"
+            self.assertEqual(states[step["id"]], expected, f"step {step['id']} is classified against what it does not name")
+        counts = self.answer["coverage"]
+        self.assertEqual(counts["steps"], 8)
+        self.assertEqual(
+            counts["covered"] + counts["partial"] + counts["uncovered"] + counts["unmapped"], counts["steps"]
+        )
+        self.assertEqual(counts["unmapped"], 0)
+
+    def test_no_step_claims_a_task_class_the_catalogue_does_not_declare(self):
+        declared = set(forge.procedures())
+        for step in self.answer["steps"]:
+            with self.subTest(step=step["id"]):
+                self.assertEqual(step["undeclared_task_classes"], [])
+                for task_class in step["covered_by"] + step["verified_by"]:
+                    self.assertIn(task_class, declared)
+
+    def test_the_level_step_is_the_one_a_procedure_reaches(self):
+        level = next(step for step in self.answer["steps"] if step["id"] == 5)
+        self.assertIn("world-blockout", level["covered_by"])
+        self.assertEqual(level["coverage"], "partial")
+
+    def test_the_gameplay_steps_are_recorded_as_uncovered_rather_than_given_a_procedure(self):
+        declared = set(forge.procedures())
+        for number in (2, 3, 6):
+            step = next(item for item in self.answer["steps"] if item["id"] == number)
+            with self.subTest(step=number):
+                self.assertEqual(step["coverage"], "uncovered")
+                for gap in step["gaps"]:
+                    self.assertNotIn(gap, declared, f"{gap} is counted as a gap and shipped as a procedure at once")
+
+    def test_every_gap_a_step_or_a_genre_raises_reaches_research(self):
+        requests = {entry["gap"]: entry for entry in self.answer["research_requests"]}
+        self.assertEqual(sorted(requests), forge.spine_gaps_raised())
+        self.assertEqual(len(requests), self.answer["coverage"]["gaps"])
+        for gap, entry in sorted(requests.items()):
+            with self.subTest(gap=gap):
+                for field in ("question", "prefer", "returns", "closes_when"):
+                    self.assertTrue(entry.get(field), f"{gap} raises a request with no {field}")
+                self.assertIn(entry["blocked_on"], {"doctrine", "route"})
+                self.assertTrue(entry["spine_steps"] or entry["genres"])
+
+    def test_the_only_gap_no_route_can_serve_is_the_build_itself(self):
+        blocked = {
+            entry["gap"] for entry in self.answer["research_requests"] if entry["blocked_on"] == "route"
+        }
+        self.assertEqual(blocked, {"package-build"})
+
+    def test_every_genre_fills_every_spine_step_rather_than_skipping_one(self):
+        ids = [step["id"] for step in self.answer["steps"]]
+        self.assertEqual(sorted(self.answer["genres"]), ["fps", "rpg", "side-scroller-2.5d", "souls-like"])
+        for genre, rows in sorted(self.answer["genres"].items()):
+            with self.subTest(genre=genre):
+                self.assertEqual([row["step"] for row in rows], ids)
+                self.assertEqual([row for row in rows if not row.get("adds")], [])
+
+    def test_the_index_records_which_library_files_it_was_derived_from(self):
+        source = self.answer["source"]
+        self.assertEqual(source["authority"], "library")
+        self.assertEqual(sorted(source["skeletons"]), [f"{genre}.md" for genre in sorted(self.answer["genres"])])
+        self.assertIn("_shared-spine.md", source["spine"])
+
+    def test_the_spine_index_is_read_by_a_shipped_module(self):
+        readers = sorted(
+            path.name for path in SCRIPTS_DIR.glob("*.py")
+            if "spine.json" in path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(readers, ["forge_routing.py"])
+
+    def test_the_planner_raises_the_request_an_uncovered_step_carries(self):
+        text = (self.WORKFLOWS / "forge-plan-phase.md").read_text(encoding="utf-8")
+        bodies = dict(re.findall(r'<step name="([a-z_]+)"[^>]*>(.*?)</step>', text, re.DOTALL))
+        self.assertIn("place_the_request_on_the_spine", bodies)
+        step = bodies["place_the_request_on_the_spine"]
+        self.assertIn("forge.py spine", step)
+        self.assertIn("research_requests", step)
+        self.assertIn("forge-research", step)
+        for state in ("covered", "partial", "uncovered", "unmapped"):
+            self.assertIn(f"coverage: {state}", step)
+
+    def test_research_takes_the_uncovered_steps_as_a_standing_queue(self):
+        text = (self.WORKFLOWS / "forge-research.md").read_text(encoding="utf-8")
+        bodies = dict(re.findall(r'<step name="([a-z_]+)"[^>]*>(.*?)</step>', text, re.DOTALL))
+        self.assertIn("take_the_standing_queue", bodies)
+        step = bodies["take_the_standing_queue"]
+        self.assertIn("forge.py spine", step)
+        self.assertIn("research_requests", step)
+        for state in ("doctrine", "route"):
+            self.assertIn(f"`{state}`", step)
+        self.assertIn("procedures.json", bodies["write_the_contract"])
 
 
 class ProjectSurveyTests(unittest.TestCase):

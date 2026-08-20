@@ -91,6 +91,52 @@ A feature request resolves to a *set* of task classes, not one — the spell abo
 
 Prose belongs in this document. The procedure file is what a packet compiler reads.
 
+## The spine, and what it does not reach
+
+The procedure layer answers *what a phase of this kind consists of*. It does not answer *which phases a game of this kind has, and in what order* — and that question has an authored answer already, in the studio's genre-skeleton library: an eight-step production spine (core verbs → primary mechanic → antagonist and damage loop → economy and world items → level → game frame → presentation → ship) that every genre skeleton fills in. Steps 1–6 are a dependency order no skeleton may reorder, step 7 is a preference order because art never gates production, and step 8 is entered at every phase gate rather than only at the end. Genre character comes from what fills each step; it never comes from a ninth step.
+
+That library is authored outside this repository and edited there. Three ways to bring it in, and only one survives the question *what happens when the author edits his copy*:
+
+| | What it does | Why not |
+|---|---|---|
+| Vendor it | Copy the five files into `plugins/` | Two authoritative copies of a document one person edits by hand. The copy is stale from the first edit and nothing in this repository can tell |
+| Reference it | Point at the library's path | A machine fact in shipped canon. It is right on one machine and wrong on every other, which is the neutrality rule this repository already enforces on the project template |
+| **Derive an index** | Ship the structure the spine has, and nothing it says | Chosen |
+
+`plugins/forge-ue-studio/doctrine/spine.json`, as `forge.spine/v1`, holds the eight steps by id, order kind and what each establishes; one line per genre per step; and, for every step, which task classes cover it and which gaps do not. It copies no prose. That is what makes the choice survive an edit: the library's reasoning can be rewritten freely and the index stays true, because the index never claimed to hold the reasoning. What does make it stale is an edit to the step list, the order, or a genre's systems — and `source` names the files each part came from, so re-deriving is a read rather than an investigation. **The library stays authoritative and Forge never writes to it.** Nothing here can detect an edit, and no guard pretends to: the vault is not in this repository, so a drift check would be a check that cannot run.
+
+### The map, counted honestly
+
+`forge.py spine` resolves each step against the catalogue that ships. `covered` names a task class and no gap, `partial` names both, `uncovered` names only gaps, and `unmapped` names neither — which is the state the guard forbids and the CLI still reports rather than rounding down to `uncovered`.
+
+| Step | Covered by | Coverage |
+|---|---|---|
+| 1 Core verbs | `batch-import`, `ik-retarget` — the asset supply only | partial |
+| 2 Primary mechanic | — | uncovered |
+| 3 Antagonist and damage loop | — | uncovered |
+| 4 Economy and world items | — | uncovered |
+| 5 Level | `world-blockout`, end to end up to the metrics | partial |
+| 6 Game frame | — | uncovered |
+| 7 Presentation | — | uncovered |
+| 8 Ship | `cook-and-build-preparation`, up to the build itself | partial |
+
+**No spine step is fully covered.** Eight task classes, and every one of them moves, measures or checks assets that already exist; not one authors a verb. That is the honest headline and it is the point of writing the map down: seven gaps, each named, each counted, each raising the research request that would close it. Six are blocked on doctrine — a route already serves the capabilities and nobody has written the pass — and one, `package-build`, is blocked on a route, because no provider runs the engine's build at all and a procedure naming one would fail its own capability check.
+
+Nothing was invented to make that table look better. A procedure that exists will be followed, so a procedure written to fill a row is followed by an agent who has no way to know it was never grounded in a call anyone made. This repository has taken the same decision twice already — deleting `CANCELLED` and `SUPERSEDED` rather than inventing verbs to justify them, and refusing to write seven procedures for routing shapes that are not task classes.
+
+### What an uncovered step does instead of nothing
+
+A gap that is only recorded is a catalogue that stays the size it is. Each gap carries a `research_request` — the question, the sources to prefer in the order `forge-research` already insists on, and what returning it means — and two workflows move it:
+
+- **`forge-plan-phase`** places the request on the spine before it plans. An `uncovered` step is planned undoctrined *and* raises its request; a `partial` step carries its gaps into the phase as named open risks.
+- **`forge-research`** reads the same list as a standing queue. `spine_steps` and `genres` say how much of the spine one answer unblocks, so the department can take the request that buys the most rather than the one that was asked for loudest.
+
+A closed request comes back as a procedure entry in `procedures.json`, at which point the step's row changes without anyone editing the map — coverage is derived from the catalogue, not stored beside it. That is the difference between a static catalogue and one that grows.
+
+### The guard
+
+`validate_repo.py` refuses a spine step that names neither a covering task class nor a gap, a `covered_by` naming a task class `procedures.json` does not declare, a genre that skips a step, a gap nothing raises, a raised gap nothing declares, and a gap with no research request. It is the same shape as the guard that every verb be reachable from a workflow: the failure it prevents is not a wrong answer but a missing one.
+
 ## The job tree
 
 A brief that exists only in an agent's context is unobservable and unreproducible. Forge writes every job to disk, in a tree shaped so that an agent — Forge's or GSD's — opens exactly one folder and finds everything that job needs and nothing it does not.
